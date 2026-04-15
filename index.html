@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-192.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="theme-color" content="#D32027" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MoHa Mobil" />
+    <title>MoHa Mobil</title>
+    <script>
+      // GitHub Pages SPA redirect decode — obnovi originalno pot iz ?p=/...
+      (function () {
+        var q = window.location.search;
+        if (q && q.indexOf('?p=/') === 0) {
+          var decoded = q.slice(3).split('&')[0];
+          var rest = q.slice(3 + decoded.length).replace(/^&/, '?');
+          window.history.replaceState(null, '', window.location.pathname.replace(/\/$/, '') + decoded + rest + window.location.hash);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

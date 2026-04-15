@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MoHa Mobil</title>
+    <script>
+      // GitHub Pages SPA fallback: preslikaj /MoHa-Mobil/* → /MoHa-Mobil/?p=/*
+      (function () {
+        var seg = 1; // število segmentov v base pathu (/MoHa-Mobil/ = 1)
+        var l = window.location;
+        var path = l.pathname.split('/').slice(0, 1 + seg).join('/') + '/';
+        var rest = l.pathname.slice((path).length);
+        l.replace(l.protocol + '//' + l.host + path + '?p=/' + rest + l.search.replace(/^\?/, '&') + l.hash);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

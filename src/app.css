@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --color-brand-50:  #E8F2FA;
+  --color-brand-100: #C7E0F2;
+  --color-brand-400: #4DA6D8;
+  --color-brand-500: #1A7DB8;
+  --color-brand-600: #155F8D;
+  --color-brand-700: #10476A;
+
+  --color-ok-500:     #34C759;
+  --color-delay-500:  #FF9500;
+  --color-alert-500:  #FF3B30;
+}
+
+:root {
+  /* Surfaces */
+  --bg: #F5F5F7;
+  --surface: #FFFFFF;
+  --surface-2: #F2F2F7;
+  --surface-3: #E5E5EA;
+
+  /* Text */
+  --text: #1C1C1E;
+  --text-secondary: #3A3A3C;
+  --text-muted: #8E8E93;
+
+  /* Borders */
+  --border: #D1D1D6;
+  --border-strong: #C7C7CC;
+
+  /* Accent & status */
+  --accent: #D32027;
+  --accent-pressed: #A8181E;
+  --status-ontime: #34C759;
+  --status-delay: #FF9500;
+  --status-disrupt: #FF3B30;
+
+  /* Elevation */
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.10);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.14);
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  /* Motion */
+  --ease-ios: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+  --dur-slow: 380ms;
+}
+
+:root.dark {
+  --bg: #000000;
+  --surface: #1C1C1E;
+  --surface-2: #2C2C2E;
+  --surface-3: #3A3A3C;
+  --text: #FFFFFF;
+  --text-secondary: #EBEBF5;
+  --text-muted: #8E8E93;
+  --border: #38383A;
+  --border-strong: #48484A;
+  --accent: #EF4F54;
+  --accent-pressed: #D32027;
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* Baseline — slightly darker "grouped" bg in dark to separate surfaces */
+:root.dark {
+  --bg: #000000;
+}
+
+html, body { height: 100%; margin: 0; }
+#app { min-height: 100dvh; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+  overflow: hidden;
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Onemogočena ležeča orientacija na mobilnih — prikaži obvestilo. */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  #app { display: none; }
+  body::before {
+    content: "Obrni telefon v pokončno lego 📱";
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 2rem; text-align: center;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); font-size: 18px; font-weight: 600;
+    z-index: 9999;
+  }
+}
+
+input, textarea, select, button { font-family: inherit; color: inherit; }
+
+/* ---------- Utilities ---------- */
+@utility surface { background: var(--surface); color: var(--text); }
+@utility surface-2 { background: var(--surface-2); color: var(--text); }
+@utility surface-3 { background: var(--surface-3); color: var(--text); }
+@utility border-base { border-color: var(--border); }
+@utility border-strong { border-color: var(--border-strong); }
+@utility text-primary { color: var(--text); }
+@utility text-secondary { color: var(--text-secondary); }
+@utility text-muted { color: var(--text-muted); }
+@utility text-accent { color: var(--accent); }
+@utility bg-accent { background: var(--accent); }
+@utility bg-accent-pressed { background: var(--accent-pressed); }
+@utility shadow-card { box-shadow: var(--shadow-1); }
+@utility shadow-elev { box-shadow: var(--shadow-2); }
+@utility shadow-float { box-shadow: var(--shadow-3); }
+
+/* Press feedback — iOS-like */
+@utility pressable {
+  transition: transform var(--dur-fast) var(--ease-ios), background-color var(--dur-fast) var(--ease-ios);
+}
+.pressable:active { transform: scale(0.97); }
+
+/* ---------- Type scale (iOS HIG) ---------- */
+@utility t-largeTitle { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.4px; }
+@utility t-title1     { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.3px; }
+@utility t-title2     { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.2px; }
+@utility t-title3     { font-size: 18px; line-height: 23px; font-weight: 600; letter-spacing: -0.2px; }
+@utility t-headline   { font-size: 17px; line-height: 22px; font-weight: 600; }
+@utility t-body       { font-size: 17px; line-height: 22px; font-weight: 400; }
+@utility t-callout    { font-size: 16px; line-height: 21px; font-weight: 400; }
+@utility t-subhead    { font-size: 15px; line-height: 20px; font-weight: 500; }
+@utility t-footnote   { font-size: 13px; line-height: 18px; font-weight: 400; }
+
+/* ---------- Animations ---------- */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--surface-3) 40%,
+    var(--surface-2) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--r-md);
+}
+
+@keyframes live-pulse {
+  0%   { transform: scale(1);   opacity: 1; }
+  70%  { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@utility live-pulse { animation: live-pulse 1.6s ease-out infinite; }
+
+/* ---------- Scrollbar (subtle) ---------- */
+.scrollbox::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbox::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.scrollbox { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
