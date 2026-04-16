@@ -5,7 +5,7 @@
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const APP_CACHE = `mm-app-${VERSION}`;
 const GTFS_CACHE = `mm-gtfs-${VERSION}`;
 const TILES_CACHE = `mm-tiles-${VERSION}`;
@@ -21,7 +21,13 @@ const APP_SHELL = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_SHELL)).catch(() => {}));
-  self.skipWaiting();
+  // Ne kličemo skipWaiting() avtomatsko — pustimo da uporabnik sam tapne "Osveži zdaj"
+  // v UpdateToast. Če klienta ni (prva instalacija), se install in activate zgodita takoj.
+});
+
+// Prejmi ukaz iz strani: preklopi nov SW v active brez čakanja.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
