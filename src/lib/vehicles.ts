@@ -1,5 +1,64 @@
-import type { GTFS, Shape } from './gtfs';
+import type { GTFS, Shape, Trip } from './gtfs';
 import { cropShape, todayServiceIds, routeColor } from './gtfs';
+
+// Heuristic match: poišči aktivni GTFS trip za živi Marprom OBA bus.
+// OBA daje LineCode + Headsign + lat/lon; GTFS trips nimajo istega ID-ja.
+// Strategija: ista linija + aktivna storitev + trip je v teku (nowSec med prvim
+// depom in zadnjim arr) → izberi tisti, katerega ena od postaj je geografsko
+// najbližje živemu busu. Headsign ujemanje je dodatni (mehki) filter.
+export function findTripForLiveBus(
+  gtfs: GTFS,
+  live: { lineCode: string; headsign: string; lat: number; lon: number },
+  nowSec: number,
+  routeIdByShort: Map<string, number>,
+): Trip | null {
+  const routeId = routeIdByShort.get(live.lineCode.toLowerCase());
+  if (routeId == null) return null;
+  const active = todayServiceIds(gtfs, new Date());
+  const candidates: Trip[] = [];
+  for (const t of gtfs.trips) {
+    if (t.route !== routeId) continue;
+    if (!active.has(t.service)) continue;
+    if (t.stops.length < 2) continue;
+    const firstDep = t.stops[0][2];
+    const lastArr = t.stops[t.stops.length - 1][1];
+    // Dodamo 2 min buffer za busove, ki malo zamujajo
+    if (nowSec < firstDep - 120 || nowSec > lastArr + 120) continue;
+    candidates.push(t);
+  }
+  if (candidates.length === 0) return null;
+
+  const hs = live.headsign.trim().toLowerCase();
+  const byHeadsign = hs ? candidates.filter(t => t.headsign.toLowerCase() === hs) : [];
+  const pool = byHeadsign.length > 0 ? byHeadsign : candidates;
+
+  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+  let best: Trip | null = null;
+  let bestD = Infinity;
+  for (const t of pool) {
+    for (const st of t.stops) {
+      const s = stopById.get(st[0]);
+      if (!s) continue;
+      const d = (s.lat - live.lat) ** 2 + (s.lon - live.lon) ** 2;
+      if (d < bestD) { bestD = d; best = t; }
+    }
+  }
+  return best;
+}
+
+// Index najbližje postaje na tripu glede na lat/lon busa. Če bus ni točno na
+// postaji, naslednja postaja = najbližja + 1 (če bus vozi, ne stoji).
+export function nearestTripStopIdx(gtfs: GTFS, trip: Trip, lat: number, lon: number): number {
+  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < trip.stops.length; i++) {
+    const s = stopById.get(trip.stops[i][0]);
+    if (!s) continue;
+    const d = (s.lat - lat) ** 2 + (s.lon - lon) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
 
 export type Vehicle = {
   tripId: number;

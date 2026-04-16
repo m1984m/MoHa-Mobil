@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { X } from 'lucide-svelte';
+  import { X, Star } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import { allDeparturesForStop, dayKindToDate, type GTFS, type Stop, type DayKind } from '../gtfs';
+  import { favStops } from '../favorites';
 
   export let open = false;
   export let gtfs: GTFS | null;
   export let stop: Stop | null;
   export let onClose: () => void;
+  // Opcijski filter: pokaže samo odhode določene linije (+ izbrane smeri).
+  // Uporablja se za shortcute iz Priljubljenih, kjer uporabnik tapne točen par (postaja, linija).
+  export let filterRouteId: number | null = null;
+  export let filterDir: number | null = null;
+  export let filterHeadsign: string = '';
 
   let day: DayKind = detectToday();
 
@@ -21,7 +27,11 @@
     { id: 'sunday', label: 'Nedelja' },
   ];
 
-  $: deps = gtfs && stop ? allDeparturesForStop(gtfs, stop.id, dayKindToDate(day)) : [];
+  $: rawDeps = gtfs && stop ? allDeparturesForStop(gtfs, stop.id, dayKindToDate(day)) : [];
+  $: deps = filterRouteId != null
+    ? rawDeps.filter(d => d.route.id === filterRouteId && (filterDir == null || d.trip.dir === filterDir))
+    : rawDeps;
+  $: isFav = stop ? $favStops.has(stop.id) : false;
 
   // Group by hour
   $: grouped = (() => {
@@ -49,9 +59,19 @@
          style="max-height: calc(100dvh - 2rem);">
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <div class="min-w-0 flex-1">
-          <div class="t-footnote text-muted uppercase tracking-wide">Vozni red</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">
+            Vozni red{#if filterRouteId != null && filterHeadsign} · {filterHeadsign}{/if}
+          </div>
           <div class="t-title2 truncate">{stop.name}</div>
         </div>
+        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+                on:click={() => favStops.toggle(stop.id)}
+                aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
+                aria-pressed={isFav}>
+          <Star size={18}
+                color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'}
+                fill={isFav ? 'var(--status-delay)' : 'none'} />
+        </button>
         <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
                 on:click={onClose} aria-label="Zapri">
           <X size={18} />

@@ -14,7 +14,9 @@
   let content: HTMLDivElement;
 
   function recompute() {
-    vh = window.innerHeight;
+    // visualViewport na iOS Safari pravilno upošteva URL bar + home indicator;
+    // innerHeight vrne "large viewport" in pušča aplikacijo pokrito s Safari UI.
+    vh = window.visualViewport?.height ?? window.innerHeight;
     sheetH = vh * snaps[snaps.length - 1];
   }
   function target(i: number) {
@@ -31,7 +33,11 @@
     y.set(target(snapIndex), { hard: true });
     const onResize = () => { recompute(); y.set(target(snapIndex), { hard: true }); };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+    };
   });
 
   // Gesture state

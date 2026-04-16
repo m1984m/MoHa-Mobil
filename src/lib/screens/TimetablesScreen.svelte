@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { Search, MapPin } from 'lucide-svelte';
+  import { Search, MapPin, Star } from 'lucide-svelte';
+  import Screen from '../ui/Screen.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
+  import { favStops } from '../favorites';
   import type { GTFS, Route, Stop } from '../gtfs';
 
   export let gtfs: GTFS | null;
@@ -38,9 +40,8 @@
   function openStop(s: Stop) { selectedStop = s; stopOpen = true; }
 </script>
 
-<div class="absolute inset-0 overflow-y-auto" style="padding-top: env(safe-area-inset-top);">
-  <div class="max-w-screen-sm mx-auto px-4 pt-4 pb-28">
-    <h1 class="t-title1 font-bold mb-1">Vozni redi</h1>
+<Screen title="Vozni redi">
+  <div class="max-w-screen-sm mx-auto px-4 pb-6">
     <p class="t-footnote text-muted mb-4">Izberi linijo ali poišči postajo za vozni red.</p>
 
     <div class="surface-2 rounded-xl p-1 flex gap-1 mb-4">
@@ -81,8 +82,9 @@
       {:else}
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each stops as s, i}
-            <li>
-              <button class="pressable w-full text-left px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}"
+            {@const isFav = $favStops.has(s.id)}
+            <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
+              <button class="pressable flex-1 text-left px-4 py-3 flex items-center gap-3 min-w-0"
                       on:click={() => openStop(s)}>
                 <MapPin size={18} color="var(--accent)" />
                 <div class="flex-1 min-w-0">
@@ -90,13 +92,21 @@
                   {#if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
                 </div>
               </button>
+              <button class="pressable px-4 grid place-items-center"
+                      on:click={() => favStops.toggle(s.id)}
+                      aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
+                      aria-pressed={isFav}>
+                <Star size={20}
+                      color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'}
+                      fill={isFav ? 'var(--status-delay)' : 'none'} />
+              </button>
             </li>
           {/each}
         </ul>
       {/if}
     {/if}
   </div>
-</div>
+</Screen>
 
 <LineTimetableModal open={lineOpen} {gtfs} route={lineRoute} onClose={() => lineOpen = false} />
 <StopTimetableModal open={stopOpen} {gtfs} stop={selectedStop} onClose={() => stopOpen = false} />

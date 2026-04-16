@@ -8,7 +8,9 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
+  import DepartureTime from '../ui/DepartureTime.svelte';
   import { favStops } from '../favorites';
+  import { homeShowNearby, homeShowFavs, nearbyRadiusM, compactLists } from '../settings';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -25,7 +27,9 @@
   onMount(() => { timer = setInterval(() => tick++, 30_000); });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
-  $: nearStops = gtfs ? nearestStops(gtfs.stops, origin, 4) : [];
+  $: nearStops = gtfs
+    ? nearestStops(gtfs.stops, origin, 20).filter(s => s.d <= $nearbyRadiusM).slice(0, 8)
+    : [];
   $: boards = (tick, gtfs)
     ? nearStops.map(s => ({
         stop: s,
@@ -74,7 +78,8 @@
       </div>
     </button>
 
-    <!-- Nearby boards -->
+    <!-- Nearby boards (toggable v nastavitvah) -->
+    {#if $homeShowNearby}
     {#if !gtfs}
       {#each Array(3) as _}
         <div class="surface rounded-2xl border border-base p-4 space-y-3">
@@ -85,7 +90,8 @@
       {/each}
     {:else if !hasGeo}
       <EmptyState icon={MapPinned} title="Dovoli lokacijo" body="Omogoči dostop do lokacije, da vidiš odhode iz najbližjih postajališč.">
-        <button class="pressable h-11 px-5 rounded-xl bg-accent text-white t-subhead font-semibold"
+        <button class="pressable h-11 px-5 rounded-xl t-subhead font-semibold"
+                style="background: var(--accent); color: #ffffff;"
                 on:click={refresh}>Omogoči lokacijo</button>
       </EmptyState>
     {:else if boards.length === 0}
@@ -112,20 +118,13 @@
             <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
           {:else}
             <ul>
-              {#each b.deps as d, i}
-                <li class="px-4 py-2.5 flex items-center gap-3 {i === 0 ? 'border-t border-base' : 'border-t border-base'}">
-                  <LineBadge short={d.route.short} routeId={d.route.id} size="md" />
+              {#each b.deps as d}
+                <li class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
+                  <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                   <div class="flex-1 min-w-0">
-                    <div class="t-callout font-medium truncate">{d.trip.headsign}</div>
+                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{d.trip.headsign}</div>
                   </div>
-                  <div class="text-right leading-none">
-                    {#if d.minutesFromNow <= 0}
-                      <span class="t-title3 font-bold" style="color: var(--status-ontime)">zdaj</span>
-                    {:else}
-                      <span class="t-title2 font-bold">{d.minutesFromNow}</span>
-                      <span class="t-footnote text-muted ml-0.5">min</span>
-                    {/if}
-                  </div>
+                  <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
                 </li>
               {/each}
             </ul>
@@ -133,8 +132,9 @@
         </button>
       {/each}
     {/if}
+    {/if}
 
-    {#if favBoards.length > 0}
+    {#if $homeShowFavs && favBoards.length > 0}
       <div class="flex items-center justify-between pt-2">
         <div class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča</div>
         <LiveDot />
@@ -156,20 +156,13 @@
             <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
           {:else}
             <ul>
-              {#each b.deps as d, i}
-                <li class="px-4 py-2.5 flex items-center gap-3 border-t border-base">
-                  <LineBadge short={d.route.short} routeId={d.route.id} size="md" />
+              {#each b.deps as d}
+                <li class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
+                  <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                   <div class="flex-1 min-w-0">
-                    <div class="t-callout font-medium truncate">{d.trip.headsign}</div>
+                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{d.trip.headsign}</div>
                   </div>
-                  <div class="text-right leading-none">
-                    {#if d.minutesFromNow <= 0}
-                      <span class="t-title3 font-bold" style="color: var(--status-ontime)">zdaj</span>
-                    {:else}
-                      <span class="t-title2 font-bold">{d.minutesFromNow}</span>
-                      <span class="t-footnote text-muted ml-0.5">min</span>
-                    {/if}
-                  </div>
+                  <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
                 </li>
               {/each}
             </ul>

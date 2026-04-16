@@ -32,6 +32,13 @@ export type Plan = {
 const MAX_ACCESS_M = 1000;
 const MAX_TRANSFER_M = 400;
 const MAX_ROUNDS = 3;
+// Mestni detour faktor: haversine (zračna razdalja) podcenjuje realno pešhojo
+// zaradi rek, železnice, enosmernih poti in blokov. 1.35 je tipična vrednost za
+// urbano območje (Maribor). Uporabi se kot fallback ko OSRM matrika manjka.
+const URBAN_DETOUR = 1.35;
+
+export type WalkEntry = { sec: number; meters: number };
+export type WalkMap = Map<number, WalkEntry>;
 
 type PrevOrigin = { kind: 'origin' };
 type PrevTransfer = { kind: 'walk'; fromStop: number };
@@ -47,7 +54,9 @@ export function planAll(
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
   depSec: number,
-  when: Date = new Date()
+  when: Date = new Date(),
+  accessMap?: WalkMap,
+  egressMap?: WalkMap,
 ): Plan[] {
   const WALK_MPS = getWalkMps();
   const active = todayServiceIds(gtfs, when);
@@ -82,16 +91,20 @@ export function planAll(
   for (const s of gtfs.stops) {
     const m = dist(from, s);
     if (m > MAX_ACCESS_M) continue;
-    const t = depSec + m / WALK_MPS;
-    origin0.set(s.id, { time: t, prev: { kind: 'origin' } });
+    const hit = accessMap?.get(s.id);
+    const sec = hit ? hit.sec : (m * URBAN_DETOUR) / WALK_MPS;
+    origin0.set(s.id, { time: depSec + sec, prev: { kind: 'origin' } });
   }
   if (origin0.size === 0) return [];
   labelsByRound.push(origin0);
 
-  const egress: { id: number; m: number }[] = [];
+  const egress: { id: number; m: number; sec: number }[] = [];
   for (const s of gtfs.stops) {
     const m = dist(s, to);
-    if (m <= MAX_ACCESS_M) egress.push({ id: s.id, m });
+    if (m > MAX_ACCESS_M) continue;
+    const hit = egressMap?.get(s.id);
+    const sec = hit ? hit.sec : (m * URBAN_DETOUR) / WALK_MPS;
+    egress.push({ id: s.id, m: hit?.meters ?? m, sec });
   }
 
   let marked = new Set<number>(origin0.keys());
@@ -151,7 +164,7 @@ export function planAll(
     for (const e of egress) {
       const lbl = L.get(e.id);
       if (!lbl || lbl.prev.kind === 'origin') continue;
-      const arrAtDest = lbl.time + e.m / WALK_MPS;
+      const arrAtDest = lbl.time + e.sec;
       if (!best || arrAtDest < best.arr) best = { round, arr: arrAtDest, stopId: e.id };
     }
     if (best) candidates.push(best);

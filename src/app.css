@@ -78,10 +78,64 @@
   --bg: #000000;
 }
 
-html, body { height: 100%; margin: 0; }
-#app { min-height: 100dvh; }
-body {
+/* High-contrast: pure čisto bela podlaga, črn tekst, debelejše obrobe.
+   Za slabovidne — maksimalen kontrast. */
+:root.contrast {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --surface-3: #d9d9d9;
+  --text: #000000;
+  --text-secondary: #000000;
+  --text-muted: #2a2a2a;
+  --border: #000000;
+  --border-strong: #000000;
+  --accent: #b4000a;
+  --accent-pressed: #7a0007;
+  --status-ontime: #00601f;
+  --status-delay: #8a4a00;
+  --status-disrupt: #a3000a;
+  --shadow-1: 0 0 0 1px #000000;
+  --shadow-2: 0 0 0 2px #000000;
+  --shadow-3: 0 0 0 2px #000000;
+}
+
+/* Monochrome (črno-belo) — za uporabnike, ki ne razlikujejo barv.
+   Sivinska paleta + global grayscale filter na app-u pokrije še barvne ikone
+   linij, avtobusov na karti in emoji (vreme). */
+:root.mono {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --surface-3: #d0d0d0;
+  --text: #000000;
+  --text-secondary: #1a1a1a;
+  --text-muted: #555555;
+  --border: #808080;
+  --border-strong: #555555;
+  --accent: #000000;
+  --accent-pressed: #2a2a2a;
+  --status-ontime: #000000;
+  --status-delay: #555555;
+  --status-disrupt: #000000;
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+:root.mono #app { filter: grayscale(1); }
+
+html, body {
+  margin: 0;
+  height: 100vh;           /* fallback za starejši iOS Safari */
+  height: 100dvh;
   background: var(--bg);
+}
+#app {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+body {
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -118,8 +172,8 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
 @utility text-secondary { color: var(--text-secondary); }
 @utility text-muted { color: var(--text-muted); }
 @utility text-accent { color: var(--accent); }
-@utility bg-accent { background: var(--accent); }
-@utility bg-accent-pressed { background: var(--accent-pressed); }
+@utility bg-accent { background: var(--accent); color: #ffffff; }
+@utility bg-accent-pressed { background: var(--accent-pressed); color: #ffffff; }
 @utility shadow-card { box-shadow: var(--shadow-1); }
 @utility shadow-elev { box-shadow: var(--shadow-2); }
 @utility shadow-float { box-shadow: var(--shadow-3); }

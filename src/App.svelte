@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import { Home, Map as MapIcon, Star, Settings as SettingsIcon, CalendarClock } from 'lucide-svelte';
   import { fade } from 'svelte/transition';
   import { initTheme, type Theme } from './lib/theme';
   import { loadGTFS, type GTFS, type Stop } from './lib/gtfs';
   import { getLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
+  import { defaultTab } from './lib/settings';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
@@ -15,11 +17,23 @@
   import TimetablesScreen from './lib/screens/TimetablesScreen.svelte';
   import PlannerModal from './lib/screens/PlannerModal.svelte';
   import WeatherModal from './lib/screens/WeatherModal.svelte';
+  import UpdateToast from './lib/ui/UpdateToast.svelte';
 
   type TabId = 'home' | 'timetables' | 'map' | 'fav' | 'settings';
 
+  // Obnovi zadnji tab iz sessionStorage — iOS/Android lahko evict+reload PWA,
+  // kar bi brez persistence vrglo uporabnika nazaj na Home sredi brskanja.
+  function restoreTab(): TabId {
+    try {
+      const v = sessionStorage.getItem('mm_tab');
+      if (v === 'home' || v === 'timetables' || v === 'map' || v === 'fav' || v === 'settings') return v;
+    } catch {}
+    return get(defaultTab);
+  }
+
   let theme: Theme = 'auto';
-  let activeTab: TabId = 'home';
+  let activeTab: TabId = restoreTab();
+  $: try { sessionStorage.setItem('mm_tab', activeTab); } catch {}
   let gtfs: GTFS | null = null;
   let origin = { lat: MARIBOR.lat, lon: MARIBOR.lon };
   let hasGeo = false;
@@ -36,6 +50,8 @@
   let plannerOpen = false;
   let weatherOpen = false;
   let pendingLongPress: { lat: number; lon: number } | null = null;
+  let plannerCandidates: Plan[] = [];
+  $: hasPlanAlternatives = plannerCandidates.length > 1;
 
   const tabs = [
     { id: 'home',       label: 'Dom',         icon: Home },
@@ -72,10 +88,14 @@
     if (!from || !to || !gtfs) return;
     const { planAll } = await import('./lib/planner');
     const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-    const { walkRoute } = await import('./lib/routing');
+    const { walkRoute, walkMapForStops } = await import('./lib/routing');
     const now = new Date();
     const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const plans = planAll(gtfs, from, to, depSec, now);
+    const [accessMap, egressMap] = await Promise.all([
+      walkMapForStops(from, gtfs.stops),
+      walkMapForStops(to, gtfs.stops),
+    ]);
+    const plans = planAll(gtfs, from, to, depSec, now, accessMap, egressMap);
     if (plans.length === 0) return;
     const chosen = plans[0];
     const shMap = await loadShapes();
@@ -142,10 +162,14 @@
     if (!gtfs) return;
     const { planAll } = await import('./lib/planner');
     const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-    const { walkRoute } = await import('./lib/routing');
+    const { walkRoute, walkMapForStops } = await import('./lib/routing');
     const now = new Date();
     const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const plans = planAll(gtfs, r.from, r.to, depSec, now);
+    const [accessMap, egressMap] = await Promise.all([
+      walkMapForStops(r.from, gtfs.stops),
+      walkMapForStops(r.to, gtfs.stops),
+    ]);
+    const plans = planAll(gtfs, r.from, r.to, depSec, now, accessMap, egressMap);
     if (plans.length === 0) return;
     const chosen = plans[0];
     const shMap = await loadShapes();
@@ -184,7 +208,7 @@
     </div>
   {:else if activeTab === 'map'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <MapScreen {gtfs} {origin} {hasGeo} {selectedStop} {activePlan}
+      <MapScreen {gtfs} {origin} {hasGeo} {selectedStop} {activePlan} hasAlternatives={hasPlanAlternatives}
         onStopChange={(s) => selectedStop = s}
         onClearPlan={handleClearPlan}
         onOpenPlanner={handleOpenPlanner}
@@ -203,9 +227,12 @@
   <TabBar {tabs} active={activeTab} onChange={changeTab} />
 
   <PlannerModal open={plannerOpen} {gtfs} {origin} {hasGeo}
+    bind:candidates={plannerCandidates}
     onClose={() => { plannerOpen = false; pendingLongPress = null; }}
     onShowPlan={handleShowPlan} />
 
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}
     onClose={() => weatherOpen = false} />
+
+  <UpdateToast />
 </div>

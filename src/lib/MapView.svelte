@@ -4,6 +4,8 @@
   import 'maplibre-gl/dist/maplibre-gl.css';
   import type { Stop, Shape } from './gtfs';
   import { MARIBOR } from './geo';
+  import { mapLabelSize, mapLabelFactor } from './settings';
+  import { get } from 'svelte/store';
 
   export let stops: Stop[] = [];
   export let user: { lat: number; lon: number } | null = null;
@@ -18,6 +20,7 @@
   export let onMapTap: (lat: number, lon: number) => void = () => {};
   export let onMapLongPress: (lat: number, lon: number) => void = () => {};
   export let onVehicleTap: (idx: number) => void = () => {};
+  export let onUserPan: () => void = () => {};
 
   let el: HTMLDivElement;
   let map: Map;
@@ -26,10 +29,18 @@
   let lastStyleKey: string | null = null;
 
   function darkNow() { return document.documentElement.classList.contains('dark'); }
+  // OpenMapTiles ima CORS-friendly glyph hosting; CARTO je 2026 začel vračati opaque PBF-je
+  // brez Access-Control-Allow-Origin, zato labels/puščice vržejo CORS error in padejo na lokalni fallback.
+  const GLYPHS = 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf';
+  const VOYAGER_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+  const DARK_URL    = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
   function styleSpec(dark: boolean, kind: 'map' | 'satellite'): any {
     if (kind === 'satellite') {
+      // Osnova samo — label vektorske plasti merge-amo čez v loadStyle().
       return {
         version: 8,
+        kind: 'satellite',
         sources: {
           sat: {
             type: 'raster',
@@ -39,17 +50,80 @@
             attribution: 'Tiles © Esri',
           },
         },
-        glyphs: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/{fontstack}/{range}.pbf',
+        glyphs: GLYPHS,
         layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
       };
     }
-    // CARTO Voyager daje večji kontrast v svetlem načinu; Dark Matter za temo.
-    return dark
-      ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-      : 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+    return dark ? DARK_URL : VOYAGER_URL;
   }
-  function styleKey(dark: boolean, kind: 'map' | 'satellite') {
-    return `${kind}:${dark ? 'd' : 'l'}`;
+
+  // Povečaj text-size value: podpora za number, interpolate/step expressions.
+  function bumpSize(val: any, factor: number): any {
+    if (typeof val === 'number') return val * factor;
+    if (Array.isArray(val)) return ['*', factor, val];
+    return val;
+  }
+
+  // Vzemi samo label (symbol) plasti iz CARTO stila, z white text + dark halo
+  // za berljivost na satelitski podlagi.
+  function extractLabelLayers(src: any, factor: number): { sources: any; layers: any[] } {
+    const out: any[] = [];
+    for (const L of (src.layers as any[]) || []) {
+      if (L.type !== 'symbol') continue;
+      // Izključi ikone/POI-je, ki na satelitu izgledajo neuredno — pusti samo cestna
+      // imena in imena naselij.
+      if (L['source-layer'] && /poi|icon/i.test(L['source-layer'])) continue;
+      const nl = JSON.parse(JSON.stringify(L));
+      nl.id = `sat-${nl.id}`;
+      nl.paint = nl.paint || {};
+      nl.layout = nl.layout || {};
+      nl.paint['text-color'] = '#ffffff';
+      nl.paint['text-halo-color'] = 'rgba(0,0,0,0.9)';
+      nl.paint['text-halo-width'] = 2;
+      nl.paint['text-halo-blur'] = 0.4;
+      if (nl.layout['text-size']) nl.layout['text-size'] = bumpSize(nl.layout['text-size'], factor);
+      // Prikaži labele prej: odštej 2 ravni od minzoom (a ne pod 2, da se pri svetovnem zoomu
+      // ne pojavijo nasičene napisne gneče).
+      if (typeof nl.minzoom === 'number') nl.minzoom = Math.max(2, nl.minzoom - 2);
+      out.push(nl);
+    }
+    return { sources: src.sources || {}, layers: out };
+  }
+
+  async function fetchJson(url: string): Promise<any | null> {
+    try { const r = await fetch(url); if (!r.ok) return null; return await r.json(); } catch { return null; }
+  }
+
+  async function loadStyle(spec: any): Promise<any> {
+    const lsize = get(mapLabelSize);
+    // Satelit: base object. Labele vektorsko pridelamo iz CARTO Voyagerja.
+    if (typeof spec === 'object' && spec?.kind === 'satellite') {
+      const v = await fetchJson(VOYAGER_URL);
+      if (!v) return spec;
+      const { sources, layers } = extractLabelLayers(v, mapLabelFactor(lsize, 'satellite'));
+      return {
+        version: 8,
+        sources: { ...spec.sources, ...sources },
+        glyphs: v.glyphs || GLYPHS,
+        sprite: v.sprite,
+        layers: [...spec.layers, ...layers],
+      };
+    }
+    if (typeof spec !== 'string') return spec;
+    // Map mode: fetch CARTO style + povečaj text-size simbolov za bolj berljive napise.
+    const j = await fetchJson(spec);
+    if (!j) return spec;
+    j.glyphs = GLYPHS;
+    const factor = mapLabelFactor(lsize, 'map');
+    for (const L of (j.layers as any[]) || []) {
+      if (L.type === 'symbol' && L.layout?.['text-size']) {
+        L.layout['text-size'] = bumpSize(L.layout['text-size'], factor);
+      }
+    }
+    return j;
+  }
+  function styleKey(dark: boolean, kind: 'map' | 'satellite', lsize: string) {
+    return `${kind}:${dark ? 'd' : 'l'}:${lsize}`;
   }
 
   function stopsFC(s: Stop[]): any {
@@ -345,6 +419,33 @@
           'circle-stroke-width': 2.5,
         },
       });
+      // Smer gibanja (puščica) — zunaj kroga v smeri vožnje, majhna zelena.
+      // text-offset [0, -1.6] v rotiranem map frame pomeni "naprej" po bearing-u.
+      // Skrita pri manjših zoomih, kjer bi bila vizualno šum.
+      map.addLayer({
+        id: 'vehicles-arrow',
+        type: 'symbol',
+        source: 'vehicles',
+        filter: ['!=', ['get', 'bearing'], 0],
+        minzoom: 13,
+        layout: {
+          'text-field': '▲',
+          'text-size': ['interpolate', ['linear'], ['zoom'], 13, 9, 15, 11, 17, 13],
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-rotate': ['get', 'bearing'],
+          'text-rotation-alignment': 'map',
+          'text-pitch-alignment': 'map',
+          'text-offset': [0, -1.6],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#10b981',
+          'text-halo-color': 'rgba(255,255,255,0.9)',
+          'text-halo-width': 1.2,
+          'text-opacity': 0.95,
+        },
+      });
       map.addLayer({
         id: 'vehicles-label',
         type: 'symbol',
@@ -393,12 +494,13 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     lastDark = darkNow();
-    lastStyleKey = styleKey(lastDark, mapStyle);
+    lastStyleKey = styleKey(lastDark, mapStyle, get(mapLabelSize));
+    const spec = await loadStyle(styleSpec(lastDark, mapStyle));
     map = new maplibregl.Map({
       container: el,
-      style: styleSpec(lastDark, mapStyle),
+      style: spec,
       center: [user?.lon ?? MARIBOR.lon, user?.lat ?? MARIBOR.lat],
       zoom: 13,
       attributionControl: { compact: true },
@@ -468,6 +570,12 @@
     map.on('touchcancel', clearLP);
     map.on('dragstart', clearLP);
 
+    // User-initiated map movement (drag/pinch/wheel) — used to disable follow mode.
+    const userMove = (e: any) => { if (e.originalEvent) onUserPan(); };
+    map.on('dragstart', userMove);
+    map.on('zoomstart', userMove);
+    map.on('rotatestart', userMove);
+
     const observer = new MutationObserver(() => {
       const nowDark = darkNow();
       if (nowDark === lastDark) return;
@@ -479,16 +587,17 @@
     return () => observer.disconnect();
   });
 
-  function swapStyle() {
+  async function swapStyle() {
     if (!map) return;
-    const key = styleKey(lastDark ?? darkNow(), mapStyle);
+    const key = styleKey(lastDark ?? darkNow(), mapStyle, get(mapLabelSize));
     if (key === lastStyleKey) return;
     lastStyleKey = key;
     styleReady = false;
-    map.setStyle(styleSpec(lastDark ?? darkNow(), mapStyle) as any);
+    const spec = await loadStyle(styleSpec(lastDark ?? darkNow(), mapStyle));
+    map.setStyle(spec as any);
     map.once('styledata', () => { styleReady = true; addLayers(); });
   }
-  $: if (map && mapStyle && styleKey(lastDark ?? darkNow(), mapStyle) !== lastStyleKey) swapStyle();
+  $: if (map && mapStyle && styleKey(lastDark ?? darkNow(), mapStyle, $mapLabelSize) !== lastStyleKey) swapStyle();
 
   onDestroy(() => map?.remove());
 
@@ -517,7 +626,7 @@
     (map.getSource('vehicles') as any).setData(vehiclesFC(vehicles));
   }
 
-  export function fitBounds(coords: [number, number][]) {
+  export function fitBounds(coords: [number, number][], maxZoom = 16) {
     if (!map || coords.length === 0) return;
     let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
     for (const [lon, lat] of coords) {
@@ -526,8 +635,8 @@
     }
     const h = map.getContainer().clientHeight ?? 0;
     map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
-      padding: { top: 80, bottom: Math.round(h * 0.15), left: 40, right: 40 },
-      duration: 700, maxZoom: 16,
+      padding: { top: 80, bottom: Math.round(h * 0.5), left: 40, right: 40 },
+      duration: 700, maxZoom,
     });
   }
 
@@ -536,6 +645,14 @@
     // Account for bottom sheet covering ~45% of viewport: shift visible center upward.
     const padding = { top: 60, bottom: Math.round(h * 0.5), left: 20, right: 20 };
     map?.flyTo({ center: [lon, lat], zoom, duration: 600, padding });
+  }
+
+  // Mehko centriranje brez spremembe zooma — za follow mode (Sledim).
+  export function panTo(lat: number, lon: number) {
+    if (!map) return;
+    const h = map.getContainer().clientHeight ?? 0;
+    const padding = { top: 60, bottom: Math.round(h * 0.5), left: 20, right: 20 };
+    map.easeTo({ center: [lon, lat], duration: 700, padding });
   }
 </script>
 

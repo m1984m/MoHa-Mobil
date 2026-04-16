@@ -1,18 +1,19 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
   import BottomSheet from '../BottomSheet.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
-  import { upcomingDepartures, loadShapes, shapesForStop, routeColor, type GTFS, type Shape, type Stop } from '../gtfs';
-  import { activeVehicles, type Vehicle } from '../vehicles';
+  import { upcomingDepartures, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
-  import { liveVehicles, startPolling, stopPolling, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
-  import { mapStyleKind } from '../settings';
+  import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, setVehiclePaths, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
+  import { mapStyleKind, departureDisplay, compactLists } from '../settings';
+  import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
 
   export let gtfs: GTFS | null;
@@ -24,11 +25,13 @@
   export let onClearPlan: () => void;
   export let onOpenPlanner: () => void;
   export let onLongPressDest: (lat: number, lon: number) => void;
+  export let hasAlternatives: boolean = false;
 
   let mapRef: any;
   let sheetRef: any;
   let shapesMap: Map<number, Shape> | null = null;
   let activeShapes: (Shape & { color: string })[] = [];
+  let vehicleShapes: (Shape & { color: string })[] = [];
   let synthVehicles: Vehicle[] = [];
   let vehicleTimer: ReturnType<typeof setInterval> | null = null;
   let selectedVehicle: Vehicle | null = null;
@@ -41,10 +44,12 @@
   let lineTimetableOpen = false;
   let lineTimetableRoute: any = null;
   let lineTimetableDir = 0;
+  let lineTimetableStopId: number | null = null;
 
-  function openLineTimetable(route: any, dir = 0) {
+  function openLineTimetable(route: any, dir = 0, stopId: number | null = null) {
     lineTimetableRoute = route;
     lineTimetableDir = dir;
+    lineTimetableStopId = stopId;
     lineTimetableOpen = true;
   }
   let tick30 = 0;
@@ -55,7 +60,7 @@
     refreshSynth();
     vehicleTimer = setInterval(refreshSynth, 10_000);
     tick30Timer = setInterval(() => tick30++, 30_000);
-    startPolling(12_000);
+    startPolling(8_000);
   });
   onDestroy(() => {
     if (vehicleTimer) clearInterval(vehicleTimer);
@@ -81,19 +86,53 @@
     synthVehicles = activeVehicles(gtfs, shapesMap, new Date());
   }
 
-  // Real vozila iz Marprom Trak8 OBA (vsakih 12s). Fallback = sintetična iz GTFS voznega reda.
+  // Real vozila iz Marprom Trak8 OBA (vsakih 8 s) + interpolacija med poll-oma.
+  // Fallback = sintetična vozila iz GTFS voznega reda.
   $: live = $liveVehicles;
+  $: smoothed = $smoothedVehicles;
+  $: staleSec = $liveStaleSec;
   $: routeIdByShort = gtfs
     ? new Map(gtfs.routes.map(r => [r.short.toLowerCase(), r.id]))
     : new Map<string, number>();
+
+  // Po vsakem poll-u: match vsak živ bus → GTFS trip → shape + stop_times.
+  // Pošljemo realtime modulu, da bus animira po voznem redu (schedule-driven),
+  // OBA GPS pa služi le kot občasna korekcija (anchor offset).
+  let lastShapeUpdateAt = 0;
+  $: if (gtfs && shapesMap && live.updatedAt > lastShapeUpdateAt && live.vehicles.length > 0) {
+    lastShapeUpdateAt = live.updatedAt;
+    const now = new Date();
+    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+    const paths = new Map<number, { shapePts: [number, number][]; stops: { lat: number; lon: number; time: number }[] }>();
+    for (const v of live.vehicles) {
+      const t = findTripForLiveBus(gtfs, {
+        lineCode: v.lineCode, headsign: v.headsign, lat: v.lat, lon: v.lon,
+      }, nowSec, routeIdByShort);
+      if (!t || t.shape == null) continue;
+      const sh = shapesMap.get(t.shape);
+      if (!sh) continue;
+      const stops: { lat: number; lon: number; time: number }[] = [];
+      for (const [stopId, arrSec] of t.stops) {
+        const s = stopById.get(stopId);
+        if (s) stops.push({ lat: s.lat, lon: s.lon, time: arrSec });
+      }
+      if (stops.length >= 2) paths.set(v.deviceId, { shapePts: sh.pts, stops });
+    }
+    setVehiclePaths(paths);
+  }
+  $: smoothedById = new Map(smoothed.map(s => [s.deviceId, s]));
   $: liveDisplay = live.vehicles.map(v => {
     const gtfsRouteId = routeIdByShort.get(v.lineCode.toLowerCase());
+    const sm = smoothedById.get(v.deviceId);
     return {
       tripId: v.deviceId,
       routeId: gtfsRouteId ?? v.routeId,
       routeShort: v.lineCode,
       headsign: v.headsign,
-      lat: v.lat, lon: v.lon, bearing: 0,
+      lat: sm?.displayLat ?? v.lat,
+      lon: sm?.displayLon ?? v.lon,
+      bearing: sm?.bearing ?? 0,
       color: gtfsRouteId != null ? routeColor(gtfsRouteId) : v.color,
       nextStopId: v.nextStopPointId ?? -1,
       dwelling: false,
@@ -110,7 +149,8 @@
     if (s) {
       selectedVehicle = null;
       await tick();
-      mapRef?.flyTo(s.lat, s.lon, 16);
+      // Začetni flyTo na nižji zoom (14) — uporabnik hoče pregled okolice, ne bližnji pogled.
+      mapRef?.flyTo(s.lat, s.lon, 14);
       sheetRef?.setSnap(1);
       refreshArrivals(s.id);
       liveArrivalsTimer = setInterval(() => refreshArrivals(s.id), 15_000);
@@ -120,6 +160,13 @@
       activeShapes = combos
         .map(c => { const sh = shMap.get(c.shape); return sh ? { ...sh, color: routeColor(c.route) } : null; })
         .filter((x): x is Shape & { color: string } => !!x);
+      // Po nalaganju linij: fit bounds, da uporabnik vidi celotno traso vseh linij iz te postaje
+      // (omejeno na ~13 zoom da se Maribor vidi kot celota).
+      if (activeShapes.length > 0) {
+        const coords: [number, number][] = [[s.lon, s.lat]];
+        for (const sh of activeShapes) for (const [lat, lon] of sh.pts) coords.push([lon, lat]);
+        mapRef?.fitBounds(coords, 13);
+      }
     } else {
       activeShapes = [];
       sheetRef?.setSnap(0);
@@ -146,12 +193,45 @@
     mapRef?.flyTo(v.lat, v.lon, 16);
     sheetRef?.setSnap(1);
   }
-  function closeVehicle() { selectedVehicle = null; selectedLive = null; sheetRef?.setSnap(0); }
+
+  // Klik na vrstico v seznamu prihodov postaje → pokaži ta bus na karti in
+  // odpri vehicle detail sheet. Bus poišče po busCode v trenutnih OBA vozilih.
+  function tapArrivalBus(busCode: string) {
+    if (!busCode) return;
+    const lv = live.vehicles.find(v => v.busCode === busCode);
+    if (!lv) { flashToast('Avtobusa trenutno ni v živo'); return; }
+    const dv = liveDisplay.find(d => d.tripId === lv.deviceId);
+    if (!dv) return;
+    selectedVehicle = dv;
+    selectedLive = lv;
+    onStopChange(null);
+    const sm = smoothedById.get(lv.deviceId);
+    mapRef?.flyTo(sm?.displayLat ?? lv.lat, sm?.displayLon ?? lv.lon, 16);
+    sheetRef?.setSnap(1);
+  }
+  function closeVehicle() { selectedVehicle = null; selectedLive = null; followBus = false; sheetRef?.setSnap(0); }
+
+  let followBus = false;
+  // Sledim: ko je vklopljen in imamo vozilo, vsako 1 s (smoothed tick) recenter mapo.
+  // selectedVehicle.tripId je deviceId za live; uskladi z $smoothedVehicles.
+  $: if (followBus && selectedVehicle && $smoothedVehicles.length > 0) {
+    const sm = $smoothedVehicles.find(s => s.deviceId === selectedVehicle!.tripId);
+    const lat = sm?.displayLat ?? selectedVehicle.lat;
+    const lon = sm?.displayLon ?? selectedVehicle.lon;
+    mapRef?.panTo(lat, lon);
+  }
 
   function onMapLongPress(lat: number, lon: number) {
     if ('vibrate' in navigator) navigator.vibrate(25);
     onLongPressDest(lat, lon);
   }
+
+  // Pri izbrani postaji skrijemo ostala postajališča, ki niso na teh linijah.
+  // Brez izbire → pokaži vse.
+  $: visibleStopIds = gtfs && selectedStop ? stopsOnSameRoutes(gtfs, selectedStop.id) : null;
+  $: visibleStops = visibleStopIds && gtfs
+    ? gtfs.stops.filter(s => visibleStopIds!.has(s.id))
+    : (gtfs?.stops ?? []);
 
   // Filter vehicles (match by routeShort → deluje za sintetične in žive vozila)
   $: selectedRouteShorts = gtfs && selectedStop
@@ -163,10 +243,12 @@
       ? vehicles.filter(v => v.tripId === selectedVehicle!.tripId)
       : vehicles;
 
-  $: departures = (tick30, gtfs && selectedStop) ? upcomingDepartures(gtfs!, selectedStop.id, new Date(), 4) : [];
+  $: departures = (tick30, gtfs && selectedStop) ? upcomingDepartures(gtfs!, selectedStop.id, new Date(), 5) : [];
   $: nextWait = liveArrivals.length > 0
     ? liveArrivals[0].etaMin
     : (departures[0]?.minutesFromNow ?? null);
+  $: walkToStopMin = (hasGeo && selectedStop) ? walkMinutes(origin, selectedStop) : null;
+  $: leaveInMin = (walkToStopMin != null && nextWait != null) ? nextWait - walkToStopMin : null;
   $: isFav = selectedStop ? $favStops.has(selectedStop.id) : false;
 
   // Vehicle trip info
@@ -195,19 +277,54 @@
     return 2 * R * Math.asin(Math.sqrt(s));
   }
 
-  $: vehTrip = gtfs && selectedVehicle ? gtfs.trips.find(t => t.id === selectedVehicle!.tripId) : null;
+  // Matcha GTFS trip za izbrano vozilo — za sintetična po ID-ju, za žive preko
+  // heuristike (linija + headsign + najbližja postaja busu).
+  $: vehTrip = (() => {
+    if (!gtfs || !selectedVehicle) return null as Trip | null;
+    const syn = gtfs.trips.find(t => t.id === selectedVehicle!.tripId);
+    if (syn) return syn;
+    if (!selectedLive) return null;
+    const nowSec = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
+    return findTripForLiveBus(gtfs, {
+      lineCode: selectedLive.lineCode,
+      headsign: selectedLive.headsign,
+      lat: selectedLive.lat,
+      lon: selectedLive.lon,
+    }, nowSec, routeIdByShort);
+  })();
+
   $: vehNextStops = (() => {
     if (!gtfs || !selectedVehicle || !vehTrip) return [];
     const nowSec = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
     const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
-    const idx = vehTrip.stops.findIndex(st => st[0] === selectedVehicle!.nextStopId);
+    // Najprej poskusi po nextStopId (sintetični bus). Če ne ujame (živi bus z OBA ID-jem),
+    // vrni geografsko najbližjo postajo + 1 kot "naslednja".
+    let idx = vehTrip.stops.findIndex(st => st[0] === selectedVehicle!.nextStopId);
+    if (idx < 0) {
+      const near = nearestTripStopIdx(gtfs, vehTrip, selectedVehicle!.lat, selectedVehicle!.lon);
+      idx = Math.min(vehTrip.stops.length - 1, near + 1);
+    }
     if (idx < 0) return [];
-    return vehTrip.stops.slice(idx, idx + 8).map(st => ({
+    return vehTrip.stops.slice(idx).map(st => ({
       stop: stopById.get(st[0])!,
       arr: st[1],
       minutes: Math.max(0, Math.round((st[1] - nowSec) / 60)),
     }));
   })();
+
+  // Naloži shape izbranega vozila za izris celotne linije na karti.
+  $: {
+    if (selectedVehicle && vehTrip && vehTrip.shape != null) {
+      const shapeId = vehTrip.shape;
+      const color = selectedVehicle.color;
+      loadShapes().then(sh => {
+        const s = sh.get(shapeId);
+        if (selectedVehicle && s) vehicleShapes = [{ ...s, color }];
+      });
+    } else {
+      vehicleShapes = [];
+    }
+  }
 
   function fmtTime(sec: number) {
     const h = Math.floor(sec / 3600) % 24;
@@ -318,15 +435,27 @@
     const h = Math.floor(m / 60), r = m % 60;
     return r === 0 ? `Naslednji avtobus čez ${h} h` : `Čez ${h} h ${r} min`;
   }
+
+  // Hitra hoja: 1.3 m/s (≈4.7 km/h) + 30 s buffer.
+  function walkMinutes(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+    const R = 6371000;
+    const toRad = (d: number) => d * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lon - a.lon);
+    const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    const meters = 2 * R * Math.asin(Math.sqrt(h));
+    return Math.ceil((meters / 1.3 + 30) / 60);
+  }
 </script>
 
 <div class="absolute inset-0">
   <MapView bind:this={mapRef}
-    stops={gtfs?.stops ?? []}
+    stops={visibleStops}
     user={hasGeo ? origin : null}
     selectedId={selectedStop?.id ?? null}
     nearbyIds={[]}
-    shapes={activePlan ? [] : activeShapes}
+    shapes={activePlan ? [] : [...activeShapes, ...vehicleShapes]}
     planLegs={activePlan?.geoms ?? []}
     planEndpoints={activePlan ? [
       { lat: activePlan.from.lat, lon: activePlan.from.lon, kind: 'origin' as const },
@@ -337,7 +466,8 @@
     onStopTap={(s) => onStopChange(s)}
     onMapTap={() => {}}
     onMapLongPress={onMapLongPress}
-    onVehicleTap={onVehicleTap} />
+    onVehicleTap={onVehicleTap}
+    onUserPan={() => { if (followBus) followBus = false; }} />
 
   <!-- Active plan floating card (expands inline) -->
   {#if activePlan}
@@ -351,6 +481,15 @@
                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') planExpanded = !planExpanded; }}
                role="button" tabindex="0"
                aria-label="Pokaži podrobnosti">
+            {#if hasAlternatives}
+              <button type="button"
+                      class="pressable inline-flex items-center gap-1 h-6 px-2 rounded-full border border-base t-footnote mb-1.5"
+                      style="background: var(--surface-2)"
+                      on:click|stopPropagation={onOpenPlanner}
+                      aria-label="Nazaj na vse predloge">
+                <ArrowLeft size={12} /> Vsi predlogi
+              </button>
+            {/if}
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
                 <div class="t-footnote text-muted truncate">{activePlan.from.name} → {activePlan.to.name}</div>
@@ -500,9 +639,17 @@
          style="top: calc(env(safe-area-inset-top) + 0.75rem)">
       <div class="surface rounded-full border border-base shadow-card px-3 h-8 flex items-center gap-2">
         <span class="w-2 h-2 rounded-full"
-              style="background: {isLive ? 'var(--status-ontime)' : 'var(--status-delay)'}"></span>
+              style="background: {isLive && staleSec < 30 ? 'var(--status-ontime)' : 'var(--status-delay)'}"></span>
         <span class="t-footnote" style="color: var(--text-muted)">
-          {isLive ? `${live.vehicles.length} vozil v živo` : (live.loading ? 'Povezovanje…' : (live.error ? 'Offline · po voznem redu' : 'Po voznem redu'))}
+          {#if isLive}
+            {live.vehicles.length} vozil · {staleSec < 2 ? 'zdaj' : `pred ${staleSec} s`}
+          {:else if live.loading}
+            Povezovanje…
+          {:else if live.error}
+            Offline · po voznem redu
+          {:else}
+            Po voznem redu
+          {/if}
         </span>
       </div>
     </div>
@@ -510,11 +657,11 @@
 
   <!-- FAB: plan -->
   {#if !activePlan && !selectedStop && !selectedVehicle}
-    <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full bg-accent text-white t-headline shadow-float flex items-center gap-2"
-            style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem)"
+    <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
+            style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
             on:click={onOpenPlanner}>
-      <Navigation size={18} />
-      Pot
+      <Navigation size={18} color="#ffffff" />
+      Načrtuj
     </button>
   {/if}
 
@@ -565,6 +712,19 @@
             <div class="t-footnote text-muted">Čakanje</div>
             <div class="t-headline font-semibold">{waitLabel(nextWait)}</div>
           </div>
+          {#if leaveInMin != null}
+            {@const c = leaveInMin <= 0 ? 'var(--status-disrupt)' : leaveInMin <= 2 ? 'var(--status-delay)' : 'var(--status-ontime)'}
+            <div class="text-right pl-3 border-l border-base shrink-0">
+              <div class="t-footnote text-muted flex items-center gap-1 justify-end">
+                <Footprints size={12} />
+                Kreni
+              </div>
+              <div class="t-title3 font-bold leading-tight" style="color: {c}">
+                {leaveInMin <= 0 ? (nextWait != null && nextWait <= 0 ? 'zamuda' : 'zdaj') : `${leaveInMin} min`}
+              </div>
+              <div class="t-footnote text-muted">{walkToStopMin} min hoje</div>
+            </div>
+          {/if}
         </div>
 
         <div class="flex items-center justify-between mb-2">
@@ -573,24 +733,48 @@
         </div>
         {#if liveArrivals.length > 0}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-            {#each liveArrivals.slice(0, 6) as a, i}
+            {#each liveArrivals.slice(0, 5) as a, i}
               {@const gtfsRoute = gtfs?.routes.find(r => r.short.toLowerCase() === a.lineCode.toLowerCase())}
-              <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, 0)} aria-label="Vozni red linije {a.lineCode}">
+              {@const absDelay = Math.abs(a.delayMin)}
+              {@const delayColor = absDelay > 5 ? 'var(--status-disrupt)' : absDelay >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}
+              <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
+                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, 0, selectedStop?.id ?? null)} aria-label="Vozni red linije {a.lineCode}">
                   <LineBadge short={a.lineCode} routeId={gtfsRoute?.id ?? a.lineId} size="md" />
                 </button>
-                <div class="flex-1 min-w-0">
-                  <div class="t-callout font-medium truncate">{a.headsign}</div>
-                  <div class="t-footnote text-muted">{a.arrivalTime}{a.busCode ? ` · bus #${a.busCode}` : ''}</div>
-                </div>
-                <div class="text-right leading-none">
-                  {#if a.etaMin <= 0}
-                    <span class="t-title3 font-bold" style="color: var(--status-ontime)">zdaj</span>
-                  {:else}
-                    <span class="t-title1 font-bold">{a.etaMin}</span>
-                    <span class="t-footnote text-muted ml-0.5">min</span>
-                  {/if}
-                </div>
+                <button class="pressable flex-1 {$compactLists ? 'py-1.5' : 'py-3'} pr-4 pl-1 flex items-center gap-3 text-left min-w-0"
+                        on:click={() => tapArrivalBus(a.busCode)}
+                        aria-label="Pokaži avtobus na karti">
+                  <div class="flex-1 min-w-0">
+                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{a.headsign}</div>
+                    <div class="t-footnote text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
+                      {#if $departureDisplay !== 'minutes'}<span>{a.arrivalTime}</span>{/if}
+                      {#if a.busCode}<span>{$departureDisplay !== 'minutes' ? '· ' : ''}bus #{a.busCode}</span>{/if}
+                      {#if a.predicted}
+                        <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
+                              style="background: color-mix(in oklab, var(--status-ontime) 16%, transparent); color: var(--status-ontime)">GPS</span>
+                      {:else}
+                        <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
+                              style="background: color-mix(in oklab, var(--text-muted) 16%, transparent); color: var(--text-muted)">ocena</span>
+                      {/if}
+                      {#if a.predicted && absDelay >= 1}
+                        <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
+                              style="background: color-mix(in oklab, {delayColor} 16%, transparent); color: {delayColor}">
+                          {a.delayMin > 0 ? `+${a.delayMin}` : a.delayMin} min
+                        </span>
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="text-right leading-none">
+                    {#if $departureDisplay === 'clock'}
+                      <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold tabular-nums">{a.arrivalTime}</span>
+                    {:else if a.etaMin <= 0}
+                      <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold" style="color: var(--status-ontime)">zdaj</span>
+                    {:else}
+                      <span class="{$compactLists ? 't-subhead' : 't-title1'} font-bold" style={a.predicted && absDelay > 5 ? 'color: var(--status-disrupt)' : a.predicted && absDelay >= 3 ? 'color: var(--status-delay)' : ''}>{a.etaMin}</span>
+                      <span class="t-footnote text-muted ml-0.5">min</span>
+                    {/if}
+                  </div>
+                </button>
               </li>
             {/each}
           </ul>
@@ -601,25 +785,29 @@
         {:else}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
             {#each departures as d, i}
-              <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable" on:click={() => openLineTimetable(d.route, d.trip.dir)} aria-label="Vozni red linije {d.route.short}">
-                  <LineBadge short={d.route.short} routeId={d.route.id} size="md" />
+              <li class="px-4 {$compactLists ? 'py-1.5' : 'py-3'} flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                <button class="pressable" on:click={() => openLineTimetable(d.route, d.trip.dir, selectedStop?.id ?? null)} aria-label="Vozni red linije {d.route.short}">
+                  <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                 </button>
                 <div class="flex-1 min-w-0">
-                  <div class="t-callout font-medium truncate">{d.trip.headsign}</div>
-                  <div class="t-footnote text-muted">{fmtTime(d.depSec)}</div>
-                </div>
-                <div class="text-right leading-none">
-                  {#if d.minutesFromNow <= 0}
-                    <span class="t-title3 font-bold" style="color: var(--status-ontime)">zdaj</span>
-                  {:else}
-                    <span class="t-title1 font-bold">{d.minutesFromNow}</span>
-                    <span class="t-footnote text-muted ml-0.5">min</span>
+                  <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{d.trip.headsign}</div>
+                  {#if $departureDisplay === 'both' && !$compactLists}
+                    <div class="t-footnote text-muted">{fmtTime(d.depSec)}</div>
                   {/if}
                 </div>
+                <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
               </li>
             {/each}
           </ul>
+        {/if}
+
+        {#if liveArrivals.length > 0 || departures.length > 0}
+          <button type="button"
+                  class="pressable w-full h-11 mt-3 rounded-xl surface-2 border border-base flex items-center justify-center gap-2"
+                  on:click={() => stopTimetableOpen = true}>
+            <CalendarClock size={16} />
+            <span class="t-callout font-medium">Celoten vozni red postaje</span>
+          </button>
         {/if}
 
       {:else if selectedVehicle}
@@ -634,9 +822,17 @@
               <div class="t-title3 font-semibold truncate">→ {selectedVehicle.headsign}</div>
             </div>
           </div>
-          <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
-            <X size={18} />
-          </button>
+          <div class="flex items-center gap-2">
+            <button class="pressable w-10 h-10 rounded-full grid place-items-center"
+                    style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
+                    on:click={() => followBus = !followBus}
+                    aria-label={followBus ? 'Prenehaj slediti' : 'Sledim avtobus'}>
+              <Navigation size={18} />
+            </button>
+            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         {#if selectedLive}
           <div class="rounded-2xl p-4 mb-4 flex items-center gap-3"
@@ -697,7 +893,8 @@
           <div class="t-footnote text-muted">Informacije, ki jih deliš:</div>
           <pre class="surface-2 rounded-xl border border-base p-3 t-footnote whitespace-pre-wrap break-all">{shareText}</pre>
           <div class="flex gap-2">
-            <button class="pressable flex-1 h-11 rounded-xl bg-accent text-white t-callout font-semibold"
+            <button class="pressable flex-1 h-11 rounded-xl t-callout font-semibold"
+                    style="background: var(--accent); color: #ffffff;"
                     on:click={() => copyShare('text')}>Kopiraj vse</button>
             <button class="pressable flex-1 h-11 rounded-xl surface-2 border border-base t-callout font-semibold"
                     on:click={() => copyShare('url')}>Samo povezavo</button>
@@ -719,5 +916,6 @@
   <StopTimetableModal open={stopTimetableOpen} {gtfs} stop={selectedStop}
     onClose={() => stopTimetableOpen = false} />
   <LineTimetableModal open={lineTimetableOpen} {gtfs} route={lineTimetableRoute} initialDir={lineTimetableDir}
+    initialStopId={lineTimetableStopId}
     onClose={() => lineTimetableOpen = false} />
 </div>

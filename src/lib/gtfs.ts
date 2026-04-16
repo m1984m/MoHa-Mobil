@@ -21,6 +21,23 @@ export function loadShapes(): Promise<Map<number, Shape>> {
   return shapesLoading;
 }
 
+// Vse stop ID-je, ki jih obiščejo linije (route-i), ki vozijo preko podanega stop-a.
+// Uporaba: pri izbiri postaje skrijemo ostala postajališča, ki niso na teh linijah.
+export function stopsOnSameRoutes(gtfs: GTFS, stopId: number): Set<number> {
+  const routes = new Set<number>();
+  for (const t of gtfs.trips) {
+    for (const st of t.stops) {
+      if (st[0] === stopId) { routes.add(t.route); break; }
+    }
+  }
+  const out = new Set<number>();
+  for (const t of gtfs.trips) {
+    if (!routes.has(t.route)) continue;
+    for (const st of t.stops) out.add(st[0]);
+  }
+  return out;
+}
+
 // Unique (shape, route) combos for all trips that serve a given stop.
 export function shapesForStop(gtfs: GTFS, stopId: number): { shape: number; route: number }[] {
   const seen = new Set<string>();

@@ -2,7 +2,7 @@
   import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight } from 'lucide-svelte';
   import { cropShape, loadShapes, routeColor, type GTFS, type Stop } from '../gtfs';
   import { planAll, type Plan } from '../planner';
-  import { walkRoute } from '../routing';
+  import { walkRoute, walkMapForStops } from '../routing';
   import LineBadge from '../ui/LineBadge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import { favStops } from '../favorites';
@@ -29,7 +29,7 @@
   let toAddrResults: Place[] = [];
   let fromAddrTimer: any = null;
   let toAddrTimer: any = null;
-  let candidates: Plan[] = [];
+  export let candidates: Plan[] = [];
 
   type TimeMode = 'now' | 'depart' | 'arrive';
   let timeMode: TimeMode = 'now';
@@ -76,7 +76,7 @@
 
   async function geocodeMany(q: string): Promise<Place[]> {
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'sl' } });
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.4.0 (github.com/m1984m/MoHa-Mobil)' } });
       if (!r.ok) return [];
       const j = await r.json();
       if (!Array.isArray(j)) return [];
@@ -113,7 +113,7 @@
 
   async function geocode(q: string): Promise<Place | null> {
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=1`, { headers: { 'Accept-Language': 'sl' } });
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.4.0 (github.com/m1984m/MoHa-Mobil)' } });
       if (!r.ok) return null;
       const j = await r.json();
       if (!Array.isArray(j) || j.length === 0) return null;
@@ -140,6 +140,12 @@
     try {
       const now = new Date();
       const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      // Prefetch OSRM walk matrike za access/egress postaje — enkrat pred vsemi iteracijami
+      // arrive-by loopa (access/egress stopi so isti, spreminja se le čas odhoda).
+      const [accessMap, egressMap] = await Promise.all([
+        walkMapForStops(fromPlace, gtfs.stops),
+        walkMapForStops(toPlace, gtfs.stops),
+      ]);
       let plans: Plan[] = [];
       if (timeMode === 'arrive') {
         const target = parseHM(timeStr);
@@ -148,7 +154,7 @@
         for (let back = 0; back <= 180 * 60; back += 20 * 60) {
           const ds = target - back;
           if (ds < nowSec - 3600) break;
-          const res = planAll(gtfs, fromPlace, toPlace, Math.max(0, ds), now);
+          const res = planAll(gtfs, fromPlace, toPlace, Math.max(0, ds), now, accessMap, egressMap);
           for (const p of res) if (p.arrSec <= target) collected.push(p);
           if (collected.length >= 6) break;
         }
@@ -162,7 +168,7 @@
         }).sort((a, b) => b.depSec - a.depSec).slice(0, 3);
       } else {
         const depSec = timeMode === 'depart' ? parseHM(timeStr) : nowSec;
-        plans = planAll(gtfs, fromPlace, toPlace, depSec, now);
+        plans = planAll(gtfs, fromPlace, toPlace, depSec, now, accessMap, egressMap);
       }
       if (plans.length === 0) { error = 'Ni povezave.'; return; }
       candidates = plans;
@@ -195,7 +201,6 @@
       });
       chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
       onShowPlan(chosen, geoms, fromPlace!, toPlace!);
-      reset();
       onClose();
     } finally {
       running = false;
