@@ -8,7 +8,7 @@
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = '0.5.2-b3bf3ba';
+const VERSION = '0.5.3-135a77c';
 const APP_CACHE = `mm-app-${VERSION}`;
 const GTFS_CACHE = `mm-gtfs-${VERSION}`;
 const TILES_CACHE = `mm-tiles-${VERSION}`;
