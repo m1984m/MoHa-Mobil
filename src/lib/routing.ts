@@ -16,7 +16,7 @@ const ORS_BASE = 'https://api.openrouteservice.org/v2';
 const cache = new Map<string, WalkRoute>();
 const key = (a: LL, b: LL, mps: number) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}|${b.lat.toFixed(5)},${b.lon.toFixed(5)}|${mps.toFixed(3)}`;
 
-export async function walkRoute(from: LL, to: LL): Promise<WalkRoute> {
+export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise<WalkRoute> {
   const WALK_MPS = getWalkMps();
   const k = key(from, to, WALK_MPS);
   const hit = cache.get(k);
@@ -42,6 +42,8 @@ export async function walkRoute(from: LL, to: LL): Promise<WalkRoute> {
     const url = `${ORS_BASE}/directions/foot-walking/geojson`;
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), 6000);
+    const onExt = () => ctl.abort();
+    signal?.addEventListener('abort', onExt);
     const r = await fetch(url, {
       method: 'POST',
       signal: ctl.signal,
@@ -55,6 +57,8 @@ export async function walkRoute(from: LL, to: LL): Promise<WalkRoute> {
       }),
     });
     clearTimeout(tm);
+    signal?.removeEventListener('abort', onExt);
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
     if (!r.ok) throw new Error('ors ' + r.status);
     const j = await r.json();
     const feat = j?.features?.[0];
@@ -68,7 +72,8 @@ export async function walkRoute(from: LL, to: LL): Promise<WalkRoute> {
     };
     cache.set(k, wr);
     return wr;
-  } catch {
+  } catch (e: any) {
+    if (e?.name === 'AbortError' && signal?.aborted) throw e;
     cache.set(k, straight);
     return straight;
   }
@@ -98,6 +103,7 @@ export async function walkMapForStops(
   stops: { id: number; lat: number; lon: number }[],
   radiusM = 1200,
   maxN = 25,
+  signal?: AbortSignal,
 ): Promise<Map<number, { sec: number; meters: number }>> {
   const within = stops
     .map(s => ({ s, m: haversine(from, s) }))
@@ -105,13 +111,13 @@ export async function walkMapForStops(
     .sort((a, b) => a.m - b.m)
     .slice(0, maxN);
   if (within.length === 0) return new Map();
-  const res = await walkMatrix(from, within.map(x => x.s));
+  const res = await walkMatrix(from, within.map(x => x.s), signal);
   const out = new Map<number, { sec: number; meters: number }>();
   within.forEach((x, i) => { const v = res[i]; if (v) out.set(x.s.id, v); });
   return out;
 }
 
-export async function walkMatrix(from: LL, tos: LL[]): Promise<({ sec: number; meters: number } | null)[]> {
+export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Promise<({ sec: number; meters: number } | null)[]> {
   const WALK_MPS = getWalkMps();
   const out: ({ sec: number; meters: number } | null)[] = tos.map(t => matrixCache.get(mKey(from, t)) ?? null);
   const missing: number[] = [];
@@ -127,9 +133,12 @@ export async function walkMatrix(from: LL, tos: LL[]): Promise<({ sec: number; m
     const locations = [from, ...dests].map(p => [p.lon, p.lat]);
     const destIdx = dests.map((_, i) => i + 1);
     try {
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       const url = `${ORS_BASE}/matrix/foot-walking`;
       const ctl = new AbortController();
       const tm = setTimeout(() => ctl.abort(), 8000);
+      const onExt = () => ctl.abort();
+      signal?.addEventListener('abort', onExt);
       const r = await fetch(url, {
         method: 'POST',
         signal: ctl.signal,
@@ -146,6 +155,8 @@ export async function walkMatrix(from: LL, tos: LL[]): Promise<({ sec: number; m
         }),
       });
       clearTimeout(tm);
+      signal?.removeEventListener('abort', onExt);
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       if (!r.ok) throw new Error('ors matrix ' + r.status);
       const j = await r.json();
       const dists: (number | null)[] | undefined = j?.distances?.[0];
@@ -158,7 +169,8 @@ export async function walkMatrix(from: LL, tos: LL[]): Promise<({ sec: number; m
           out[origIdx] = val;
         }
       });
-    } catch {
+    } catch (e: any) {
+      if (e?.name === 'AbortError' && signal?.aborted) throw e;
       // pusti null za neuspele — caller padne nazaj na haversine
     }
   }

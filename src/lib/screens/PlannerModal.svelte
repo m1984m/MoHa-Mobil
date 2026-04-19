@@ -31,6 +31,12 @@
   let toAddrTimer: any = null;
   export let candidates: Plan[] = [];
 
+  // Hrani aktivno operacijo, da jo lahko prekličemo ob zapiranju, resetu ali novem run-u.
+  let activeCtl: AbortController | null = null;
+  function abortActive() {
+    if (activeCtl) { activeCtl.abort(); activeCtl = null; }
+  }
+
   type TimeMode = 'now' | 'depart' | 'arrive';
   let timeMode: TimeMode = 'now';
   let timeExpanded = false;
@@ -136,6 +142,9 @@
     }
     if (!fromPlace || !toPlace) { error = 'Ne najdem izhodišča ali cilja.'; return; }
 
+    abortActive();
+    const ctl = new AbortController();
+    activeCtl = ctl;
     running = true;
     try {
       const now = new Date();
@@ -143,15 +152,17 @@
       // Prefetch OSRM walk matrike za access/egress postaje — enkrat pred vsemi iteracijami
       // arrive-by loopa (access/egress stopi so isti, spreminja se le čas odhoda).
       const [accessMap, egressMap] = await Promise.all([
-        walkMapForStops(fromPlace, gtfs.stops),
-        walkMapForStops(toPlace, gtfs.stops),
+        walkMapForStops(fromPlace, gtfs.stops, 1200, 25, ctl.signal),
+        walkMapForStops(toPlace, gtfs.stops, 1200, 25, ctl.signal),
       ]);
+      if (ctl.signal.aborted) return;
       let plans: Plan[] = [];
       if (timeMode === 'arrive') {
         const target = parseHM(timeStr);
         // Iterate backwards in 20-min steps to find latest departures still arriving ≤ target
         const collected: Plan[] = [];
         for (let back = 0; back <= 180 * 60; back += 20 * 60) {
+          if (ctl.signal.aborted) return;
           const ds = target - back;
           if (ds < nowSec - 3600) break;
           const res = planAll(gtfs, fromPlace, toPlace, Math.max(0, ds), now, accessMap, egressMap);
@@ -170,22 +181,31 @@
         const depSec = timeMode === 'depart' ? parseHM(timeStr) : nowSec;
         plans = planAll(gtfs, fromPlace, toPlace, depSec, now, accessMap, egressMap);
       }
+      if (ctl.signal.aborted) return;
       if (plans.length === 0) { error = 'Ni povezave.'; return; }
       candidates = plans;
     } catch (e: any) {
+      if (e?.name === 'AbortError' || ctl.signal.aborted) return;
       error = 'Napaka: ' + (e?.message ?? e);
     } finally {
+      if (activeCtl === ctl) activeCtl = null;
       running = false;
     }
   }
 
   async function choosePlan(chosen: Plan) {
     if (!gtfs || !fromPlace || !toPlace) return;
+    abortActive();
+    const ctl = new AbortController();
+    activeCtl = ctl;
     running = true;
     try {
       const shMap = await loadShapes();
-      const walkPromises = chosen.legs.map(l => l.kind === 'walk' ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }) : Promise.resolve(null));
+      const walkPromises = chosen.legs.map(l => l.kind === 'walk'
+        ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }, ctl.signal)
+        : Promise.resolve(null));
       const walks = await Promise.all(walkPromises);
+      if (ctl.signal.aborted) return;
       const geoms = chosen.legs.map((leg, i) => {
         if (leg.kind === 'walk') {
           const wr = walks[i]!;
@@ -202,7 +222,11 @@
       chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
       onShowPlan(chosen, geoms, fromPlace!, toPlace!);
       onClose();
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || ctl.signal.aborted) return;
+      throw e;
     } finally {
+      if (activeCtl === ctl) activeCtl = null;
       running = false;
     }
   }
@@ -220,6 +244,7 @@
   function busLegs(p: Plan) { return p.legs.filter(l => l.kind === 'bus') as any[]; }
 
   function reset() {
+    abortActive();
     fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = [];
     timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
   }
