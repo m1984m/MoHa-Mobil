@@ -1,11 +1,14 @@
 // MoHa Mobil — service worker
+// Generated from scripts/sw.template.js by scripts/build-sw.mjs.
+// Do not edit public/sw.js directly — edit this template instead.
+//
 // Strategy:
 //   - GTFS JSON:    stale-while-revalidate (fast, updates in background)
 //   - MapLibre tiles / basemap style: cache-first with fallback to network
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = 'v4';
+const VERSION = '__SW_VERSION__';
 const APP_CACHE = `mm-app-${VERSION}`;
 const GTFS_CACHE = `mm-gtfs-${VERSION}`;
 const TILES_CACHE = `mm-tiles-${VERSION}`;

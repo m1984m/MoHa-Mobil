@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/build-sw.mjs",
     "build": "vite build",
+    "prebuild": "node scripts/build-sw.mjs",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "deploy": "vite build && gh-pages -d dist"
