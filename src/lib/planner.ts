@@ -48,24 +48,22 @@ type Prev = PrevOrigin | PrevTransfer | PrevBus;
 // Per-round labels: labelsAt[k][stopId] = { time, prev }
 type Label = { time: number; prev: Prev };
 
-// Returns up to 3 plans: [fewest-transfers-fastest, fastest, middle-ground]
-export function planAll(
-  gtfs: GTFS,
-  from: { lat: number; lon: number },
-  to: { lat: number; lon: number },
-  depSec: number,
-  when: Date = new Date(),
-  accessMap?: WalkMap,
-  egressMap?: WalkMap,
-): Plan[] {
-  const WALK_MPS = getWalkMps();
-  const active = todayServiceIds(gtfs, when);
-  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
-  const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
+// Cache teže izračunanih indeksov — se invalidira avtomatsko, ko se GTFS objekt zamenja.
+// `tripsByBoardStop` hrani VSE vožnje (brez filtriranja po aktivnih servisih) — filter
+// po `active.has(trip.service)` se izvede šele ob uporabi, ker je dnevno odvisen.
+type PlannerIndexes = {
+  nearByStop: Map<number, { id: number; m: number }[]>;
+  tripsByBoardStop: Map<number, { trip: Trip; idx: number }[]>;
+};
+
+const indexesCache = new WeakMap<GTFS, PlannerIndexes>();
+
+export function precomputePlannerIndexes(gtfs: GTFS): PlannerIndexes {
+  const cached = indexesCache.get(gtfs);
+  if (cached) return cached;
 
   const tripsByBoardStop = new Map<number, { trip: Trip; idx: number }[]>();
   for (const t of gtfs.trips) {
-    if (!active.has(t.service)) continue;
     for (let i = 0; i < t.stops.length - 1; i++) {
       const sid = t.stops[i][0];
       let arr = tripsByBoardStop.get(sid);
@@ -84,6 +82,28 @@ export function planAll(
     }
     nearByStop.set(a.id, arr);
   }
+
+  const result = { nearByStop, tripsByBoardStop };
+  indexesCache.set(gtfs, result);
+  return result;
+}
+
+// Returns up to 3 plans: [fewest-transfers-fastest, fastest, middle-ground]
+export function planAll(
+  gtfs: GTFS,
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+  depSec: number,
+  when: Date = new Date(),
+  accessMap?: WalkMap,
+  egressMap?: WalkMap,
+): Plan[] {
+  const WALK_MPS = getWalkMps();
+  const active = todayServiceIds(gtfs, when);
+  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+  const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
+
+  const { nearByStop, tripsByBoardStop } = precomputePlannerIndexes(gtfs);
 
   // Per-round labels
   const labelsByRound: Map<number, Label>[] = [];
@@ -121,6 +141,7 @@ export function planAll(
       const boards = tripsByBoardStop.get(sid);
       if (!boards) continue;
       for (const { trip, idx } of boards) {
+        if (!active.has(trip.service)) continue;
         const boardDep = trip.stops[idx][2];
         if (boardDep < arrAt) continue;
         for (let j = idx + 1; j < trip.stops.length; j++) {
