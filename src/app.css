@@ -126,8 +126,9 @@
 
 html, body {
   margin: 0;
-  height: 100vh;           /* fallback za starejši iOS Safari */
+  height: 100vh;                        /* fallback za starejši iOS Safari */
   height: 100dvh;
+  height: var(--app-height, 100dvh);   /* JS-izračunana višina — fix iOS PWA launch bug */
   /* Bg = surface, da se poravna z barvo TabBar-a v safe-area padding-u.
      Prej je bil bg = var(--bg), kar je povzročilo vidno "prazno" lise pod
      TabBar-om v iOS PWA standalone mode (home indicator area). */
@@ -136,6 +137,7 @@ html, body {
 #app {
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   background: var(--bg);
 }

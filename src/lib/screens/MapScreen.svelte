@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft, MapPin } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
@@ -479,6 +479,7 @@
     ] : []}
     vehicles={shownVehicles}
     mapStyle={$mapStyleKind}
+    showPinFab={!activePlan && !selectedStop && !selectedVehicle}
     onStopTap={(s) => onStopChange(s)}
     onMapTap={() => { if (selectedStop) onStopChange(null); }}
     onMapLongPress={onMapLongPress}
@@ -688,6 +689,16 @@
             on:click={() => mapRef?.flyTo(origin.lat, origin.lon, 15)}
             aria-label="Moja lokacija">
       <Navigation size={18} color="var(--accent)" />
+    </button>
+  {/if}
+
+  <!-- Pin FAB: postavi cilj na sredino karte (nadomešča long-press gesto od v0.6.0) -->
+  {#if !activePlan && !selectedStop && !selectedVehicle}
+    <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full shadow-card grid place-items-center"
+            style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'}); background: var(--accent); color: #ffffff"
+            on:click={() => mapRef?.dropPinAtCenter()}
+            aria-label="Postavi cilj na sredini zemljevida">
+      <MapPin size={18} color="#ffffff" />
     </button>
   {/if}
 

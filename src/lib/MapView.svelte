@@ -16,6 +16,7 @@
   export let planEndpoints: { lat: number; lon: number; kind: 'origin' | 'dest' }[] = [];
   export let vehicles: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[] = [];
   export let mapStyle: 'map' | 'satellite' = 'map';
+  export let showPinFab: boolean = false;
   export let onStopTap: (s: Stop) => void = () => {};
   export let onMapTap: (lat: number, lon: number) => void = () => {};
   export let onMapLongPress: (lat: number, lon: number) => void = () => {};
@@ -268,6 +269,33 @@
           'circle-stroke-color': dark ? '#0b1220' : '#ffffff',
           'circle-stroke-width': 1.5,
           'circle-opacity': 0.95,
+        },
+      });
+      // Imena postaj — vidna od zoom 15 naprej. Open Sans Regular se ujema z napisi
+      // ulic iz CARTO Voyager/Dark Matter baselayer-ja. Halo preprečuje zlitje
+      // z ozadjem (cesta/park/zgradba).
+      map.addLayer({
+        id: 'stops-label',
+        type: 'symbol',
+        source: 'stops',
+        minzoom: 15,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Open Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 15, 10, 17, 12, 19, 13],
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'text-padding': 2,
+          'text-max-width': 9,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': dark ? '#EBEBF5' : '#1C1C1E',
+          'text-halo-color': dark ? '#000000' : '#ffffff',
+          'text-halo-width': 1.5,
+          'text-halo-blur': 0.5,
         },
       });
     }
@@ -548,58 +576,10 @@
     map.on('mouseenter', 'vehicles-dot', () => (map.getCanvas().style.cursor = 'pointer'));
     map.on('mouseleave', 'vehicles-dot', () => (map.getCanvas().style.cursor = ''));
 
-    // Long-press on empty map → destination.
-    // Pomembno: za DOTIK uporabljamo NATIVNE DOM touch evente na kontejnerju, ne
-    // MapLibre eventov. MapLibre na iOS Safari/PWA občasno spremeni ali zamudi
-    // lastne touch evente zaradi gesture recognition-a (pan/pinch) — native eventi
-    // se vedno sprožijo predvidljivo pred MapLibre obdelavo.
-    let lpTimer: any = null;
-    let lpStart: { x: number; y: number; lat: number; lon: number } | null = null;
-    const LP_MOVE_PX = 25;
-    const LP_DURATION = 500;
-    const clearLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
-    const fireLP = () => {
-      if (!lpStart) return;
-      const hits = map.queryRenderedFeatures({ x: lpStart.x, y: lpStart.y } as any, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot', 'vehicles-dot'] });
-      const lat = lpStart.lat, lon = lpStart.lon;
-      clearLP();
-      if (!hits.length) onMapLongPress(lat, lon);
-    };
-
-    // Mouse (desktop) — MapLibre eventi so OK, miška je predvidljiva.
-    map.on('mousedown', (e) => {
-      lpStart = { x: e.point.x, y: e.point.y, lat: e.lngLat.lat, lon: e.lngLat.lng };
-      lpTimer = setTimeout(fireLP, LP_DURATION);
-    });
-    map.on('mousemove', (e) => {
-      if (!lpStart) return;
-      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > LP_MOVE_PX) clearLP();
-    });
-    map.on('mouseup', clearLP);
-
-    // Touch (mobile) — native DOM eventi. Bypass MapLibre gesture system.
-    const lpContainer = map.getContainer();
-    const pxFromTouch = (t: Touch) => {
-      const rect = lpContainer.getBoundingClientRect();
-      return { x: t.clientX - rect.left, y: t.clientY - rect.top };
-    };
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length > 1) { clearLP(); return; }  // pinch → ne long-press
-      const p = pxFromTouch(e.touches[0]);
-      const ll = map.unproject([p.x, p.y]);
-      lpStart = { x: p.x, y: p.y, lat: ll.lat, lon: ll.lng };
-      lpTimer = setTimeout(fireLP, LP_DURATION);
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (!lpStart) return;
-      if (e.touches.length > 1) { clearLP(); return; }
-      const p = pxFromTouch(e.touches[0]);
-      if (Math.hypot(p.x - lpStart.x, p.y - lpStart.y) > LP_MOVE_PX) clearLP();
-    };
-    lpContainer.addEventListener('touchstart', onTouchStart, { passive: true });
-    lpContainer.addEventListener('touchmove', onTouchMove, { passive: true });
-    lpContainer.addEventListener('touchend', clearLP, { passive: true });
-    lpContainer.addEventListener('touchcancel', clearLP, { passive: true });
+    // Long-press na mapi je OPUŠČEN (v0.6.0) — 3 iteracije niso uspele dobiti
+    // zanesljivo delujoče verzije na iOS PWA. Zamenjan z "crosshair + FAB" vzorcem
+    // (kot Uber/Bolt): uporabnik premakne mapo, da je križ na sredini točno kjer
+    // hoče, nato tapne FAB "Postavi cilj tu" → sproži `dropPinAtCenter()` pod.
 
     // User-initiated map movement (drag/pinch/wheel) — used to disable follow mode.
     const userMove = (e: any) => { if (e.originalEvent) onUserPan(); };
@@ -694,12 +674,41 @@
   export function getZoom(): number {
     return map?.getZoom() ?? 13;
   }
+
+  // FAB handler — postavi cilj na trenutni center karte. Če je pod sredino postaja,
+  // raje selektiraj njo kot pa postaviti pin (več koristna UX poteza).
+  export function dropPinAtCenter() {
+    if (!map) return;
+    const c = map.getCenter();
+    const p = map.project([c.lng, c.lat]);
+    const hits = map.queryRenderedFeatures({ x: p.x, y: p.y } as any, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot'] });
+    if (hits.length) {
+      const id = hits[0].properties?.id as number;
+      const s = stops.find(x => x.id === id);
+      if (s) { onStopTap(s); return; }
+    }
+    onMapLongPress(c.lat, c.lng);
+  }
 </script>
 
 <div
   bind:this={el}
   style="position:absolute; inset:0; width:100%; height:100%; background: linear-gradient(135deg, var(--surface-2), var(--bg)); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;">
 </div>
+
+{#if showPinFab}
+  <!-- Crosshair overlay: pin tip zavešen nad natančno sredino karte, ground dot označuje točno pixel koordinato.
+       pointer-events: none — ne moti klikov na mapo. Uporabnik premakne karto, križ ostane na zaslonski sredini. -->
+  <div class="pointer-events-none absolute z-20" style="left: 50%; top: 50%; transform: translate(-50%, calc(-100% + 2px));">
+    <svg width="32" height="40" viewBox="0 0 24 30" style="filter: drop-shadow(0 3px 5px rgba(0,0,0,0.35));">
+      <path d="M12 0C5.4 0 0 5.4 0 12c0 7.2 9.5 15.5 11 16.7a1.5 1.5 0 0 0 2 0C14.5 27.5 24 19.2 24 12 24 5.4 18.6 0 12 0z"
+            fill="var(--accent)" stroke="white" stroke-width="1.5"/>
+      <circle cx="12" cy="12" r="3.5" fill="white"/>
+    </svg>
+  </div>
+  <div class="pointer-events-none absolute z-20"
+       style="left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px white, 0 2px 4px rgba(0,0,0,0.3); transform: translate(-50%, -50%);"></div>
+{/if}
 
 <style>
   :global(.maplibregl-ctrl-attrib) { font-size: 10px; opacity: 0.7; }

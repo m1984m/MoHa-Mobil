@@ -3,6 +3,26 @@ import './app.css'
 import App from './App.svelte'
 import { updateAvailable } from './lib/update'
 
+// iOS PWA viewport bug: na prvem zagonu 100dvh včasih vrne staro/pre-safe-area višino,
+// zato se pojavi "prazna lisa" spodaj pod TabBar-om. Uporabniku pomaga šele rotacija
+// landscape→portrait, ki prisili iOS v recompute. Fix: beleži pravo višino v CSS var
+// `--app-height` iz visualViewport / innerHeight in jo uporabi kot primary height.
+function setAppHeight() {
+  const h = window.visualViewport?.height ?? window.innerHeight
+  document.documentElement.style.setProperty('--app-height', `${h}px`)
+}
+setAppHeight()
+// Double-rAF + timeout za iOS, kjer se viewport stabilizira šele po prvem paint-u.
+requestAnimationFrame(() => {
+  requestAnimationFrame(setAppHeight)
+  setTimeout(setAppHeight, 200)
+  setTimeout(setAppHeight, 600)
+})
+window.addEventListener('resize', setAppHeight)
+window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300))
+window.visualViewport?.addEventListener('resize', setAppHeight)
+window.addEventListener('pageshow', setAppHeight)
+
 const app = mount(App, {
   target: document.getElementById('app')!,
 })

@@ -5,6 +5,17 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.6.0 — 2026-04-19
+
+### Novosti
+- **Nov način izbire cilja na karti: "crosshair + FAB" vzorec (kot Uber/Bolt).** Long-press smo opustili po 3 neuspešnih iteracijah na iOS PWA (v0.5.1–v0.5.3) — MapLibre na iPhonu touch evente prestreza, zamuja ali preimenuje, kar je onemogočilo zanesljivo detekcijo 500 ms pritiska. Zamenjava: na sredini karte je zdaj ves čas viden rdeč pin + ground dot (natančna pixel pozicija), poleg rekapitulacijskega gumba pa **pin FAB** (levo spodaj, nad gumb "Moja lokacija"). Uporabnik premakne karto, da je križ točno kjer hoče, nato tapne FAB → cilj je postavljen. Če je pod križem postaja, raje izberemo njo. Deluje enako na iOS in Androidu, brez timerjev in gesture-race pogojev.
+- **Imena postaj na karti (zoom 15+).** Vsaka postaja ima zdaj poleg rdeče pike tudi ime, izpisano v stilu CARTO Voyager/Dark Matter (Open Sans Regular), z belo/črno halo obrobo za berljivost. Font-size se interpolira od 10 px (zoom 15) do 13 px (zoom 19). Prepovedano prekrivanje (`text-allow-overlap: false`) + `text-optional: true` pomeni, da se pri gosto posejanih postajah nekatera imena skrijejo, namesto da bi se vsa napisna plast izgubila.
+
+### Popravki
+- **iPhone PWA "prazna lisa spodaj" ob prvem zagonu — odpravljena brez potrebe po rotaciji.** iOS je na prvi zagon PWA-ja v0.5.x vračal `100dvh` pred safe-area stabilizacijo, zato je aplikacija zgrešila home-indicator pas. Uporabniku je pomagalo šele landscape→portrait, ki je sprožil reflow. Fix: `main.ts` zdaj iz `visualViewport.height` / `window.innerHeight` postavi CSS var `--app-height`, jo uporabi kot primary vrednost v `html/body/#app` (fallback `100dvh`), in jo recomputa na `resize`, `orientationchange`, `visualViewport.resize` in `pageshow`. Double-rAF + dve timeout zadenejo tudi iOS-ov post-mount viewport settlement.
+
+---
+
 ## 0.5.3 — 2026-04-19
 
 ### Popravki
