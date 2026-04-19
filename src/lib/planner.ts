@@ -32,6 +32,10 @@ export type Plan = {
 const MAX_ACCESS_M = 1000;
 const MAX_TRANSFER_M = 400;
 const MAX_ROUNDS = 3;
+// Psihološka kazen za prestop — v rundah ≥2 mora boarding time biti vsaj
+// TRANSFER_PENALTY_SEC za arrAt, kar simulira ne-instantni prestop in prepreči,
+// da 2-busna pot s trivialno boljšim arrival time-om zmaga nad direktno.
+const TRANSFER_PENALTY_SEC = 180;
 // Mestni detour faktor: haversine (zračna razdalja) podcenjuje realno pešhojo
 // zaradi rek, železnice, enosmernih poti in blokov. 1.35 je tipična vrednost za
 // urbano območje (Maribor). Uporabi se kot fallback ko OSRM matrika manjka.
@@ -138,12 +142,13 @@ export function planAll(
       const cur = roundLabels.get(sid);
       if (!cur) continue;
       const arrAt = cur.time;
+      const minBoardTime = round >= 2 ? arrAt + TRANSFER_PENALTY_SEC : arrAt;
       const boards = tripsByBoardStop.get(sid);
       if (!boards) continue;
       for (const { trip, idx } of boards) {
         if (!active.has(trip.service)) continue;
         const boardDep = trip.stops[idx][2];
-        if (boardDep < arrAt) continue;
+        if (boardDep < minBoardTime) continue;
         for (let j = idx + 1; j < trip.stops.length; j++) {
           const alightId = trip.stops[j][0];
           const alightArr = trip.stops[j][1];
@@ -211,11 +216,12 @@ export function planAll(
     : null;
 
   // Reconstruct plan for each candidate (fewest-transfers first, then more but faster)
-  // Pareto: keep only candidates that are faster than previous (more transfers → must be meaningfully faster)
+  // Pareto: keep only candidates that are faster than previous. Ker TRANSFER_PENALTY_SEC
+  // že kaznuje dodatne prestope pri RAPTOR labelingu, tukaj zadostuje ≥60 s izboljšava.
   const pareto: Candidate[] = [];
   let bestSoFar = Infinity;
   for (const c of candidates) {
-    if (c.arr < bestSoFar - 120) { // require at least 2-min improvement for extra transfer
+    if (c.arr < bestSoFar - 60) {
       pareto.push(c);
       bestSoFar = c.arr;
     }
