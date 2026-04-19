@@ -25,6 +25,7 @@
   export let onClearPlan: () => void;
   export let onOpenPlanner: () => void;
   export let onLongPressDest: (lat: number, lon: number) => void;
+  export let onPlanToStop: (s: Stop) => void;
   export let hasAlternatives: boolean = false;
 
   let mapRef: any;
@@ -702,6 +703,12 @@
             {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
           </div>
           <div class="flex items-center gap-2">
+            <button class="pressable w-10 h-10 rounded-full grid place-items-center shadow-card"
+                    style="background: var(--accent); color: #ffffff"
+                    on:click={() => onPlanToStop(selectedStop!)}
+                    aria-label="Načrtuj pot do te postaje">
+              <Navigation size={18} color="#ffffff" />
+            </button>
             <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center"
                     on:click={() => stopTimetableOpen = true}
                     aria-label="Vozni red postaje">

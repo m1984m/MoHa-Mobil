@@ -51,7 +51,9 @@
   } | null = null;
   let plannerOpen = false;
   let weatherOpen = false;
-  let pendingLongPress: { lat: number; lon: number } | null = null;
+  // Predizpolnjen cilj za PlannerModal — bodisi iz long-pressa na karti (brez imena, reverse-geocode
+   // naknadno), bodisi iz gumba "pot do te postaje" (z imenom).
+  let pendingDest: { lat: number; lon: number; name?: string } | null = null;
   let plannerCandidates: Plan[] = [];
   $: hasPlanAlternatives = plannerCandidates.length > 1;
 
@@ -173,7 +175,12 @@
   function handleClearPlan() { activePlan = null; }
 
   function handleLongPressDest(lat: number, lon: number) {
-    pendingLongPress = { lat, lon };
+    pendingDest = { lat, lon };
+    plannerOpen = true;
+  }
+
+  function handlePlanToStop(s: Stop) {
+    pendingDest = { lat: s.lat, lon: s.lon, name: s.name };
     plannerOpen = true;
   }
 
@@ -235,7 +242,8 @@
         onStopChange={(s) => selectedStop = s}
         onClearPlan={handleClearPlan}
         onOpenPlanner={handleOpenPlanner}
-        onLongPressDest={handleLongPressDest} />
+        onLongPressDest={handleLongPressDest}
+        onPlanToStop={handlePlanToStop} />
     </div>
   {:else if activeTab === 'fav'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
@@ -251,7 +259,8 @@
 
   <PlannerModal open={plannerOpen} {gtfs} {origin} {hasGeo}
     bind:candidates={plannerCandidates}
-    onClose={() => { plannerOpen = false; pendingLongPress = null; }}
+    {pendingDest}
+    onClose={() => { plannerOpen = false; pendingDest = null; }}
     onShowPlan={handleShowPlan} />
 
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}

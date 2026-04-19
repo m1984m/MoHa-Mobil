@@ -30,6 +30,10 @@
   let fromAddrTimer: any = null;
   let toAddrTimer: any = null;
   export let candidates: Plan[] = [];
+  // Predizpolnjen cilj — iz gumba "pot do postaje" (z imenom) ali long-pressa na karti (brez imena).
+  // Nov objekt sproži apply (z reverse-geocode v ozadju, če ime manjka) + auto-run, ko sta oba dela zapolnjena.
+  export let pendingDest: { lat: number; lon: number; name?: string } | null = null;
+  let lastConsumedDest: typeof pendingDest = null;
 
   // Hrani aktivno operacijo, da jo lahko prekličemo ob zapiranju, resetu ali novem run-u.
   let activeCtl: AbortController | null = null;
@@ -116,6 +120,48 @@
   function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name }; fromQuery = s.name; fromFocus = false; }
   function pickTo(s: Stop) { toPlace = { lat: s.lat, lon: s.lon, name: s.name }; toQuery = s.name; toFocus = false; }
   function swap() { const f = fromPlace, q = fromQuery; fromPlace = toPlace; fromQuery = toQuery; toPlace = f; toQuery = q; }
+
+  async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18`,
+        { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.4.0 (github.com/m1984m/MoHa-Mobil)' } });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (!j?.display_name) return null;
+      return j.display_name.split(',').slice(0, 2).join(',').trim();
+    } catch { return null; }
+  }
+
+  $: if (open && pendingDest && pendingDest !== lastConsumedDest) {
+    lastConsumedDest = pendingDest;
+    applyPendingDest(pendingDest);
+  }
+
+  async function applyPendingDest(d: { lat: number; lon: number; name?: string }) {
+    const placeholder = d.name ?? `Izbrana lokacija (${d.lat.toFixed(4)}, ${d.lon.toFixed(4)})`;
+    toPlace = { lat: d.lat, lon: d.lon, name: placeholder };
+    toQuery = placeholder;
+    toFocus = false;
+    toAddrResults = [];
+    // Avtomatsko zapolni izhodišče z lokacijo uporabnika, če je na voljo in še ni izbrano —
+    // iz obeh vstopnih točk (long-press / "pot do postaje") je "od moje lokacije" prevladujoča izbira.
+    if (hasGeo && !fromPlace) {
+      fromPlace = { lat: origin.lat, lon: origin.lon, name: 'Moja lokacija' };
+      fromQuery = 'Moja lokacija';
+      fromFocus = false;
+    }
+    // Auto-run: če sta oba konca zapolnjena, takoj izračunaj — ena interakcija manj.
+    // Uporabnik še vedno vidi rezultat in lahko prilagodi čas / znova poišče.
+    if (fromPlace && toPlace) run();
+    // Ime v ozadju dopolnimo (samo za long-press, kjer name manjka).
+    if (!d.name) {
+      const better = await reverseGeocode(d.lat, d.lon);
+      if (better && toPlace && toPlace.lat === d.lat && toPlace.lon === d.lon) {
+        toPlace = { ...toPlace, name: better };
+        toQuery = better;
+      }
+    }
+  }
 
   async function geocode(q: string): Promise<Place | null> {
     try {
@@ -247,6 +293,7 @@
     abortActive();
     fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = [];
     timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
+    lastConsumedDest = null;
   }
 
   function handleClose() { reset(); onClose(); }
