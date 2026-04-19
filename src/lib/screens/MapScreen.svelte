@@ -45,6 +45,9 @@
   let lineTimetableRoute: any = null;
   let lineTimetableDir = 0;
   let lineTimetableStopId: number | null = null;
+  // Snapshot pogleda pred izbiro postaje — ob deselect vrnemo uporabnika na prejšnji zoom/center.
+  // Ohranjen ob preklapljanju med postajami; počiščen šele ko ni več nobena izbrana.
+  let prevView: { lat: number; lon: number; zoom: number } | null = null;
 
   function openLineTimetable(route: any, dir = 0, stopId: number | null = null) {
     lineTimetableRoute = route;
@@ -149,6 +152,12 @@
     if (s) {
       selectedVehicle = null;
       await tick();
+      // Posnami trenutni pogled pred prvim flyTo — samo ob prvi izbiri (ne prepiši pri preklopu
+      // med postajami), da deselect vedno vrne na izvirno stanje karte.
+      if (!prevView && mapRef) {
+        const c = mapRef.getCenter();
+        if (c) prevView = { lat: c.lat, lon: c.lon, zoom: mapRef.getZoom() };
+      }
       // Začetni flyTo na nižji zoom (14) — uporabnik hoče pregled okolice, ne bližnji pogled.
       mapRef?.flyTo(s.lat, s.lon, 14);
       sheetRef?.setSnap(1);
@@ -170,6 +179,12 @@
     } else {
       activeShapes = [];
       sheetRef?.setSnap(0);
+      // Vrni na prejšnji pogled, razen če je zdaj aktiven plan ali izbrano vozilo —
+      // oba imata lastni flyTo/fitBounds, ki bi se sicer sprl s tem restore-om.
+      if (prevView && !activePlan && !selectedVehicle) {
+        mapRef?.flyTo(prevView.lat, prevView.lon, prevView.zoom);
+      }
+      prevView = null;
     }
   }
 
@@ -464,7 +479,7 @@
     vehicles={shownVehicles}
     mapStyle={$mapStyleKind}
     onStopTap={(s) => onStopChange(s)}
-    onMapTap={() => {}}
+    onMapTap={() => { if (selectedStop) onStopChange(null); }}
     onMapLongPress={onMapLongPress}
     onVehicleTap={onVehicleTap}
     onUserPan={() => { if (followBus) followBus = false; }} />

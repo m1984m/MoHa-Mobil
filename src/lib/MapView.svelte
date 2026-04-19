@@ -654,6 +654,15 @@
     const padding = { top: 60, bottom: Math.round(h * 0.5), left: 20, right: 20 };
     map.easeTo({ center: [lon, lat], duration: 700, padding });
   }
+
+  export function getCenter(): { lat: number; lon: number } | null {
+    if (!map) return null;
+    const c = map.getCenter();
+    return { lat: c.lat, lon: c.lng };
+  }
+  export function getZoom(): number {
+    return map?.getZoom() ?? 13;
+  }
 </script>
 
 <div
