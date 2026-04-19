@@ -87,6 +87,24 @@ export function cropShape(shape: Shape, from: { lat: number; lon: number }, to: 
 let cached: GTFS | null = null;
 let loading: Promise<GTFS> | null = null;
 
+export type GtfsMeta = {
+  built: string;
+  counts: { stops: number; routes: number; trips: number; services: number };
+};
+
+let metaCached: GtfsMeta | null = null;
+let metaLoading: Promise<GtfsMeta | null> | null = null;
+
+export function loadMeta(): Promise<GtfsMeta | null> {
+  if (metaCached) return Promise.resolve(metaCached);
+  if (metaLoading) return metaLoading;
+  metaLoading = fetch(`${BASE}/meta.json`)
+    .then(r => { if (!r.ok) throw new Error('meta.json ' + r.status); return r.json(); })
+    .then((j: GtfsMeta) => { metaCached = j; return j; })
+    .catch(() => { metaLoading = null; return null; });
+  return metaLoading;
+}
+
 export function loadGTFS(): Promise<GTFS> {
   if (cached) return Promise.resolve(cached);
   if (loading) return loading;
@@ -96,12 +114,16 @@ export function loadGTFS(): Promise<GTFS> {
   });
   loading = (async () => {
     try {
-      const [stops, routes, trips, service] = await Promise.all([
+      // Meta prefetchamo paralelno z GTFS fetch-i — uspeh ni pogoj za GTFS, a ko se
+      // vse naloži skupaj, je meta že v cache-u za UI prikaz brez dodatnega round-tripa.
+      const gtfsPromise = Promise.all([
         fetchJson('stops.json'),
         fetchJson('routes.json'),
         fetchJson('trips.json'),
         fetchJson('service.json'),
       ]);
+      loadMeta();
+      const [stops, routes, trips, service] = await gtfsPromise;
       cached = { stops, routes, trips, services: service.services, exceptions: service.exceptions };
       return cached;
     } catch (err) {

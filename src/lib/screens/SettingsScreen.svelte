@@ -1,12 +1,22 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import { applyTheme, type Theme } from '../theme';
   import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
+  import { loadMeta, type GtfsMeta } from '../gtfs';
 
   export let theme: Theme;
   export let onThemeChange: (t: Theme) => void;
+
+  let gtfsMeta: GtfsMeta | null = null;
+  onMount(async () => { gtfsMeta = await loadMeta(); });
+
+  const DATE_FMT = new Intl.DateTimeFormat('sl-SI', { dateStyle: 'long' });
+  $: gtfsBuiltLabel = gtfsMeta ? DATE_FMT.format(new Date(gtfsMeta.built)) : '';
+  $: gtfsAgeDays = gtfsMeta ? Math.floor((Date.now() - new Date(gtfsMeta.built).getTime()) / 86_400_000) : 0;
+  $: gtfsStale = gtfsMeta !== null && gtfsAgeDays > 30;
 
   const options: { id: Theme; label: string; icon: any }[] = [
     { id: 'light',    label: 'Svetla',         icon: Sun },
@@ -303,6 +313,13 @@
           <div class="flex-1 t-body">Podatki</div>
           <div class="t-footnote text-muted">GTFS Marprom</div>
         </li>
+        {#if gtfsMeta}
+          <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
+            <CalendarClock size={20} color={gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'} />
+            <div class="flex-1 t-body">Vozni redi</div>
+            <div class="t-footnote" style="color: {gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'}">{gtfsBuiltLabel}</div>
+          </li>
+        {/if}
         <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
           <Building2 size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Razvijalec</div>
