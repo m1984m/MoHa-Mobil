@@ -200,22 +200,24 @@ export function planAll(
     if (best) candidates.push(best);
   }
 
-  // Pure walk baseline
+  // Pure walk baseline — uporabljamo URBAN_DETOUR (1.35×), ker je haversine zračna
+  // razdalja in v mestu podcenjuje realno hojo zaradi rek, križanj, enosmernih poti.
   const walkDirectM = dist(from, to);
-  const walkDirectArr = depSec + walkDirectM / WALK_MPS;
-  const plans: Plan[] = [];
+  const walkDirectSec = (walkDirectM * URBAN_DETOUR) / WALK_MPS;
+  const walkDirectArr = depSec + walkDirectSec;
+  let plans: Plan[] = [];
 
-  // Always include walk baseline if it's reasonable (<30 min or <2 km)
-  const walkPlan: Plan | null = walkDirectM < 2000 || walkDirectArr <= (candidates[0]?.arr ?? Infinity) + 600
+  // Always include walk baseline if it's reasonable (<2 km ali <30 min)
+  const walkPlan: Plan | null = walkDirectM < 2000 || walkDirectSec < 30 * 60
     ? {
         legs: [{
           kind: 'walk',
           fromLat: from.lat, fromLon: from.lon,
           toLat: to.lat, toLon: to.lon,
-          sec: walkDirectM / WALK_MPS,
-          meters: walkDirectM,
+          sec: walkDirectSec,
+          meters: walkDirectM * URBAN_DETOUR,
         }],
-        depSec, arrSec: walkDirectArr, walkMeters: walkDirectM, transfers: 0,
+        depSec, arrSec: walkDirectArr, walkMeters: walkDirectM * URBAN_DETOUR, transfers: 0,
       }
     : null;
 
@@ -234,6 +236,17 @@ export function planAll(
   for (const c of pareto) {
     const p = reconstruct(labelsByRound[c.round], c.stopId, stopById, routeById, from, to, depSec, c.arr);
     if (p) plans.push(p);
+  }
+
+  // Walk-dominance filter: če transit plan ne prihrani vsaj 2 min vs. direktna hoja,
+  // ga ne kažemo — uporabnik raje hodi kot da po nesmiselni zanki išče postajo.
+  // Primer nesmisla: peš 8 min do postaje + avtobus 5 min nazaj + peš 2 min = 15 min,
+  // ko bi peš naravnost trajalo 12 min. Izjema: ko je hoja daljša od 30 min (nad 2.5 km),
+  // uporabnik pogosto raje seda v avtobus tudi če je marginalno podoben čas.
+  const walkIsLong = walkDirectSec > 30 * 60;
+  const MIN_TRANSIT_SAVING_SEC = 120;
+  if (!walkIsLong) {
+    plans = plans.filter(p => p.arrSec + MIN_TRANSIT_SAVING_SEC < walkDirectArr);
   }
 
   if (walkPlan && !plans.some(p => p.transfers === 0 && p.legs.length === 1)) {

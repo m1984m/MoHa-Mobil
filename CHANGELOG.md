@@ -5,6 +5,15 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.5.3 — 2026-04-19
+
+### Popravki
+- **Planer ne predlaga več poti, ki so počasnejše od direktne hoje.** Dodan walk-dominance filter: vsak transit plan mora prihraniti vsaj **2 min** vs. direktna hoja, sicer ga skrijemo. Primer nesmisla, ki je v0.5.2 še šel skozi: peš 8 min do postaje + bus 5 min (delno nazaj) + peš 2 min = 15 min, ko bi peš naravnost trajalo 12 min. Izjema: če je hoja daljša od 30 min (≥2.5 km), pustimo tudi marginalne bus predloge — uporabnik pogosto raje sede kot hodi predolgo.
+- **Realnejši čas pešhoje — uporabljamo URBAN_DETOUR faktor (1.35×).** Prej je walk baseline uporabljal haversine zračno razdaljo, ki v mestu podceni resnično hojo (reka, križanja, enosmerne poti). Zdaj `sec = (metri × 1.35) / hitrost`, kar je skladno z istim faktorjem, ki je že v RAPTOR access/egress kot fallback. Posledica: walk baseline je realnejši in bus plani pošteno tekmujejo z njim.
+- **Dolg pritisk na mapo na iPhonu — zdaj zanesljivo deluje.** v0.5.2 je samo odstranil `dragstart` listener, kar ni bilo dovolj — MapLibre na iOS občasno zamudi ali spremeni lastne touch evente zaradi gesture recognition-a (pan/pinch). Prepisano na **native DOM `touchstart`/`touchmove`/`touchend` listeneje** na map kontejnerju, ki jih MapLibre ne prestreže. Threshold 25 px, trajanje 500 ms. Pinch (2 prsta) pravilno prekine timer.
+
+---
+
 ## 0.5.2 — 2026-04-19
 
 ### Popravki

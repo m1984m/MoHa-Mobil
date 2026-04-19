@@ -5,12 +5,11 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.5.2';
+export const APP_VERSION = '0.5.3';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Dolg pritisk na mapo zdaj zares deluje na iPhonu (prej je drag prekinil timer)',
-  'Planer več ne predlaga nesmiselnih poti "tja in nazaj" po isti liniji',
-  'Vsi predlogi poti so vidni, tudi če jih je več — seznam se pomakne',
-  'iOS PWA: odpravljena prazna lisa pod spodnjo vrstico zavihkov',
+  'Planer ne predlaga več poti, ki so počasnejše od direktne hoje',
+  'Dolg pritisk na mapo zdaj deluje na iPhonu (native touch eventi, ne MapLibre)',
+  'Realnejši čas pešhoje v planerju — urbani ovinki (1.35×), ne zračna razdalja',
 ];
