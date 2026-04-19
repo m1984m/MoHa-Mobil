@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.5.0';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Dostopnost: temi Visoki kontrast in Črno-belo; privzeto svetla',
-  'Napisi cest vidnejši — satelit z imeni in 3 velikosti',
-  'Odhodi: minute / ura / oboje; kompakten seznam',
-  'Vozni redi linije: zvezdica ob postaji za pripenjanje',
+  'Hiter načrt poti do postaje — en gumb v panelu postaje, samodejno izračuna',
+  'Dolg pritisk na mapo postavi cilj (naslov se samodejno poišče)',
+  'Tap na mapo zapre postajo in vrne prejšnji pogled; pinch-zoom vklopljen',
+  'Planer znatno hitrejši; retry UI, če voznih redov ni bilo mogoče naložiti',
 ];
