@@ -548,20 +548,33 @@
     map.on('mouseenter', 'vehicles-dot', () => (map.getCanvas().style.cursor = 'pointer'));
     map.on('mouseleave', 'vehicles-dot', () => (map.getCanvas().style.cursor = ''));
 
-    // Long-press (touch + mouse) on empty map → destination
+    // Long-press (touch + mouse) on empty map → destination.
+    // Pomembno: iOS Safari ne sintetizira mousedown ob touchstartu (emulirani mouse events
+    // pridejo šele po touchend), zato na dotiku poslušamo ločen 'touchstart'. Android Chrome
+    // ga sintetizira takoj — tam oba handlerja peljeta v isto logiko.
     let lpTimer: any = null;
     let lpStart: { x: number; y: number } | null = null;
     const clearLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
-    map.on('mousedown', (e) => {
-      lpStart = { x: e.point.x, y: e.point.y };
+    const startLP = (px: number, py: number, lat: number, lon: number) => {
+      lpStart = { x: px, y: py };
       lpTimer = setTimeout(() => {
         if (!lpStart) return;
-        const hits = map.queryRenderedFeatures(e.point, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot', 'vehicles-dot'] });
-        if (!hits.length) onMapLongPress(e.lngLat.lat, e.lngLat.lng);
+        const hits = map.queryRenderedFeatures({ x: px, y: py } as any, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot', 'vehicles-dot'] });
+        if (!hits.length) onMapLongPress(lat, lon);
         lpTimer = null;
       }, 550);
+    };
+    map.on('mousedown', (e) => startLP(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng));
+    map.on('touchstart', (e: any) => {
+      // Multi-touch = pinch/rotate, ne long-press.
+      if (e.points && e.points.length > 1) { clearLP(); return; }
+      startLP(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng);
     });
     map.on('mousemove', (e) => {
+      if (!lpStart) return;
+      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > 8) clearLP();
+    });
+    map.on('touchmove', (e) => {
       if (!lpStart) return;
       if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > 8) clearLP();
     });
@@ -667,10 +680,12 @@
 
 <div
   bind:this={el}
-  style="position:absolute; inset:0; width:100%; height:100%; background: linear-gradient(135deg, var(--surface-2), var(--bg));">
+  style="position:absolute; inset:0; width:100%; height:100%; background: linear-gradient(135deg, var(--surface-2), var(--bg)); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;">
 </div>
 
 <style>
   :global(.maplibregl-ctrl-attrib) { font-size: 10px; opacity: 0.7; }
   :global(.maplibregl-ctrl-top-right) { top: 4rem !important; }
+  /* iOS Safari: prepreči native callout meni pri long-pressu na canvas. */
+  :global(.maplibregl-canvas) { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 </style>

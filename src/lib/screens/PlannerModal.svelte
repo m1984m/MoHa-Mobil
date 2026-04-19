@@ -86,7 +86,7 @@
 
   async function geocodeMany(q: string): Promise<Place[]> {
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.0 (github.com/m1984m/MoHa-Mobil)' } });
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } });
       if (!r.ok) return [];
       const j = await r.json();
       if (!Array.isArray(j)) return [];
@@ -124,7 +124,7 @@
   async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
     try {
       const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18`,
-        { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.0 (github.com/m1984m/MoHa-Mobil)' } });
+        { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } });
       if (!r.ok) return null;
       const j = await r.json();
       if (!j?.display_name) return null;
@@ -165,7 +165,7 @@
 
   async function geocode(q: string): Promise<Place | null> {
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.0 (github.com/m1984m/MoHa-Mobil)' } });
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Maribor, Slovenija')}&format=json&countrycodes=si&limit=1`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } });
       if (!r.ok) return null;
       const j = await r.json();
       if (!Array.isArray(j) || j.length === 0) return null;
