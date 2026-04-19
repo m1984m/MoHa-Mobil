@@ -79,6 +79,15 @@ export function cropShape(shape: Shape, from: { lat: number; lon: number }, to: 
     if (df < dF) { dF = df; iFrom = i; }
     if (dt < dT) { dT = dt; iTo = i; }
   }
+  // Krožni shape (pts[0] ≈ pts[N-1]): če iFrom > iTo, ne reverse-aj čez celo pot
+  // (to bi narisalo bus nazaj skozi celo zanko), ampak naredi forward wrap:
+  // iFrom → konec + začetek → iTo.
+  const last = shape.pts[shape.pts.length - 1];
+  const first = shape.pts[0];
+  const closed = shape.pts.length >= 3 && Math.abs(first[0] - last[0]) < 1e-5 && Math.abs(first[1] - last[1]) < 1e-5;
+  if (closed && iFrom > iTo) {
+    return [...shape.pts.slice(iFrom), ...shape.pts.slice(1, iTo + 1)];
+  }
   const [lo, hi] = iFrom <= iTo ? [iFrom, iTo] : [iTo, iFrom];
   const seg = shape.pts.slice(lo, hi + 1);
   return iFrom <= iTo ? seg : seg.reverse();

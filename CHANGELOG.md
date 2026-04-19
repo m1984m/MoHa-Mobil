@@ -5,6 +5,23 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.6.2 — 2026-04-19
+
+### Popravki
+- **Krožna linija G3: odpravljen "preskok" ikone busa mimo postaj, ki v ETA še ni prikazan.** Uporabnik je opazil: bus na karti pelje skozi postajo, a če tapne postajo, pove "20 min". Razlog so bili štirje medsebojno povezani bugi, aktivni samo na tripih, kjer sta prva in zadnja postaja isti fizični stop (pts[0] koordinate = pts[N-1] koordinate na shape polyline):
+  1. **`projectToPoly` dvoumnost pri zaključku zanke.** GPS blizu depoja se je projeciral na s ≈ 0 (prvi segment zmaga pri strict `<` primerjavi), čeprav bus dejansko zaključuje zanko pri s ≈ totalM. Posledica: `anchor.s` je teleportiral z ~5000 m na 0, `scheduleS()` je vrnil freeze-vrednost na začetku urnika, čas bus-a se je zamrznil → ikona je "pobegnila" v linearni ekstrapolaciji od schedule-a.
+  2. **Monotonicity clamp je stisnil zadnjo postajo.** `const sMono = Math.max(s, lastS);` je zadnjo postajo (iste koordinate kot prva) prisilil na `sMono ≈ lastS` namesto na `totalM`. `scheduleS()` je zato zadnji segment trip-a zmrznil na napačnem s.
+  3. **`findTripForLiveBus` ni razločeval prekrivajočih trip-ov.** Krožne linije imajo dva zaporedna trip-a, ki se prekrivata v 2-min buffer oknu. Headsign filter in nearest-stop heuristika nista razlikovala, zato se je lahko bus pripisal napačnemu trip-u.
+  4. **`cropShape` je na loop-closure segmentu vrnil reverse čez celo pot.** Ker sta iFrom in iTo oba bila na duplicate-coord točkah (~začetek in ~konec), je `iFrom > iTo` sprožil `reverse()` → bus je v zadnjem segmentu izrisal nazaj skozi celo zanko.
+
+  Popravki: `projectToPoly` ima zdaj neobvezen `preferNearS` parameter — pri skoraj-enako-oddaljenih projekcijah (znotraj 15 m) izbere tisto, ki je bližje prejšnjemu anchor-ju/progresu. V `setVehiclePaths` se `preferNearS = lastS` zagotovi, da zadnja postaja krožne linije pristane pri `s ≈ totalM`. V `snapshot()` `preferNearS = prevAnchor.s` prepreči teleport. `findTripForLiveBus` zdaj najprej filtrira strogo v-teku trip-e in šele kot fallback uporabi 2-min buffer. `cropShape` na zaprtih shape-ih (prva = zadnja točka) ne reverse-a, ampak naredi forward wrap `iFrom → konec + začetek → iTo`.
+
+### Vpliv na druge linije
+- **Linearne (1, 2, 6, 7...):** projectToPoly tiebreaker nima alternativ znotraj 15 m → obnašanje identično. Monotonicity clamp ostane. Closed-shape branch v cropShape false → identično.
+- **V-teku filter:** Pozitivno tudi na linearnih — pri trip transition (prejšnji trip konča 12:00, novi začne 12:00) preprečuje flip-flop med overlapning trip-i. Če nobeden ni "v teku" (bus zamuja več kot 2 min), fallback na buffer ohrani staro vedenje.
+
+---
+
 ## 0.6.1 — 2026-04-19
 
 ### Popravki

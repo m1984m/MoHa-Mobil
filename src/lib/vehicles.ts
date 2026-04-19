@@ -28,9 +28,19 @@ export function findTripForLiveBus(
   }
   if (candidates.length === 0) return null;
 
+  // Preferiraj trip-e, ki so STROGO v teku (brez 2-min buffer okna). Na krožnih
+  // linijah (G3) se dva zaporedna trip-a overlapneta v buffer zoni — strogi
+  // filter razreši, kateremu trip-u dejansko pripada GPS.
+  const strictActive = candidates.filter(t => {
+    const firstDep = t.stops[0][2];
+    const lastArr = t.stops[t.stops.length - 1][1];
+    return nowSec >= firstDep && nowSec <= lastArr;
+  });
+  const basePool = strictActive.length > 0 ? strictActive : candidates;
+
   const hs = live.headsign.trim().toLowerCase();
-  const byHeadsign = hs ? candidates.filter(t => t.headsign.toLowerCase() === hs) : [];
-  const pool = byHeadsign.length > 0 ? byHeadsign : candidates;
+  const byHeadsign = hs ? basePool.filter(t => t.headsign.toLowerCase() === hs) : [];
+  const pool = byHeadsign.length > 0 ? byHeadsign : basePool;
 
   const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
   let best: Trip | null = null;

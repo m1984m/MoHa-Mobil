@@ -186,7 +186,11 @@ function buildIndex(pts: [number, number][]): PolyIndex {
 
 // Projekcija točke na polilinijo; vrne kumulativno razdaljo (v metrih) od začetka
 // polilinije do najbližje točke, in d2 (v stopinje²) za sanity threshold.
-function projectToPoly(idx: PolyIndex, lat: number, lon: number): { s: number; d2: number } {
+// Če je `preferNearS` podan, pri skoraj-enako-oddaljenih segmentih izberi tistega,
+// čigar s je bližje preferenci. Reši duplicate-coord dvoumnost na krožnih
+// shape-ih (G3: prva in zadnja točka imata iste koordinate → brez preferenca
+// bi lahko projekcija skočila med 0 in totalM).
+function projectToPoly(idx: PolyIndex, lat: number, lon: number, preferNearS?: number): { s: number; d2: number } {
   const { pts, cumLen } = idx;
   let bestS = 0, bestD = Infinity;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -201,6 +205,25 @@ function projectToPoly(idx: PolyIndex, lat: number, lon: number): { s: number; d
       const segM = cumLen[i + 1] - cumLen[i];
       bestS = cumLen[i] + t * segM;
     }
+  }
+  if (preferNearS == null) return { s: bestS, d2: bestD };
+  // Drugi prehod: med segmenti v EPS (15 m) od best pobere tistega, čigar s je
+  // najbližje preferenci. Ne-krožne trase tukaj ne dobijo alternative (d² razlike
+  // so velike), zato so nespremenjene.
+  const EPS = (15 / LAT_M_PER_DEG) ** 2;
+  let bestDelta = Math.abs(bestS - preferNearS);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const denom = dx * dx + dy * dy;
+    const t = denom > 0 ? Math.max(0, Math.min(1, ((lat - a[0]) * dx + (lon - a[1]) * dy) / denom)) : 0;
+    const px = a[0] + t * dx, py = a[1] + t * dy;
+    const d2 = (px - lat) ** 2 + (py - lon) ** 2;
+    if (d2 > bestD + EPS) continue;
+    const segM = cumLen[i + 1] - cumLen[i];
+    const s = cumLen[i] + t * segM;
+    const delta = Math.abs(s - preferNearS);
+    if (delta < bestDelta) { bestDelta = delta; bestS = s; bestD = d2; }
   }
   return { s: bestS, d2: bestD };
 }
@@ -248,8 +271,11 @@ export function setVehiclePaths(
     const shape = buildIndex(d.shapePts);
     const stopSeq: { s: number; time: number }[] = [];
     let lastS = 0;
-    for (const st of d.stops) {
-      const { s } = projectToPoly(shape, st.lat, st.lon);
+    for (let i = 0; i < d.stops.length; i++) {
+      const st = d.stops[i];
+      // preferNearS = lastS sili projekcijo naprej; pri krožnih tripih zadnja
+      // postaja (iste koordinate kot prva) preferira s ≈ totalM namesto 0.
+      const { s } = projectToPoly(shape, st.lat, st.lon, lastS);
       // Monotono naraščajoče (projekcija včasih malo odplava nazaj).
       const sMono = Math.max(s, lastS);
       stopSeq.push({ s: sMono, time: st.time });
@@ -307,16 +333,18 @@ function snapshot(vs: LiveVehicle[]) {
   for (const v of vs) {
     const snap: Snap = { lat: v.lat, lon: v.lon, at: now };
     const path = vehiclePaths.get(v.deviceId);
+    // Anchor: osveži samo, če je GPS res nov (drugačen od shranjenega anchor-ja >15 m).
+    // S tem se izognemo reset-u nazaj, ko OBA vrne isto cached pozicijo.
+    const prevAnchor = anchors.get(v.deviceId);
     if (path) {
-      const { s, d2 } = projectToPoly(path.shape, v.lat, v.lon);
+      // preferNearS = prevAnchor.s — prepreči teleport projekcije na krožnih
+      // tripih (G3), kjer start-točka = end-točka polilinije.
+      const { s, d2 } = projectToPoly(path.shape, v.lat, v.lon, prevAnchor?.s);
       // Sanity: bus mora biti <80 m od polilinije, da snap veljavni.
       if (Math.sqrt(d2) < 0.0008) snap.s = s;
     }
     curSnap.set(v.deviceId, snap);
 
-    // Anchor: osveži samo, če je GPS res nov (drugačen od shranjenega anchor-ja >15 m).
-    // S tem se izognemo reset-u nazaj, ko OBA vrne isto cached pozicijo.
-    const prevAnchor = anchors.get(v.deviceId);
     const movedFromAnchor = prevAnchor
       ? Math.hypot((v.lat - prevAnchor.lat) * LAT_M_PER_DEG, (v.lon - prevAnchor.lon) * LON_M_PER_DEG)
       : Infinity;

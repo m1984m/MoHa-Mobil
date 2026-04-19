@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.6.1';
+export const APP_VERSION = '0.6.2';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Pin mode zdaj ima dva koraka: tap pin FAB → pokaže se križ, tap "Potrdi tukaj" → postavi cilj',
-  'Pin gre natanko na izbrano lokacijo — ne skoči več na najbližjo postajo',
-  'Imena postaj se izpišejo pri približanem pogledu (zoom 15+)',
-  'iPhone PWA: odpravljena prazna lisa spodaj ob prvem zagonu — brez rotacije za full screen',
+  'Krožna linija G3: odpravljen preskok ikone busa mimo postaj — pozicija sedaj sovpada z ETA',
+  'Projekcija GPS na traso upošteva zadnji anchor — brez teleporta pri zaključku zanke',
+  'Živi bus se match-a samo na trip, ki je strogo v teku — brez skakanja med overlappnimi vozoredi',
+  'Popravljen crop trase na loop-closure segmentu — brez risanja vzvratno skozi celo zanko',
 ];
