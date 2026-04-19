@@ -35,6 +35,8 @@
   let activeTab: TabId = restoreTab();
   $: try { sessionStorage.setItem('mm_tab', activeTab); } catch {}
   let gtfs: GTFS | null = null;
+  let gtfsError: boolean = false;
+  let gtfsRetrying: boolean = false;
   let origin = { lat: MARIBOR.lat, lon: MARIBOR.lon };
   let hasGeo = false;
   let weather: Weather | null = null;
@@ -61,13 +63,34 @@
     { id: 'settings',   label: 'Nastav.',     icon: SettingsIcon },
   ];
 
+  async function tryLoadGtfs() {
+    gtfsError = false;
+    try {
+      gtfs = await loadGTFS();
+    } catch {
+      gtfs = null;
+      gtfsError = true;
+    }
+  }
+
+  async function retryGtfs() {
+    if (gtfsRetrying) return;
+    gtfsRetrying = true;
+    try {
+      await tryLoadGtfs();
+      if (gtfs) await tryDeepLinkPlan();
+    } finally {
+      gtfsRetrying = false;
+    }
+  }
+
   onMount(async () => {
     theme = initTheme();
-    gtfs = await loadGTFS();
+    await tryLoadGtfs();
     await requestLocation();
     await refreshWeather();
     weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
-    await tryDeepLinkPlan();
+    if (gtfs) await tryDeepLinkPlan();
   });
 
   function parsePlace(s: string | null): { lat: number; lon: number; name: string } | null {
@@ -235,4 +258,20 @@
     onClose={() => weatherOpen = false} />
 
   <UpdateToast />
+
+  {#if gtfsError}
+    <div class="fixed inset-0 z-[100] flex items-center justify-center surface px-6"
+         style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);">
+      <div class="max-w-sm w-full text-center space-y-4">
+        <div class="t-title2 font-semibold">Voznih redov ni bilo mogoče naložiti</div>
+        <div class="t-footnote text-muted">Preveri internetno povezavo in poskusi znova.</div>
+        <button class="pressable h-12 px-6 rounded-xl t-subhead font-semibold disabled:opacity-60"
+                style="background: var(--accent); color: #ffffff;"
+                disabled={gtfsRetrying}
+                on:click={retryGtfs}>
+          {gtfsRetrying ? 'Nalagam…' : 'Poskusi znova'}
+        </button>
+      </div>
+    </div>
+  {/if}
 </div>

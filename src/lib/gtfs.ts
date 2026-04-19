@@ -90,15 +90,26 @@ let loading: Promise<GTFS> | null = null;
 export function loadGTFS(): Promise<GTFS> {
   if (cached) return Promise.resolve(cached);
   if (loading) return loading;
+  const fetchJson = (name: string) => fetch(`${BASE}/${name}`).then(r => {
+    if (!r.ok) throw new Error(`${name} HTTP ${r.status}`);
+    return r.json();
+  });
   loading = (async () => {
-    const [stops, routes, trips, service] = await Promise.all([
-      fetch(`${BASE}/stops.json`).then(r => r.json()),
-      fetch(`${BASE}/routes.json`).then(r => r.json()),
-      fetch(`${BASE}/trips.json`).then(r => r.json()),
-      fetch(`${BASE}/service.json`).then(r => r.json()),
-    ]);
-    cached = { stops, routes, trips, services: service.services, exceptions: service.exceptions };
-    return cached;
+    try {
+      const [stops, routes, trips, service] = await Promise.all([
+        fetchJson('stops.json'),
+        fetchJson('routes.json'),
+        fetchJson('trips.json'),
+        fetchJson('service.json'),
+      ]);
+      cached = { stops, routes, trips, services: service.services, exceptions: service.exceptions };
+      return cached;
+    } catch (err) {
+      // Počisti loading, da retry požene nov fetch (sicer bi vsi naslednji klici
+      // dobili isti rejected promise in se nikoli ne bi poskusili znova).
+      loading = null;
+      throw err;
+    }
   })();
   return loading;
 }
