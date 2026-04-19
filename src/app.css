@@ -128,12 +128,16 @@ html, body {
   margin: 0;
   height: 100vh;           /* fallback za starejši iOS Safari */
   height: 100dvh;
-  background: var(--bg);
+  /* Bg = surface, da se poravna z barvo TabBar-a v safe-area padding-u.
+     Prej je bil bg = var(--bg), kar je povzročilo vidno "prazno" lise pod
+     TabBar-om v iOS PWA standalone mode (home indicator area). */
+  background: var(--surface);
 }
 #app {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  background: var(--bg);
 }
 body {
   color: var(--text);

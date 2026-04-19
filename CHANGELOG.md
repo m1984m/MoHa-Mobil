@@ -5,6 +5,16 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.5.2 — 2026-04-19
+
+### Popravki
+- **Dolg pritisk na mapo (550 ms) zdaj zares deluje na iPhonu.** Prej je bil nameščen `map.on('dragstart', clearLP)` listener, ki je MapLibre sprožil že ob rahlem premiku prsta (pred 20 px threshold-om) in timer takoj ubil. Odstranjen; razlikovanje drag vs. long-press skrbi zdaj samo `touchmove` prag, ki je bil povišan iz 8 px na 20 px (tesnejši prag je na iOS lovil prstno "trzanje"). Multi-touch preverjamo tudi po razdalji med točkami — MapLibre včasih poroča 2 točki za en prst, kar je blokiralo veljaven long-press.
+- **Planer ne predlaga več absurdnih poti "tja in nazaj" po isti liniji.** V RAPTOR inner loop dodana zapora: če smo do postaje prispeli z linijo R, vkrcanja nazaj na linijo R v naslednji rundi ne poskušamo več. Prejšnje: G2 do Pobrežja → G2 nazaj proti centru = nesmisel, ki je zmagal Pareto prag, ker je prihod teoretično minimalno boljši. Zdaj direktno obsoljeno.
+- **Predlogi poti v planerju se vsi vidijo.** Modal površina je imela `overflow-hidden`, kar je odrezalo 3–4 predloge + oba vpisna polja + časovni izbirnik. Zamenjano za `overflow-y: auto` + `max-height: calc(100dvh - env(safe-area-inset-bottom))`. Dodan `-webkit-overflow-scrolling: touch` za nativen momentum scroll na iOS.
+- **iOS PWA — prazna lisa pod vrstico zavihkov odstranjena.** Body background spremenjen iz `var(--bg)` (#F5F5F7 svetlo / #000 temno) v `var(--surface)` (#FFFFFF / #1C1C1E), tako da se zlije s TabBar-om v `env(safe-area-inset-bottom)` območju (home indicator). App bg zdaj živi eksplicitno na `#app` za notranje zaslone.
+
+---
+
 ## 0.5.1 — 2026-04-19
 
 ### Popravki

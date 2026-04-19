@@ -145,8 +145,12 @@ export function planAll(
       const minBoardTime = round >= 2 ? arrAt + TRANSFER_PENALTY_SEC : arrAt;
       const boards = tripsByBoardStop.get(sid);
       if (!boards) continue;
+      // Prepreči vkrcanje nazaj na isto linijo, po kateri smo ravnokar prispeli —
+      // to bi proizvedlo absurdne "tja in nazaj" predloge (npr. G2 do Pobrežja, nato G2 nazaj).
+      const sameRouteBlock = cur.prev.kind === 'bus' ? cur.prev.trip.route : -1;
       for (const { trip, idx } of boards) {
         if (!active.has(trip.service)) continue;
+        if (trip.route === sameRouteBlock) continue;
         const boardDep = trip.stops[idx][2];
         if (boardDep < minBoardTime) continue;
         for (let j = idx + 1; j < trip.stops.length; j++) {

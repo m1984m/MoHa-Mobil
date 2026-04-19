@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.5.1';
+export const APP_VERSION = '0.5.2';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Hiter načrt poti do postaje — en gumb v panelu postaje, samodejno izračuna',
-  'Dolg pritisk na mapo postavi cilj (naslov se samodejno poišče) — zdaj deluje tudi na iPhonu',
-  'Tap na mapo zapre postajo in vrne prejšnji pogled; pinch-zoom vklopljen',
-  'Planer znatno hitrejši; retry UI, če voznih redov ni bilo mogoče naložiti',
+  'Dolg pritisk na mapo zdaj zares deluje na iPhonu (prej je drag prekinil timer)',
+  'Planer več ne predlaga nesmiselnih poti "tja in nazaj" po isti liniji',
+  'Vsi predlogi poti so vidni, tudi če jih je več — seznam se pomakne',
+  'iOS PWA: odpravljena prazna lisa pod spodnjo vrstico zavihkov',
 ];

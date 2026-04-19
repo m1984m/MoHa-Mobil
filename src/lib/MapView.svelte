@@ -554,6 +554,8 @@
     // ga sintetizira takoj — tam oba handlerja peljeta v isto logiko.
     let lpTimer: any = null;
     let lpStart: { x: number; y: number } | null = null;
+    const LP_MOVE_PX = 20;   // iOS prsti "trzajo" več kot miška — 8 px je bilo pretesno.
+    const LP_DURATION = 550;
     const clearLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
     const startLP = (px: number, py: number, lat: number, lon: number) => {
       lpStart = { x: px, y: py };
@@ -562,26 +564,35 @@
         const hits = map.queryRenderedFeatures({ x: px, y: py } as any, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot', 'vehicles-dot'] });
         if (!hits.length) onMapLongPress(lat, lon);
         lpTimer = null;
-      }, 550);
+      }, LP_DURATION);
     };
     map.on('mousedown', (e) => startLP(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng));
     map.on('touchstart', (e: any) => {
-      // Multi-touch = pinch/rotate, ne long-press.
-      if (e.points && e.points.length > 1) { clearLP(); return; }
+      // Multi-touch = pinch/rotate, ne long-press. Preverimo tudi razdaljo med
+      // točkami, ker MapLibre včasih poroča points.length >= 2 tudi za en prst
+      // (touch target raster), kar bi blokiralo veljaven long-press.
+      if (e.points && e.points.length >= 2) {
+        const a = e.points[0], b = e.points[1];
+        const d = Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.y ?? 0) - (b.y ?? 0));
+        if (d > 40) { clearLP(); return; }
+      }
       startLP(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng);
     });
     map.on('mousemove', (e) => {
       if (!lpStart) return;
-      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > 8) clearLP();
+      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > LP_MOVE_PX) clearLP();
     });
     map.on('touchmove', (e) => {
       if (!lpStart) return;
-      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > 8) clearLP();
+      if (Math.hypot(e.point.x - lpStart.x, e.point.y - lpStart.y) > LP_MOVE_PX) clearLP();
     });
     map.on('mouseup', clearLP);
     map.on('touchend', clearLP);
     map.on('touchcancel', clearLP);
-    map.on('dragstart', clearLP);
+    // OPOMBA: `map.on('dragstart', clearLP)` je odstranjen — iOS MapLibre sproži
+    // dragstart takoj ob rahlem premiku prsta (še preden preseže 20 px threshold),
+    // kar je popolnoma prekinilo long-press na iPhonu. Samo threshold + timeout zdaj
+    // skrbita za razlikovanje drag vs. long-press.
 
     // User-initiated map movement (drag/pinch/wheel) — used to disable follow mode.
     const userMove = (e: any) => { if (e.originalEvent) onUserPan(); };

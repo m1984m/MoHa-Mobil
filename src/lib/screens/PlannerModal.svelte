@@ -301,8 +301,8 @@
 
 {#if open}
   <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);">
-    <div class="surface rounded-b-3xl shadow-float overflow-hidden"
-         style="padding-top: env(safe-area-inset-top);">
+    <div class="surface rounded-b-3xl shadow-float"
+         style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;">
       <div class="flex items-center justify-between px-4 pt-4 pb-2">
         <div class="t-title2">Načrtuj pot</div>
         <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label="Zapri">
