@@ -5,6 +5,14 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.6.1 — 2026-04-19
+
+### Popravki
+- **Pin mode je zdaj dvostopenjski, kot v Uber/Bolt.** v0.6.0 je križ stalno visel na sredini karte, kar je bilo moteče pri normalnem brskanju. Zdaj je skrit, dokler uporabnik ne tapne pin FAB-a (levo, MapPin ikona). Tap FAB → križ se pojavi, Načrtuj pill (desno) se spremeni v **"Potrdi tukaj"** (Check ikona), pin FAB pa v **"Prekliči"** (X). Drugi tap na Potrdi zabije pin na točno sredino karte in odpre planer. Prekliči ali izbira postaje/vozila pin mode avtomatsko zapustita.
+- **Pin gre natanko na izbrano lokacijo, brez snap-a na najbližjo postajo.** v0.6.0 je `dropPinAtCenter()` najprej preveril, ali je pod križem postaja in v tem primeru raje izbral njo. To je bilo v nasprotju z uporabniškim namenom — če je želel postajo, bi jo tapnil direktno. Zdaj pin vedno emitira natančne lat/lon koordinate trenutnega centra karte → planer kot cilj uporabi točno to točko (reverse-geocode naknadno).
+
+---
+
 ## 0.6.0 — 2026-04-19
 
 ### Novosti

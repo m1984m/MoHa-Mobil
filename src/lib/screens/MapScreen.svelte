@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft, MapPin } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft, MapPin, Check } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
@@ -49,6 +49,10 @@
   // Snapshot pogleda pred izbiro postaje — ob deselect vrnemo uporabnika na prejšnji zoom/center.
   // Ohranjen ob preklapljanju med postajami; počiščen šele ko ni več nobena izbrana.
   let prevView: { lat: number; lon: number; zoom: number } | null = null;
+  // Pin mode: aktiviran s tap-om na pin FAB (levo spodaj). Pokaže križ na sredini karte
+  // + zamenja FAB-e na "Potrdi" / "Prekliči". Drugi tap na Potrdi zabije pin na center.
+  let pinMode = false;
+  $: if (selectedStop || activePlan || selectedVehicle) pinMode = false;
 
   function openLineTimetable(route: any, dir = 0, stopId: number | null = null) {
     lineTimetableRoute = route;
@@ -479,7 +483,7 @@
     ] : []}
     vehicles={shownVehicles}
     mapStyle={$mapStyleKind}
-    showPinFab={!activePlan && !selectedStop && !selectedVehicle}
+    showCrosshair={pinMode}
     onStopTap={(s) => onStopChange(s)}
     onMapTap={() => { if (selectedStop) onStopChange(null); }}
     onMapLongPress={onMapLongPress}
@@ -672,14 +676,24 @@
     </div>
   {/if}
 
-  <!-- FAB: plan -->
+  <!-- Desno spodaj: Načrtuj (normalno) ALI Potrdi (pin mode) -->
   {#if !activePlan && !selectedStop && !selectedVehicle}
-    <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
-            style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
-            on:click={onOpenPlanner}>
-      <Navigation size={18} color="#ffffff" />
-      Načrtuj
-    </button>
+    {#if pinMode}
+      <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
+              style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
+              on:click={() => { mapRef?.dropPinAtCenter(); pinMode = false; }}
+              aria-label="Potrdi lokacijo cilja">
+        <Check size={18} color="#ffffff" />
+        Potrdi tukaj
+      </button>
+    {:else}
+      <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
+              style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
+              on:click={onOpenPlanner}>
+        <Navigation size={18} color="#ffffff" />
+        Načrtuj
+      </button>
+    {/if}
   {/if}
 
   <!-- Recenter -->
@@ -692,14 +706,23 @@
     </button>
   {/if}
 
-  <!-- Pin FAB: postavi cilj na sredino karte (nadomešča long-press gesto od v0.6.0) -->
+  <!-- Levo nad Recenter: Pin FAB (vstop v pin mode) ALI Prekliči (izhod) -->
   {#if !activePlan && !selectedStop && !selectedVehicle}
-    <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full shadow-card grid place-items-center"
-            style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'}); background: var(--accent); color: #ffffff"
-            on:click={() => mapRef?.dropPinAtCenter()}
-            aria-label="Postavi cilj na sredini zemljevida">
-      <MapPin size={18} color="#ffffff" />
-    </button>
+    {#if pinMode}
+      <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
+              style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'})"
+              on:click={() => pinMode = false}
+              aria-label="Prekliči izbiro cilja">
+        <X size={18} color="var(--text)" />
+      </button>
+    {:else}
+      <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full shadow-card grid place-items-center"
+              style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'}); background: var(--accent); color: #ffffff"
+              on:click={() => pinMode = true}
+              aria-label="Izberi cilj na karti">
+        <MapPin size={18} color="#ffffff" />
+      </button>
+    {/if}
   {/if}
 
   <!-- Contextual bottom sheet -->

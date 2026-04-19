@@ -16,7 +16,7 @@
   export let planEndpoints: { lat: number; lon: number; kind: 'origin' | 'dest' }[] = [];
   export let vehicles: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[] = [];
   export let mapStyle: 'map' | 'satellite' = 'map';
-  export let showPinFab: boolean = false;
+  export let showCrosshair: boolean = false;
   export let onStopTap: (s: Stop) => void = () => {};
   export let onMapTap: (lat: number, lon: number) => void = () => {};
   export let onMapLongPress: (lat: number, lon: number) => void = () => {};
@@ -675,18 +675,12 @@
     return map?.getZoom() ?? 13;
   }
 
-  // FAB handler — postavi cilj na trenutni center karte. Če je pod sredino postaja,
-  // raje selektiraj njo kot pa postaviti pin (več koristna UX poteza).
+  // FAB handler — postavi cilj na natančno lat/lon trenutnega centra karte.
+  // Namerno BREZ snap-a na najbližjo postajo: uporabnik je premaknil križ točno tja,
+  // kamor želi iti. Če bi želel postajo, bi jo tapnil neposredno.
   export function dropPinAtCenter() {
     if (!map) return;
     const c = map.getCenter();
-    const p = map.project([c.lng, c.lat]);
-    const hits = map.queryRenderedFeatures({ x: p.x, y: p.y } as any, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot'] });
-    if (hits.length) {
-      const id = hits[0].properties?.id as number;
-      const s = stops.find(x => x.id === id);
-      if (s) { onStopTap(s); return; }
-    }
     onMapLongPress(c.lat, c.lng);
   }
 </script>
@@ -696,9 +690,10 @@
   style="position:absolute; inset:0; width:100%; height:100%; background: linear-gradient(135deg, var(--surface-2), var(--bg)); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;">
 </div>
 
-{#if showPinFab}
+{#if showCrosshair}
   <!-- Crosshair overlay: pin tip zavešen nad natančno sredino karte, ground dot označuje točno pixel koordinato.
-       pointer-events: none — ne moti klikov na mapo. Uporabnik premakne karto, križ ostane na zaslonski sredini. -->
+       pointer-events: none — ne moti klikov na mapo. Uporabnik premakne karto, križ ostane na zaslonski sredini.
+       Viden samo ko je aktiven pin mode (po tap-u na pin FAB). -->
   <div class="pointer-events-none absolute z-20" style="left: 50%; top: 50%; transform: translate(-50%, calc(-100% + 2px));">
     <svg width="32" height="40" viewBox="0 0 24 30" style="filter: drop-shadow(0 3px 5px rgba(0,0,0,0.35));">
       <path d="M12 0C5.4 0 0 5.4 0 12c0 7.2 9.5 15.5 11 16.7a1.5 1.5 0 0 0 2 0C14.5 27.5 24 19.2 24 12 24 5.4 18.6 0 12 0z"
