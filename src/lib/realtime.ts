@@ -163,11 +163,16 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
   const out: StopArrival[] = [];
   for (const a of j.ArrivalsForStopPoints ?? []) {
     const etaMin = a.ETAMin ?? 0;
-    // DelayMin iz API-ja, ali izpeljano iz razlike med ETA in voznim redom.
-    let delayMin = typeof a.DelayMin === 'number' ? a.DelayMin : 0;
-    if (delayMin === 0) {
+    // DelayMin iz API-ja je source of truth — ne prepiši vrednosti 0 ("točen").
+    // Fallback kliče samo, če API ne vrne DelayMin (undefined/null), ne pa ko je 0.
+    // Prej je imel bug: DelayMin === 0 je sprožil fallback, ki zaradi zaokroževanja
+    // na minuto (nowMin, schedMin) lahko produciral ±1 min pri dejansko točnem busu.
+    let delayMin: number;
+    if (typeof a.DelayMin === 'number') {
+      delayMin = a.DelayMin;
+    } else {
       const schedMin = parseHHMMtoMin(a.ArrivalTime ?? '');
-      if (schedMin != null) delayMin = etaMin - (schedMin - nowMin);
+      delayMin = schedMin != null ? etaMin - (schedMin - nowMin) : 0;
     }
     out.push({
       lineId: a.LineId,
