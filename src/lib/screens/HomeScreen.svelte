@@ -25,7 +25,7 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let gtfsMeta: GtfsMeta | null = null;
 
-  const GTFS_DATE_FMT = new Intl.DateTimeFormat('sl-SI', { day: 'numeric', month: 'short', year: 'numeric' });
+  const GTFS_DATE_FMT = new Intl.DateTimeFormat('sl-SI', { day: 'numeric', month: 'numeric', year: 'numeric' });
   $: gtfsDateLabel = gtfsMeta ? GTFS_DATE_FMT.format(new Date(gtfsMeta.built)) : '';
 
   onMount(async () => {
@@ -64,7 +64,7 @@
           {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
         </div>
         {#if gtfsMeta}
-          <div class="t-footnote text-muted mt-0.5">Vozni redi: {gtfsDateLabel}</div>
+          <div class="t-footnote text-muted mt-0.5">Vozni red velja od: {gtfsDateLabel}</div>
         {/if}
       </div>
       {#if weather}
