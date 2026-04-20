@@ -261,7 +261,7 @@
     </div>
   {:else if activeTab === 'timetables'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <TimetablesScreen {gtfs} />
+      <TimetablesScreen {gtfs} onStopSelect={handleStopSelect} />
     </div>
   {:else if activeTab === 'map'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>

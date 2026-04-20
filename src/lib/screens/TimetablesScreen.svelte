@@ -8,6 +8,7 @@
   import type { GTFS, Route, Stop } from '../gtfs';
 
   export let gtfs: GTFS | null;
+  export let onStopSelect: (s: Stop) => void = () => {};
 
   type Mode = 'lines' | 'stops';
   let mode: Mode = 'lines';
@@ -15,6 +16,7 @@
 
   let lineOpen = false;
   let lineRoute: Route | null = null;
+  let lineDir = 0;
   let stopOpen = false;
   let selectedStop: Stop | null = null;
 
@@ -36,7 +38,7 @@
       : []
     : [];
 
-  function openLine(r: Route) { lineRoute = r; lineOpen = true; }
+  function openLine(r: Route, dir = 0) { lineRoute = r; lineDir = dir; lineOpen = true; }
   function openStop(s: Stop) { selectedStop = s; stopOpen = true; }
 </script>
 
@@ -108,5 +110,19 @@
   </div>
 </Screen>
 
-<LineTimetableModal open={lineOpen} {gtfs} route={lineRoute} onClose={() => lineOpen = false} />
-<StopTimetableModal open={stopOpen} {gtfs} stop={selectedStop} onClose={() => stopOpen = false} />
+<LineTimetableModal open={lineOpen} {gtfs} route={lineRoute} initialDir={lineDir}
+  onClose={() => lineOpen = false}
+  onOpenStop={(stopId) => {
+    const s = gtfs?.stops.find(x => x.id === stopId);
+    if (!s) return;
+    lineOpen = false;
+    onStopSelect(s);
+  }} />
+<StopTimetableModal open={stopOpen} {gtfs} stop={selectedStop}
+  onClose={() => stopOpen = false}
+  onOpenLine={(routeId, dir) => {
+    const r = gtfs?.routes.find(x => x.id === routeId);
+    if (!r) return;
+    stopOpen = false;
+    openLine(r, dir);
+  }} />

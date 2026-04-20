@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.7.9';
+export const APP_VERSION = '0.7.4';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Dom v živo — usklajen s postajnim pogledom',
-  'ETA busa povsod enaka',
-  'Ikona busa sledi GPS-u — brez drifta',
-  'Odstranjena beta animacija premikanja',
+  'Bus → klik na naslednjo postajo te tja pelje',
+  'Linija → "Odpri postajo" skoči na postajni pogled',
+  'Postaja → klik na linijo odpre njen vozni red',
+  'Vse je medsebojno povezano — brez slepih ulic',
 ];

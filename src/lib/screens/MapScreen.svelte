@@ -241,6 +241,15 @@
   }
   function closeVehicle() { selectedVehicle = null; selectedLive = null; followBus = false; sheetRef?.setSnap(0); }
 
+  // Krožno navigacijo: iz bus detail v postajni pogled. handleStopChange poskrbi za
+  // vse ostalo (clear selectedVehicle, flyTo, arrivals polling, shapes fitBounds).
+  // selectedLive clearamo ročno, da ustavi vehicleArrival poll v reactive bloku.
+  function jumpToStopFromBus(s: Stop) {
+    selectedLive = null;
+    followBus = false;
+    onStopChange(s);
+  }
+
   let followBus = false;
   // Sledim: ko je vklopljen in imamo vozilo, vsako 1 s (smoothed tick) recenter mapo.
   // selectedVehicle.tripId je deviceId za live; uskladi z $smoothedVehicles.
@@ -953,10 +962,14 @@
         </div>
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each vehNextStops as ns, i}
-            <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-              <div class="w-2.5 h-2.5 rounded-full" style="background: {i === 0 ? selectedVehicle.color : 'var(--border-strong)'}"></div>
-              <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} truncate">{ns.stop.name}</div>
-              <div class="t-footnote text-muted">{fmtTime(ns.arr)} · {ns.minutes}′</div>
+            <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
+              <button class="pressable w-full px-4 py-2.5 flex items-center gap-3 text-left"
+                      on:click={() => jumpToStopFromBus(ns.stop)}
+                      aria-label="Odpri postajo {ns.stop.name}">
+                <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {i === 0 ? selectedVehicle.color : 'var(--border-strong)'}"></div>
+                <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} truncate">{ns.stop.name}</div>
+                <div class="t-footnote text-muted shrink-0">{fmtTime(ns.arr)} · {ns.minutes}′</div>
+              </button>
             </li>
           {/each}
         </ul>
@@ -1008,8 +1021,23 @@
   {/if}
 
   <StopTimetableModal open={stopTimetableOpen} {gtfs} stop={selectedStop}
-    onClose={() => stopTimetableOpen = false} />
+    onClose={() => stopTimetableOpen = false}
+    onOpenLine={(routeId, dir) => {
+      const r = gtfs?.routes.find(x => x.id === routeId);
+      if (!r) return;
+      stopTimetableOpen = false;
+      openLineTimetable(r, dir, selectedStop?.id ?? null);
+    }} />
   <LineTimetableModal open={lineTimetableOpen} {gtfs} route={lineTimetableRoute} initialDir={lineTimetableDir}
     initialStopId={lineTimetableStopId}
-    onClose={() => lineTimetableOpen = false} />
+    onClose={() => lineTimetableOpen = false}
+    onOpenStop={(stopId) => {
+      const s = gtfs?.stops.find(x => x.id === stopId);
+      if (!s) return;
+      lineTimetableOpen = false;
+      selectedVehicle = null;
+      selectedLive = null;
+      followBus = false;
+      onStopChange(s);
+    }} />
 </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, ArrowRightLeft, MapPin, ChevronDown, Check, Star } from 'lucide-svelte';
+  import { X, ArrowRightLeft, MapPin, ChevronDown, Check, Star, ExternalLink } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import { allTripsForRouteDirection, dayKindToDate, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
@@ -10,6 +10,9 @@
   export let initialDir: number = 0;
   export let initialStopId: number | null = null;
   export let onClose: () => void;
+  // Klik na "Odpri postajo" → parent naj odpre postajni pogled (Karta) za izbrano postajo.
+  // Brez tega prop-a se gumb ne izriše.
+  export let onOpenStop: ((stopId: number) => void) | null = null;
 
   let day: DayKind = detectToday();
   let dir: number = initialDir;
@@ -140,6 +143,13 @@
           <ChevronDown size={16} style="transform: rotate({pickerOpen ? 180 : 0}deg); transition: transform 180ms" />
         </button>
         {#if selectedStopId != null}
+          {#if onOpenStop}
+            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center"
+                    on:click={() => onOpenStop!(selectedStopId!)}
+                    aria-label="Odpri postajo na karti">
+              <ExternalLink size={18} color="var(--accent)" />
+            </button>
+          {/if}
           <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center"
                   on:click={() => favStops.toggle(selectedStopId!)}
                   aria-label={selectedIsFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}

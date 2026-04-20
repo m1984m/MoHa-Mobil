@@ -5,6 +5,22 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.7.4 — 2026-04-21
+
+### Novosti
+- **Krožna navigacija med prikazi.** Uporabnik lahko zdaj brez slepih ulic kroži: Dom → postaja → linija → postaja → linija → … Konkretno:
+  - **Bus detail → klik na vrstico v "Naslednje postaje"** zapre bus detail in odpre postajni pogled za tisto postajo (flyTo, žive prihode, filter linij) — prej je bila lista zgolj informativna, tap ni naredil ničesar.
+  - **Vozni red linije → "Odpri postajo" ikona** (ExternalLink) ob izbrani postaji v `LineTimetableModal`. Zapre modal in odpre Karto → postaja. Deluje tako iz Karte (bus detail) kot iz zavihka Vozni redi.
+  - **Vozni red postaje → klik na LineBadge chip v uri** (`StopTimetableModal`) zapre stop modal in odpre vozni red tiste linije (s pravo smerjo `trip.dir`). Deluje v obeh kontekstih (Karta, Vozni redi).
+- **Zavihek Vozni redi — klik na postajo po imenu** zdaj poleg `StopTimetableModal` odpre tudi Karta → postaja skozi `onOpenStop` pot iz `LineTimetableModal`, tako da je izhodišče iz obeh zavihkov usklajeno.
+
+### Tehnično
+- `LineTimetableModal`: nov opcijski `onOpenStop: (stopId) => void` prop. Ko je podan, se v selected-stop headerju prikaže ExternalLink ikona (accent barva, poleg Star fav gumba).
+- `StopTimetableModal`: nov opcijski `onOpenLine: (routeId, dir) => void` prop. Ko je podan, se LineBadge chip-i v urnem pregledu rendirajo kot `<button>` namesto `<div>`, s pravilnim `trip.dir` iz `grouped`.
+- `MapScreen`: nova helper funkcija `jumpToStopFromBus(s)` počisti `selectedLive/followBus` in delegira `handleStopChange` preko `onStopChange(s)` (ki že počisti `selectedVehicle` in sproži flyTo/refreshArrivals/fitBounds).
+- `TimetablesScreen`: nov `onStopSelect: (s: Stop) => void` prop (routed iz App.svelte → `handleStopSelect` → activeTab='map' + selectedStop), hrani `lineDir` state za `initialDir` propagation.
+- App.svelte prop threadanje: `<TimetablesScreen onStopSelect={handleStopSelect} />`. Brez `handleStopSelect` v TimetablesScreen-u je bilo onemogočeno jumpanje iz Linije → postaja iz tega zavihka.
+
 ## 0.7.9 — 2026-04-20
 
 ### Popravki (kritični)

@@ -13,6 +13,9 @@
   export let filterRouteId: number | null = null;
   export let filterDir: number | null = null;
   export let filterHeadsign: string = '';
+  // Klik na LineBadge → parent naj odpre vozni red te linije (smer = trip.dir).
+  // Brez tega prop-a so LineBadge-i statični.
+  export let onOpenLine: ((routeId: number, dir: number) => void) | null = null;
 
   let day: DayKind = detectToday();
 
@@ -99,10 +102,19 @@
                 <div class="w-12 shrink-0 t-title3 font-bold tabular-nums pt-1">{String(h).padStart(2, '0')}</div>
                 <div class="flex-1 flex flex-wrap gap-1.5">
                   {#each list as d}
-                    <div class="inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1">
-                      <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
-                      <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
-                    </div>
+                    {#if onOpenLine}
+                      <button class="pressable inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1"
+                              on:click={() => onOpenLine!(d.route.id, d.trip.dir)}
+                              aria-label="Vozni red linije {d.route.short}">
+                        <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
+                        <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
+                      </button>
+                    {:else}
+                      <div class="inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1">
+                        <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
+                        <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
+                      </div>
+                    {/if}
                   {/each}
                 </div>
               </li>
