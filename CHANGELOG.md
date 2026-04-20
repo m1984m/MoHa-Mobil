@@ -5,6 +5,22 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.7.0 — 2026-04-20
+
+### Novosti
+- **Sledenje lokaciji v živo (`watchLocation`).** Moder pin uporabnika se zdaj avtomatsko posodablja med gibanjem (high-accuracy GPS, cache 5 s). Stikalo v Nastavitvah (privzeto ON). Ob preklicu pravic (`err.code === 1`) watch avtomatsko odjavi, da ne vrtimo prazen zahtevek.
+- **Gladko premikanje busov — beta, privzeto OFF.** Nova nastavitev `smoothVehicleMotion` (v Nastavitvah pod Karto, oznaka "beta"). Ko je OFF, bus "skoči" vsakih 30 s na novo GPS pozicijo (poceni, deterministično). Ko je ON, animacija teče po voznem redu + OBA anchor offset (RAF). Razlog za OFF privzet: interpolacija pri dolgi razliki med poll-om in GPS fresh-om občasno "prehiteva", kar je pri beta testu večje motenje kot suhi preskoki.
+- **Datum veljavnosti voznega reda na Domačem zaslonu.** Pod pozdravom je nova vrstica "Vozni redi: DD. MMM YYYY" (iz `meta.json`, sl-SI format). Uporabniki pogosto ne vedo, ali delajo s svežimi ali starimi GTFS podatki; zdaj je to eksplicitno.
+
+### Popravki
+- **Poll interval 30 s (prej 8 s).** Marprom GPS posodobitve so v praksi ~60 s. 8 s je bil wasteful — isti GPS se je vračal 7× zapored. 30 s ujame prvo svežo pozicijo v povprečju 15 s po Marprom update-u. Manj bandwidth-a, manj pritiska na proxy-je.
+- **OBA proxy fallback chain.** Če `corsproxy.io` odpove (429/5xx/timeout), se zahteva avtomatsko rotira na `api.allorigins.win` (in obratno). Sticky izbira — uspešen proxy ostane trenutni. 4 s timeout per proxy. Custom proxy (`VITE_OBA_PROXY`) obdrži no-fallback obnašanje (uporabnik ima svoj nadzor, ne želi, da gre zahteva mimo njegovega endpointa).
+- **Hitrejši prvi render karte — paralelni prefetch `shapes.json` (~800 KB).** Prej se je shapes.json fetchal šele ob prvem klicu `loadShapes()`, ki ga MapScreen sproži po mount-u → dodaten round-trip. Zdaj gre v ozadje hkrati z ostalimi GTFS fetch-i v `loadGTFS()`. Swallow-catch: GTFS uspeh ni odvisen od shapes. Odreže ~300–800 ms na 4G.
+- **Retry za `loadShapes()` ob transientni napaki.** Ob network fail se `shapesLoading` promise zdaj počisti, tako da naslednji klic požene nov fetch (prej so vsi dobili isti rejected promise → zemljevid trajno brez tras). Isti vzorec kot že obstoječi `loadGTFS`.
+- **≥60 % hitrejši match vozil z GTFS trip-i.** Nov `precomputeVehiclesIndexes(gtfs, when)` vrne `{ stopById, tripsByRoute, activeServices, routeIdByShort, dayKey }` v WeakMap<GTFS> cache-u. Prej je vsak klic `findTripForLiveBus` linearno skeniral 14k+ trip-ov in rebuildal `stopById` Map — pri 15+ vozilih preko 5 ms per klic. Zdaj razrez po routeId je O(#trip-ov na linijo) ≈ 50–200. Day-key check sproži rebuild ob polnoči (drugačen aktivni servis).
+
+---
+
 ## 0.6.2 — 2026-04-19
 
 ### Popravki

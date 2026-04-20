@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.6.2';
+export const APP_VERSION = '0.7.0';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Krožna linija G3: odpravljen preskok ikone busa mimo postaj — pozicija sedaj sovpada z ETA',
-  'Projekcija GPS na traso upošteva zadnji anchor — brez teleporta pri zaključku zanke',
-  'Živi bus se match-a samo na trip, ki je strogo v teku — brez skakanja med overlappnimi vozoredi',
-  'Popravljen crop trase na loop-closure segmentu — brez risanja vzvratno skozi celo zanko',
+  'Sledenje lokaciji v živo — modri pin zdaj drsi po karti, stikalo v Nastavitvah',
+  'Gladko premikanje busov (beta, privzeto OFF) — prehod na 30 s poll cikel (prej 8 s)',
+  'Datum voznega reda viden na Domačem zaslonu — ni več ugibanja, kako sveži so GTFS podatki',
+  'Zanesljivejše live podatke: OBA proxy fallback + hitrejši prvi render karte + 60 % hitrejši match vozil',
 ];
