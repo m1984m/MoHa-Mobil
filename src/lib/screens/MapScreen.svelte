@@ -90,8 +90,8 @@
   }
 
   function refreshSynth() {
-    if (!gtfs || !shapesMap) return;
-    synthVehicles = activeVehicles(gtfs, shapesMap, new Date());
+    if (!gtfs) return;
+    synthVehicles = activeVehicles(gtfs, new Date());
   }
 
   // Real vozila iz Marprom Trak8 OBA (vsakih 30 s, Marprom GPS update cadence ~60 s).

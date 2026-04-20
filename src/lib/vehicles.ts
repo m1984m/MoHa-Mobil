@@ -1,5 +1,5 @@
-import type { GTFS, Shape, Stop, Trip } from './gtfs';
-import { cropShape, todayServiceIds, routeColor } from './gtfs';
+import type { GTFS, Stop, Trip } from './gtfs';
+import { todayServiceIds, routeColor } from './gtfs';
 
 // Predračunani indeksi GTFS-a za hot path (findTripForLiveBus, klicana enkrat
 // per živ bus per poll). Brez indeksa smo vsak klic linearno skenirali 14k+ trip-ov
@@ -119,9 +119,19 @@ export type Vehicle = {
   dwelling: boolean;
 };
 
+// Sintetične pozicije busov (fallback, ko OBA živi podatki niso na voljo).
+// Metoda: stop-snap — pokaži bus TOČNO na zadnji postaji, ki bi jo po voznem
+// redu že obiskal (največji j z arr[j] ≤ nowSec). Ikona "preskoči" na naslednjo
+// postajo ob času prihoda po GTFS.
+//
+// Zakaj ne interpolacija med postajami: Marprom GTFS ima mid-stop časovno
+// razporeditev pogosto linearno interpolirano (ni real data). Prejšnja
+// koda je progress = (nowSec - segStart)/(segEnd - segStart) + pointAtFraction
+// po cropShape polyline dajala lažno natančnost — bus na karti je vozil po
+// "shape"-u z napačno hitrostjo, ki ni odsevala resničnosti. Stop-snap
+// jasno sporoča: "tu je bus po voznem redu", brez fake vmesne interpolacije.
 export function activeVehicles(
   gtfs: GTFS,
-  shapesMap: Map<number, Shape>,
   when: Date = new Date()
 ): Vehicle[] {
   const active = todayServiceIds(gtfs, when);
@@ -139,73 +149,38 @@ export function activeVehicles(
 
     const route = routeById.get(t.route);
     if (!route) continue;
-    const color = routeColor(t.route);
 
-    let placed = false;
-    for (let i = 0; i < t.stops.length - 1; i++) {
-      const segStart = t.stops[i][2];
-      const segEnd = t.stops[i + 1][1];
-      if (nowSec >= segStart && nowSec <= segEnd) {
-        const progress = segEnd > segStart ? (nowSec - segStart) / (segEnd - segStart) : 0;
-        const fromS = stopById.get(t.stops[i][0])!;
-        const toS = stopById.get(t.stops[i + 1][0])!;
-        let lat: number, lon: number, bearing = 0;
-        const shape = t.shape != null ? shapesMap.get(t.shape) : null;
-        if (shape) {
-          const cropped = cropShape(shape, fromS, toS);
-          const pt = pointAtFraction(cropped, progress);
-          lat = pt[0]; lon = pt[1]; bearing = pt[2];
-        } else {
-          lat = fromS.lat + (toS.lat - fromS.lat) * progress;
-          lon = fromS.lon + (toS.lon - fromS.lon) * progress;
-          bearing = Math.atan2(toS.lon - fromS.lon, toS.lat - fromS.lat) * 180 / Math.PI;
-        }
-        out.push({
-          tripId: t.id, routeId: t.route, routeShort: route.short, headsign: t.headsign,
-          lat, lon, bearing, color, nextStopId: t.stops[i + 1][0], dwelling: false,
-        });
-        placed = true;
-        break;
-      }
-      // Dwell at stop i+1 (between arrival and next departure)
-      if (i + 1 < t.stops.length - 1) {
-        const dwellEnd = t.stops[i + 1][2];
-        if (nowSec > segEnd && nowSec < dwellEnd) {
-          const s = stopById.get(t.stops[i + 1][0])!;
-          out.push({
-            tripId: t.id, routeId: t.route, routeShort: route.short, headsign: t.headsign,
-            lat: s.lat, lon: s.lon, bearing: 0, color, nextStopId: t.stops[i + 1][0], dwelling: true,
-          });
-          placed = true;
-          break;
-        }
-      }
+    // Zadnja že-obiskana postaja: največji j z arr[j] ≤ nowSec (prva postaja ima
+    // arr=0, tam uporabimo dep[0]). Bus je "na" j-ti postaji dokler ne prispe na j+1.
+    let j = -1;
+    for (let i = 0; i < t.stops.length; i++) {
+      const ref = t.stops[i][1] || t.stops[i][2];
+      if (ref <= nowSec) j = i;
+      else break;
     }
-    void placed;
+    if (j < 0) continue;
+
+    const stop = stopById.get(t.stops[j][0]);
+    if (!stop) continue;
+
+    let bearing = 0;
+    if (j < t.stops.length - 1) {
+      const next = stopById.get(t.stops[j + 1][0]);
+      if (next) bearing = Math.atan2(next.lon - stop.lon, next.lat - stop.lat) * 180 / Math.PI;
+    }
+
+    out.push({
+      tripId: t.id,
+      routeId: t.route,
+      routeShort: route.short,
+      headsign: t.headsign,
+      lat: stop.lat,
+      lon: stop.lon,
+      bearing,
+      color: routeColor(t.route),
+      nextStopId: j < t.stops.length - 1 ? t.stops[j + 1][0] : t.stops[j][0],
+      dwelling: true,
+    });
   }
   return out;
-}
-
-function pointAtFraction(pts: [number, number][], f: number): [number, number, number] {
-  if (pts.length === 0) return [0, 0, 0];
-  if (pts.length === 1) return [pts[0][0], pts[0][1], 0];
-  const lens: number[] = [0];
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dLat = pts[i][0] - pts[i - 1][0];
-    const dLon = pts[i][1] - pts[i - 1][1];
-    total += Math.sqrt(dLat * dLat + dLon * dLon);
-    lens.push(total);
-  }
-  if (total === 0) return [pts[0][0], pts[0][1], 0];
-  const target = Math.max(0, Math.min(1, f)) * total;
-  let i = 1;
-  while (i < pts.length && lens[i] < target) i++;
-  if (i >= pts.length) i = pts.length - 1;
-  const segLen = lens[i] - lens[i - 1];
-  const segFrac = segLen > 0 ? (target - lens[i - 1]) / segLen : 0;
-  const lat = pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * segFrac;
-  const lon = pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * segFrac;
-  const bearing = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]) * 180 / Math.PI;
-  return [lat, lon, bearing];
 }
