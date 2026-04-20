@@ -1,5 +1,43 @@
-import type { GTFS, Shape, Trip } from './gtfs';
+import type { GTFS, Shape, Stop, Trip } from './gtfs';
 import { cropShape, todayServiceIds, routeColor } from './gtfs';
+
+// Predračunani indeksi GTFS-a za hot path (findTripForLiveBus, klicana enkrat
+// per živ bus per poll). Brez indeksa smo vsak klic linearno skenirali 14k+ trip-ov
+// in rebuildali stopById map — pri 15+ busih preko 5 ms per klic. Z indeksom
+// razrez za routeId je O(#trip-ov na linijo) ≈ 50–200.
+export type VehiclesIndexes = {
+  stopById: Map<number, Stop>;
+  tripsByRoute: Map<number, Trip[]>;
+  activeServices: Set<number>;
+  routeIdByShort: Map<string, number>;
+  dayKey: string; // YYYYMMDD — invalidira ob polnoči
+};
+
+// WeakMap cache: pri menjavi GTFS reference (reload) se index avtomatsko sprosti
+// z GC-jem. Rebuild: ko dayKey ne ustreza več (polnoč).
+const indexCache = new WeakMap<GTFS, VehiclesIndexes>();
+
+function dayKey(when: Date): string {
+  return `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
+}
+
+export function precomputeVehiclesIndexes(gtfs: GTFS, when: Date = new Date()): VehiclesIndexes {
+  const key = dayKey(when);
+  const cached = indexCache.get(gtfs);
+  if (cached && cached.dayKey === key) return cached;
+  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+  const tripsByRoute = new Map<number, Trip[]>();
+  for (const t of gtfs.trips) {
+    const arr = tripsByRoute.get(t.route);
+    if (arr) arr.push(t);
+    else tripsByRoute.set(t.route, [t]);
+  }
+  const activeServices = todayServiceIds(gtfs, when);
+  const routeIdByShort = new Map(gtfs.routes.map(r => [r.short.toLowerCase(), r.id]));
+  const idx: VehiclesIndexes = { stopById, tripsByRoute, activeServices, routeIdByShort, dayKey: key };
+  indexCache.set(gtfs, idx);
+  return idx;
+}
 
 // Heuristic match: poišči aktivni GTFS trip za živi Marprom OBA bus.
 // OBA daje LineCode + Headsign + lat/lon; GTFS trips nimajo istega ID-ja.
@@ -7,18 +45,17 @@ import { cropShape, todayServiceIds, routeColor } from './gtfs';
 // depom in zadnjim arr) → izberi tisti, katerega ena od postaj je geografsko
 // najbližje živemu busu. Headsign ujemanje je dodatni (mehki) filter.
 export function findTripForLiveBus(
-  gtfs: GTFS,
   live: { lineCode: string; headsign: string; lat: number; lon: number },
   nowSec: number,
-  routeIdByShort: Map<string, number>,
+  idx: VehiclesIndexes,
 ): Trip | null {
-  const routeId = routeIdByShort.get(live.lineCode.toLowerCase());
+  const routeId = idx.routeIdByShort.get(live.lineCode.toLowerCase());
   if (routeId == null) return null;
-  const active = todayServiceIds(gtfs, new Date());
+  const routeTrips = idx.tripsByRoute.get(routeId);
+  if (!routeTrips) return null;
   const candidates: Trip[] = [];
-  for (const t of gtfs.trips) {
-    if (t.route !== routeId) continue;
-    if (!active.has(t.service)) continue;
+  for (const t of routeTrips) {
+    if (!idx.activeServices.has(t.service)) continue;
     if (t.stops.length < 2) continue;
     const firstDep = t.stops[0][2];
     const lastArr = t.stops[t.stops.length - 1][1];
@@ -42,12 +79,11 @@ export function findTripForLiveBus(
   const byHeadsign = hs ? basePool.filter(t => t.headsign.toLowerCase() === hs) : [];
   const pool = byHeadsign.length > 0 ? byHeadsign : basePool;
 
-  const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
   let best: Trip | null = null;
   let bestD = Infinity;
   for (const t of pool) {
     for (const st of t.stops) {
-      const s = stopById.get(st[0]);
+      const s = idx.stopById.get(st[0]);
       if (!s) continue;
       const d = (s.lat - live.lat) ** 2 + (s.lon - live.lon) ** 2;
       if (d < bestD) { bestD = d; best = t; }

@@ -8,7 +8,7 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import { upcomingDepartures, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
-  import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, type Vehicle } from '../vehicles';
+  import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
   import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, setVehiclePaths, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
@@ -112,22 +112,26 @@
     lastShapeUpdateAt = live.updatedAt;
     const now = new Date();
     const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+    const idx = precomputeVehiclesIndexes(gtfs, now);
     const paths = new Map<number, { shapePts: [number, number][]; stops: { lat: number; lon: number; time: number }[] }>();
+    // eslint-disable-next-line no-console
+    console.time('findTripBatch');
     for (const v of live.vehicles) {
-      const t = findTripForLiveBus(gtfs, {
+      const t = findTripForLiveBus({
         lineCode: v.lineCode, headsign: v.headsign, lat: v.lat, lon: v.lon,
-      }, nowSec, routeIdByShort);
+      }, nowSec, idx);
       if (!t || t.shape == null) continue;
       const sh = shapesMap.get(t.shape);
       if (!sh) continue;
       const stops: { lat: number; lon: number; time: number }[] = [];
       for (const [stopId, arrSec] of t.stops) {
-        const s = stopById.get(stopId);
+        const s = idx.stopById.get(stopId);
         if (s) stops.push({ lat: s.lat, lon: s.lon, time: arrSec });
       }
       if (stops.length >= 2) paths.set(v.deviceId, { shapePts: sh.pts, stops });
     }
+    // eslint-disable-next-line no-console
+    console.timeEnd('findTripBatch');
     setVehiclePaths(paths);
   }
   $: smoothedById = new Map(smoothed.map(s => [s.deviceId, s]));
@@ -305,13 +309,14 @@
     const syn = gtfs.trips.find(t => t.id === selectedVehicle!.tripId);
     if (syn) return syn;
     if (!selectedLive) return null;
-    const nowSec = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
-    return findTripForLiveBus(gtfs, {
+    const now = new Date();
+    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    return findTripForLiveBus({
       lineCode: selectedLive.lineCode,
       headsign: selectedLive.headsign,
       lat: selectedLive.lat,
       lon: selectedLive.lon,
-    }, nowSec, routeIdByShort);
+    }, nowSec, precomputeVehiclesIndexes(gtfs, now));
   })();
 
   $: vehNextStops = (() => {
