@@ -5,9 +5,9 @@
   import { fade } from 'svelte/transition';
   import { initTheme, type Theme } from './lib/theme';
   import { loadGTFS, type GTFS, type Stop } from './lib/gtfs';
-  import { getLocation, MARIBOR } from './lib/geo';
+  import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
-  import { defaultTab } from './lib/settings';
+  import { defaultTab, liveLocationWatch } from './lib/settings';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
@@ -41,6 +41,7 @@
   let hasGeo = false;
   let weather: Weather | null = null;
   let weatherTimer: ReturnType<typeof setInterval> | null = null;
+  let stopWatch: (() => void) | null = null;
 
   let selectedStop: Stop | null = null;
   let activePlan: {
@@ -145,6 +146,8 @@
 
   onDestroy(() => {
     if (weatherTimer) clearInterval(weatherTimer);
+    stopWatch?.();
+    stopWatch = null;
   });
 
   async function requestLocation() {
@@ -152,7 +155,31 @@
       const p = await getLocation();
       origin = { lat: p.coords.latitude, lon: p.coords.longitude };
       hasGeo = true;
+      if (get(liveLocationWatch)) startWatch();
     } catch {}
+  }
+
+  function startWatch() {
+    if (stopWatch) return;
+    stopWatch = watchLocation(
+      (p) => { origin = { lat: p.lat, lon: p.lon }; },
+      (err) => {
+        // PERMISSION_DENIED (1): user je revoke-al → ustavi in reset hasGeo.
+        // POSITION_UNAVAILABLE (2) / TIMEOUT (3): naslednji update pride sam,
+        // watcher ne ubij — samo pusti mimo.
+        if (err.code === 1) {
+          stopWatch?.();
+          stopWatch = null;
+          hasGeo = false;
+        }
+      },
+    );
+  }
+
+  // Dinamično sledenje stikala v Nastavitvah — brez potrebe po reload-u.
+  $: {
+    if ($liveLocationWatch && hasGeo && !stopWatch) startWatch();
+    if (!$liveLocationWatch && stopWatch) { stopWatch(); stopWatch = null; }
   }
   async function refreshWeather() {
     weather = await fetchWeather(origin.lat, origin.lon);

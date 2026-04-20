@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import { applyTheme, type Theme } from '../theme';
-  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
+  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
 
@@ -245,6 +245,20 @@
               </button>
             {/each}
           </div>
+        </li>
+        <li class="min-h-[56px] px-4 flex items-center gap-3 border-t border-base">
+          <Navigation size={20} color="var(--text-muted)" />
+          <div class="flex-1">
+            <div class="t-body">Sledi moji lokaciji v živo</div>
+            <div class="t-footnote text-muted">Porabi več baterije. Ob izklopu se pozicija osveži le ob zagonu aplikacije.</div>
+          </div>
+          <button class="pressable relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$liveLocationWatch ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => liveLocationWatch.update(v => !v)}
+                  aria-label="Preklopi sledenje lokaciji v živo">
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$liveLocationWatch ? '1.375rem' : '0.125rem'}"></span>
+          </button>
         </li>
       </ul>
     </section>

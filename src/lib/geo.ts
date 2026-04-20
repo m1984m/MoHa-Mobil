@@ -9,5 +9,25 @@ export function getLocation(): Promise<GeolocationPosition> {
   });
 }
 
+// Živa sledilna pozicija prek watchPosition. Vrne unsubscribe funkcijo.
+// Kličeta ga App.svelte in poljubni drugi consumer-ji; več paralelnih watch-ov
+// je ok — brskalnik deduplicira na OS nivoju.
+export function watchLocation(
+  onUpdate: (p: { lat: number; lon: number; accuracy: number }) => void,
+  onError?: (err: GeolocationPositionError) => void,
+): () => void {
+  if (!navigator.geolocation) return () => {};
+  const id = navigator.geolocation.watchPosition(
+    (pos) => onUpdate({
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+    }),
+    (err) => onError?.(err),
+    { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 },
+  );
+  return () => navigator.geolocation.clearWatch(id);
+}
+
 // Maribor center fallback
 export const MARIBOR = { lat: 46.5547, lon: 15.6459 };

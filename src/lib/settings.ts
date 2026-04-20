@@ -48,6 +48,10 @@ export const departureDisplay = persisted<DepartureDisplay>('mm.departureDisplay
 // Kompaktni seznami — manjše višine vrstic, več vsebine na ekran.
 export const compactLists = persisted<boolean>('mm.compactLists.v1', false);
 
+// Sledi uporabnikovi lokaciji v živo (watchPosition) — pika na karti se premika
+// med hojo/vožnjo. Default ON za beta, da dobimo feedback; off pa prihrani baterijo.
+export const liveLocationWatch = persisted<boolean>('mm.liveLocationWatch.v1', true);
+
 // Velikost napisov na zemljevidu (imena cest, postaj). Faktor pomnožimo s privzeto
 // text-size definicijo stila.
 export type MapLabelSize = 'small' | 'medium' | 'large';
