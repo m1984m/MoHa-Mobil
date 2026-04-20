@@ -14,11 +14,25 @@ import { smoothVehicleMotion } from './settings';
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const PROXY = (import.meta as any).env?.VITE_OBA_PROXY as string | undefined;
 
-function url(path: string): string {
+// Public proxy fallback chain. Če VITE_OBA_PROXY ni nastavljen, rotira skozi te ob
+// napaki (429/5xx/network/timeout). Lasten proxy (env) pomeni, da ima user nadzor
+// — no fallback, da ne pošiljamo potencialno občutljivih zahtev mimo njegovega endpointa.
+const PUBLIC_PROXIES: Array<(u: string) => string> = [
+  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+let currentProxyIdx = 0;
+
+function customProxyUrl(path: string): string {
   const full = OBA_BASE + path;
-  if (!PROXY) return `https://corsproxy.io/?url=${encodeURIComponent(full)}`;
+  if (!PROXY) return ''; // unreachable (klicni gate spodaj)
   if (PROXY.includes('{URL}')) return PROXY.replace('{URL}', encodeURIComponent(full));
   return PROXY.replace(/\/$/, '') + path;
+}
+
+function publicProxyUrl(idx: number, path: string): string {
+  const full = OBA_BASE + path;
+  return PUBLIC_PROXIES[idx](full);
 }
 
 export type ObaLine = { LineId: number; Code: string; Description: string; Color: string };
@@ -48,10 +62,45 @@ export type LiveArrival = {
   predicted: boolean;
 };
 
+async function fetchWithTimeout(u: string, ms: number): Promise<Response> {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try {
+    return await fetch(u, { cache: 'no-store', signal: ac.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchJSON(p: string): Promise<any> {
-  const r = await fetch(url(p), { cache: 'no-store' });
-  if (!r.ok) throw new Error('OBA ' + r.status);
-  return r.json();
+  // Custom proxy — no fallback. User ima svoj endpoint in nadzor.
+  if (PROXY) {
+    const r = await fetchWithTimeout(customProxyUrl(p), 8_000);
+    if (!r.ok) throw new Error('OBA ' + r.status);
+    return r.json();
+  }
+
+  // Public proxy: sticky trenutni, ob napaki rotiraj na naslednjega. En cikel (vsi
+  // proxy-ji enkrat), nato throw. 4 s timeout per proxy — ne drži celega polla.
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < PUBLIC_PROXIES.length; attempt++) {
+    const idx = (currentProxyIdx + attempt) % PUBLIC_PROXIES.length;
+    try {
+      const r = await fetchWithTimeout(publicProxyUrl(idx, p), 4_000);
+      if (!r.ok) { lastErr = new Error('OBA ' + r.status); throw lastErr; }
+      if (idx !== currentProxyIdx) currentProxyIdx = idx;
+      return await r.json();
+    } catch (e) {
+      lastErr = e;
+      const nextIdx = (idx + 1) % PUBLIC_PROXIES.length;
+      if (attempt < PUBLIC_PROXIES.length - 1) {
+        // eslint-disable-next-line no-console
+        console.warn(`[OBA] proxy ${idx} failed, switching to ${nextIdx}`);
+        currentProxyIdx = nextIdx;
+      }
+    }
+  }
+  throw lastErr ?? new Error('OBA all proxies failed');
 }
 
 let linesCache: Map<number, ObaLine> | null = null;
