@@ -77,9 +77,12 @@
     if (others.length > 0) dir = others[0][0];
   }
 
-  // Za izbrano postajo — čas prihoda (ali, če ni arr, deparature) na tej postaji za vsak trip.
+  // Čas odhoda (st[2]) na tej postaji — isto kot StopTimetableModal in upcomingDepartures.
+  // Prej smo vračali arrival (st[1]) s fallback na departure → pri postajah z dwell time
+  // (arr ≠ dep) sta se vozni redi postaje in linije za isti trip razhajali za 1 min.
+  // Fallback na arrival pokrije zadnjo postajo (terminus, kjer departure=0).
   function tripStopTime(t: Trip, stopId: number): number | null {
-    for (const st of t.stops) if (st[0] === stopId) return st[1] || st[2];
+    for (const st of t.stops) if (st[0] === stopId) return st[2] || st[1];
     return null;
   }
 
