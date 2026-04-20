@@ -14,10 +14,18 @@ let shapesLoading: Promise<Map<number, Shape>> | null = null;
 export function loadShapes(): Promise<Map<number, Shape>> {
   if (shapesCached) return Promise.resolve(shapesCached);
   if (shapesLoading) return shapesLoading;
-  shapesLoading = fetch(`${BASE}/shapes.json`).then(r => r.json()).then((arr: Shape[]) => {
-    shapesCached = new Map(arr.map(s => [s.id, s]));
-    return shapesCached;
-  });
+  shapesLoading = fetch(`${BASE}/shapes.json`)
+    .then(r => { if (!r.ok) throw new Error('shapes.json ' + r.status); return r.json(); })
+    .then((arr: Shape[]) => {
+      shapesCached = new Map(arr.map(s => [s.id, s]));
+      return shapesCached;
+    })
+    .catch(err => {
+      // Počisti loading, da retry požene nov fetch (sicer vsi naslednji klici
+      // dobijo isti rejected promise). Enak vzorec kot loadGTFS.
+      shapesLoading = null;
+      throw err;
+    });
   return shapesLoading;
 }
 
@@ -123,8 +131,10 @@ export function loadGTFS(): Promise<GTFS> {
   });
   loading = (async () => {
     try {
-      // Meta prefetchamo paralelno z GTFS fetch-i — uspeh ni pogoj za GTFS, a ko se
-      // vse naloži skupaj, je meta že v cache-u za UI prikaz brez dodatnega round-tripa.
+      // Meta in shapes prefetchamo paralelno z GTFS fetch-i — uspeh ni pogoj za GTFS,
+      // a ko se vse naloži skupaj, sta meta in shapes že v cache-u za UI prikaz brez
+      // dodatnega round-tripa. Shapes (~800 KB) so največji kos in edini blocker za
+      // prvi render zemljevida — paralelni fetch odreže ~300–800 ms na 4G.
       const gtfsPromise = Promise.all([
         fetchJson('stops.json'),
         fetchJson('routes.json'),
@@ -132,6 +142,8 @@ export function loadGTFS(): Promise<GTFS> {
         fetchJson('service.json'),
       ]);
       loadMeta();
+      // Swallow napake — GTFS uspeh ne sme biti odvisen od shapes.
+      loadShapes().catch(() => {});
       const [stops, routes, trips, service] = await gtfsPromise;
       cached = { stops, routes, trips, services: service.services, exceptions: service.exceptions };
       return cached;
