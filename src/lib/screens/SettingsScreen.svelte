@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, FlaskConical } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import { applyTheme, type Theme } from '../theme';
-  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
+  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, smoothVehicleMotion, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
 
@@ -258,6 +258,24 @@
                   aria-label="Preklopi sledenje lokaciji v živo">
             <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
                   style="left: {$liveLocationWatch ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
+        <li class="min-h-[56px] px-4 flex items-center gap-3 border-t border-base">
+          <FlaskConical size={20} color="var(--text-muted)" />
+          <div class="flex-1">
+            <div class="t-body flex items-center gap-1.5">
+              Gladka animacija vozil
+              <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[16px] shrink-0"
+                    style="background: color-mix(in oklab, var(--status-delay) 18%, transparent); color: var(--status-delay)">beta</span>
+            </div>
+            <div class="t-footnote text-muted">Eksperimentalno. Vozila se interpolirajo med GPS posodobitvami.</div>
+          </div>
+          <button class="pressable relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$smoothVehicleMotion ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => smoothVehicleMotion.update(v => !v)}
+                  aria-label="Preklopi gladko animacijo vozil">
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$smoothVehicleMotion ? '1.375rem' : '0.125rem'}"></span>
           </button>
         </li>
       </ul>

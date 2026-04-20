@@ -68,7 +68,7 @@
     refreshSynth();
     vehicleTimer = setInterval(refreshSynth, 10_000);
     tick30Timer = setInterval(() => tick30++, 30_000);
-    startPolling(8_000);
+    startPolling();
   });
   onDestroy(() => {
     if (vehicleTimer) clearInterval(vehicleTimer);
@@ -94,8 +94,9 @@
     synthVehicles = activeVehicles(gtfs, shapesMap, new Date());
   }
 
-  // Real vozila iz Marprom Trak8 OBA (vsakih 8 s) + interpolacija med poll-oma.
-  // Fallback = sintetična vozila iz GTFS voznega reda.
+  // Real vozila iz Marprom Trak8 OBA (vsakih 30 s, Marprom GPS update cadence ~60 s).
+  // Interpolacija je za beta privzeto OFF (settings.smoothVehicleMotion); raw prikaz
+  // preskoči po GPS pozicijah. Fallback = sintetična vozila iz GTFS voznega reda.
   $: live = $liveVehicles;
   $: smoothed = $smoothedVehicles;
   $: staleSec = $liveStaleSec;

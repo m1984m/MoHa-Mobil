@@ -8,7 +8,8 @@
 //     return new Response(r.body, { headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }});
 //   }}
 
-import { writable, type Writable } from 'svelte/store';
+import { writable, get, type Writable } from 'svelte/store';
+import { smoothVehicleMotion } from './settings';
 
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const PROXY = (import.meta as any).env?.VITE_OBA_PROXY as string | undefined;
@@ -417,13 +418,30 @@ function interpolate() {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let rafId: number | null = null;
+let motionUnsub: (() => void) | null = null;
 
 function rafLoop() {
   interpolate();
   rafId = requestAnimationFrame(rafLoop);
 }
 
-export function startPolling(intervalMs = 8_000) {
+// Raw prikaz: napolni smoothedVehicles z GPS pozicijami iz OBA brez interpolacije.
+// Uporabimo, ko je smoothVehicleMotion=false — bus "skoči" vsakih 30 s na novo pozicijo.
+function populateRaw(vs: LiveVehicle[]) {
+  const out: SmoothedVehicle[] = vs.map(v => ({
+    deviceId: v.deviceId,
+    displayLat: v.lat,
+    displayLon: v.lon,
+    bearing: 0,
+    moving: true,
+  }));
+  smoothedVehicles.set(out);
+  liveStaleSec.set(Math.max(0, Math.round((Date.now() - lastPollAt) / 1000)));
+}
+
+// Marprom GPS se v praksi posodablja ~60 s. 30 s poll = 2× oversampling za lov
+// prve sveže pozicije v povprečju ~15 s po server update-u; 8 s bi bil wasteful.
+export function startPolling(intervalMs = 30_000) {
   stopPolling();
   pollIntervalMs = intervalMs;
   const poll = async () => {
@@ -432,16 +450,32 @@ export function startPolling(intervalMs = 8_000) {
       const vs = await fetchActiveVehicles();
       snapshot(vs);
       liveVehicles.set({ vehicles: vs, updatedAt: Date.now(), error: null, loading: false });
+      if (!get(smoothVehicleMotion)) populateRaw(vs);
     } catch (e: any) {
       liveVehicles.update(s => ({ ...s, error: e?.message ?? String(e), loading: false }));
     }
   };
   poll();
   pollTimer = setInterval(poll, intervalMs);
-  rafId = requestAnimationFrame(rafLoop);
+  if (get(smoothVehicleMotion)) rafId = requestAnimationFrame(rafLoop);
+
+  // Dinamičen preklop stikala v Nastavitvah med živim polling-om:
+  //  - ON (in polling aktiven): startaj RAF loop, preplavi smoothedVehicles z interpolacijo
+  //  - OFF: ustavi RAF in takoj napolni raw iz trenutnih vozil
+  motionUnsub = smoothVehicleMotion.subscribe(on => {
+    if (pollTimer == null) return; // prvi initial call pride ko še ni pollerja — preskoči
+    if (on && rafId == null) {
+      rafId = requestAnimationFrame(rafLoop);
+    } else if (!on && rafId != null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+      populateRaw(curVehicles);
+    }
+  });
 }
 
 export function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; }
+  if (motionUnsub) { motionUnsub(); motionUnsub = null; }
 }
