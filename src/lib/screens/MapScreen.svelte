@@ -11,7 +11,7 @@
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
-  import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, setVehiclePaths, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
+  import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
   import { mapStyleKind, departureDisplay, compactLists } from '../settings';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
@@ -40,6 +40,12 @@
   let liveArrivals: StopArrival[] = [];
   let liveArrivalsLoading = false;
   let liveArrivalsTimer: ReturnType<typeof setInterval> | null = null;
+  // ETA izbranega busa do njegove NextStopPointId — vlečemo iz GetArrivalsForStopPoint
+  // (isti endpoint kot postajni pogled) in filtriramo po busCode. S tem ETA v bus detail
+  // top card vedno ustreza ETA-u, ki bi ga user videl v stop view-u → odpravi dvojnost
+  // med OBA endpointoma (/GetActiveDeviceDetails vs /GetArrivalsForStopPoint).
+  let vehicleArrival: StopArrival | null = null;
+  let vehicleArrivalTimer: ReturnType<typeof setInterval> | null = null;
   let planExpanded = false;
   let stopTimetableOpen = false;
   let lineTimetableOpen = false;
@@ -74,8 +80,37 @@
     if (vehicleTimer) clearInterval(vehicleTimer);
     if (tick30Timer) clearInterval(tick30Timer);
     if (liveArrivalsTimer) clearInterval(liveArrivalsTimer);
+    if (vehicleArrivalTimer) clearInterval(vehicleArrivalTimer);
     stopPolling();
   });
+
+  // Ko user izbere živ bus, potegnemo arrivals za njegov nextStopPointId in najdemo
+  // vrstico s tem busCode. Auto-refresh vsakih 15 s (enako kot postajni view). Ta ETA
+  // je authoritative za top card — odpravi neujemanje z stop view-om.
+  async function refreshVehicleArrival(live: LiveVehicle) {
+    if (live.nextStopPointId == null || !live.busCode) return;
+    try {
+      const arr = await fetchArrivalsForStopPoint(live.nextStopPointId);
+      // Še vedno isti bus? (lahko se je user že preklopil)
+      if (selectedLive?.deviceId !== live.deviceId) return;
+      vehicleArrival = arr.find(a => a.busCode === live.busCode) ?? null;
+    } catch {
+      // tiho — top card se vrne na fallback "—"
+    }
+  }
+
+  $: {
+    if (selectedLive) {
+      const lv = selectedLive;
+      if (vehicleArrivalTimer) clearInterval(vehicleArrivalTimer);
+      vehicleArrival = null;
+      refreshVehicleArrival(lv);
+      vehicleArrivalTimer = setInterval(() => refreshVehicleArrival(lv), 15_000);
+    } else {
+      if (vehicleArrivalTimer) { clearInterval(vehicleArrivalTimer); vehicleArrivalTimer = null; }
+      vehicleArrival = null;
+    }
+  }
 
   async function refreshArrivals(stopId: number) {
     liveArrivalsLoading = liveArrivals.length === 0;
@@ -94,9 +129,9 @@
     synthVehicles = activeVehicles(gtfs, new Date());
   }
 
-  // Real vozila iz Marprom Trak8 OBA (vsakih 30 s, Marprom GPS update cadence ~60 s).
-  // Interpolacija je za beta privzeto OFF (settings.smoothVehicleMotion); raw prikaz
-  // preskoči po GPS pozicijah. Fallback = sintetična vozila iz GTFS voznega reda.
+  // Real vozila iz Marprom Trak8 OBA (vsakih 30 s). Ikona na karti sledi raw OBA GPS-u.
+  // Prejšnja "schedule + anchor" hibridna interpolacija je odstranjena (v0.8.0) — povzročala
+  // je drift med ikono in dejansko OBA pozicijo, ko je bus odstopal od voznega reda.
   $: live = $liveVehicles;
   $: smoothed = $smoothedVehicles;
   $: staleSec = $liveStaleSec;
@@ -104,36 +139,6 @@
     ? new Map(gtfs.routes.map(r => [r.short.toLowerCase(), r.id]))
     : new Map<string, number>();
 
-  // Po vsakem poll-u: match vsak živ bus → GTFS trip → shape + stop_times.
-  // Pošljemo realtime modulu, da bus animira po voznem redu (schedule-driven),
-  // OBA GPS pa služi le kot občasna korekcija (anchor offset).
-  let lastShapeUpdateAt = 0;
-  $: if (gtfs && shapesMap && live.updatedAt > lastShapeUpdateAt && live.vehicles.length > 0) {
-    lastShapeUpdateAt = live.updatedAt;
-    const now = new Date();
-    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const idx = precomputeVehiclesIndexes(gtfs, now);
-    const paths = new Map<number, { shapePts: [number, number][]; stops: { lat: number; lon: number; time: number }[] }>();
-    // eslint-disable-next-line no-console
-    console.time('findTripBatch');
-    for (const v of live.vehicles) {
-      const t = findTripForLiveBus({
-        lineCode: v.lineCode, headsign: v.headsign, lat: v.lat, lon: v.lon,
-      }, nowSec, idx);
-      if (!t || t.shape == null) continue;
-      const sh = shapesMap.get(t.shape);
-      if (!sh) continue;
-      const stops: { lat: number; lon: number; time: number }[] = [];
-      for (const [stopId, arrSec] of t.stops) {
-        const s = idx.stopById.get(stopId);
-        if (s) stops.push({ lat: s.lat, lon: s.lon, time: arrSec });
-      }
-      if (stops.length >= 2) paths.set(v.deviceId, { shapePts: sh.pts, stops });
-    }
-    // eslint-disable-next-line no-console
-    console.timeEnd('findTripBatch');
-    setVehiclePaths(paths);
-  }
   $: smoothedById = new Map(smoothed.map(s => [s.deviceId, s]));
   $: liveDisplay = live.vehicles.map(v => {
     const gtfsRouteId = routeIdByShort.get(v.lineCode.toLowerCase());
@@ -336,6 +341,19 @@
       arr: st[1],
       minutes: Math.max(0, Math.round((st[1] - nowSec) / 60)),
     }));
+  })();
+
+  // Ime naslednje postaje: prioritetno po OBA nextStopPointId (source of truth za
+  // etaMin), fallback na vehNextStops[0]. Prej je top-card kazal samo ETA brez imena
+  // → uporabnik ga je asociiral s prvo vrstico spodnjega seznama, kar pa v primeru
+  // findIndex-fallbacka ni nujno ista postaja kot tista, na katero se etaMin nanaša.
+  $: liveNextStopName = (() => {
+    if (!gtfs || !selectedLive) return null;
+    if (selectedLive.nextStopPointId != null) {
+      const s = gtfs.stops.find(x => x.id === selectedLive.nextStopPointId);
+      if (s) return s.name;
+    }
+    return vehNextStops[0]?.stop.name ?? null;
   })();
 
   // Naloži shape izbranega vozila za izris celotne linije na karti.
@@ -897,6 +915,8 @@
           </div>
         </div>
         {#if selectedLive}
+          {@const eta = vehicleArrival?.etaMin ?? null}
+          {@const delay = vehicleArrival?.delayMin ?? null}
           <div class="rounded-2xl p-4 mb-4 flex items-center gap-3"
                style="background: linear-gradient(135deg, var(--surface-2), var(--surface-3));">
             <div class="w-11 h-11 rounded-xl grid place-items-center" style="background: {selectedLive.color}; color: white;">
@@ -904,11 +924,23 @@
             </div>
             <div class="flex-1 min-w-0">
               <div class="t-footnote text-muted">Naslednja postaja</div>
-              <div class="t-headline font-semibold">
-                {selectedLive.etaMin === 0 ? 'prihaja zdaj' : `čez ${selectedLive.etaMin} min`}
-              </div>
+              {#if liveNextStopName}
+                <div class="t-headline font-semibold truncate">{liveNextStopName}</div>
+                <div class="t-subhead text-muted">
+                  {#if eta == null}—{:else if eta === 0}prihaja zdaj{:else}čez {eta} min{/if}
+                  {#if delay != null && delay !== 0}
+                    <span class="ml-1" style="color: {delay > 0 ? 'var(--status-delay)' : 'var(--status-ontime)'}">
+                      ({delay > 0 ? '+' : ''}{delay} min)
+                    </span>
+                  {/if}
+                </div>
+              {:else}
+                <div class="t-headline font-semibold">
+                  {#if eta == null}—{:else if eta === 0}prihaja zdaj{:else}čez {eta} min{/if}
+                </div>
+              {/if}
             </div>
-            {#if selectedLive.predicted}
+            {#if vehicleArrival?.predicted ?? selectedLive.predicted}
               <span class="px-2 h-6 rounded-full surface t-footnote border border-base grid place-items-center" style="color: var(--status-delay)">ocena</span>
             {:else}
               <span class="px-2 h-6 rounded-full surface t-footnote border border-base grid place-items-center" style="color: var(--status-ontime)">GPS</span>

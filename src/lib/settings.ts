@@ -52,12 +52,6 @@ export const compactLists = persisted<boolean>('mm.compactLists.v1', false);
 // med hojo/vožnjo. Default ON za beta, da dobimo feedback; off pa prihrani baterijo.
 export const liveLocationWatch = persisted<boolean>('mm.liveLocationWatch.v1', true);
 
-// Hibridna interpolacija vozil (GTFS schedule + OBA anchor + RAF) — ko je OFF,
-// prikažemo raw OBA pozicije v diskretnih skokih vsakih 30 s. Marprom GPS se
-// v resnici posodablja ~60 s, zato interpolacija med poll-oma "ugiba"; raw je
-// psihološko zanesljivejši. Motion kod ostaja funkcionalen kot opcijski eksperiment.
-export const smoothVehicleMotion = persisted<boolean>('mm.smoothVehicleMotion.v1', false);
-
 // Velikost napisov na zemljevidu (imena cest, postaj). Faktor pomnožimo s privzeto
 // text-size definicijo stila.
 export type MapLabelSize = 'small' | 'medium' | 'large';

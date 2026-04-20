@@ -5,6 +5,18 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.7.9 — 2026-04-20
+
+### Popravki (kritični)
+- **Enoten vir ETA za avtobusne podrobnosti.** Prej je top card v bus detail-u kazal `selectedLive.etaMin` iz `/GetActiveDeviceDetails`, postajni pogled pa `a.ETAMin` iz `/GetArrivalsForStopPoint` — dva neodvisna OBA endpointa lahko vrneta različni vrednosti (npr. bus #161 P8: "prihaja zdaj" v linijskem, "čez 72 min" v postajnem). Zdaj bus detail ob izbiri kliče `fetchArrivalsForStopPoint(nextStopPointId)` in filtrira po `busCode` → uporabi **isto** vrstico kot postajni view. Auto-refresh 15 s. Poleg ETA zdaj prikaže tudi `delayMin` (+zamuda zelena/rdeča).
+- **Dom zavihek zdaj v živo.** Prej je `HomeScreen` za vsako postajo klical GTFS `upcomingDepartures()` — čist vozni red brez zamud, ne-ujema se z OBA podatki v postajnem pogledu (ista postaja: Dom kaže 14 min, Postaja 9 min). Zdaj ob mount-u in vsakih 30 s paralelno fetcha `fetchArrivalsForStopPoint` za vse vidne postaje (bližnja ∪ priljubljena), dedup po stopId. Ko OBA vrne podatke → Dom kaže iste etaMin kot postajni view. GTFS scheduled ostane fallback (OBA fail ali ni več živih prihodov). Reactive watcher na `stopIdsKey` sproži nov fetch tudi ob premiku uporabnika ali spremembi priljubljenih.
+- **Ikona busa sledi zadnjemu OBA GPS.** Odstranjena GTFS schedule + anchor hibridna interpolacija v `realtime.ts` (`interpolate()`, `rafLoop`, `vehiclePaths`, `anchors`, `scheduleS`, `projectToPoly`, `pointAtS`, `setVehiclePaths`, `setVehicleShapes` → vse zbrisano). Ikona se zdaj postavi direktno na `v.lat/v.lon` iz zadnjega polla. Bearing se računa iz `prev→cur` GPS premika v metrih (cache ob mirovanju, da ikona ne skače). Povzročitelj drift-a (schedule "napredovanje" kljub stoječemu GPS-u) odstranjen.
+- **Odstranjena eksperimentalna gladka animacija.** `smoothVehicleMotion` setting, stikalo v Nastavitvah in povezan RAF loop zbrisani. Vrnemo se, ko bo Marprom GPS cadence boljši.
+- **Odstranjen `findTripBatch` batch per poll.** Prej po vsakem polle MapScreen matchal vse žive buse → GTFS trip → shape + stopSeq, pošiljal v realtime za schedule interpolation. Ni več potrebno; `findTripForLiveBus` ostane, kliče se samo ob izbiri busa (za `vehTrip` / prikaz trase).
+
+### Drobni popravki
+- **Statična oznaka voznega reda na Domu.** "Vozni red velja od: {datum}" (dinamično iz meta.json, sl-SI format) → "Velja od februar 2026". Datum se ne spreminja dovolj pogosto, da bi bil dinamičen prikaz smiseln; uvoz `GtfsMeta` + `loadMeta` + `Intl.DateTimeFormat` iz `HomeScreen` odstranjen.
+
 ## 0.7.0 — 2026-04-20
 
 ### Novosti

@@ -5,12 +5,12 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.7.0';
+export const APP_VERSION = '0.7.9';
 export const RELEASE_DATE = 'april 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Sledenje lokaciji v živo — modri pin zdaj drsi po karti, stikalo v Nastavitvah',
-  'Gladko premikanje busov (beta, privzeto OFF) — prehod na 30 s poll cikel (prej 8 s)',
-  'Datum voznega reda viden na Domačem zaslonu — ni več ugibanja, kako sveži so GTFS podatki',
-  'Zanesljivejše live podatke: OBA proxy fallback + hitrejši prvi render karte + 60 % hitrejši match vozil',
+  'Dom v živo — usklajen s postajnim pogledom',
+  'ETA busa povsod enaka',
+  'Ikona busa sledi GPS-u — brez drifta',
+  'Odstranjena beta animacija premikanja',
 ];
