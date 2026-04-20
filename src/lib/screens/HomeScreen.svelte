@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { MapPinned, Bus, CloudOff, Star } from 'lucide-svelte';
-  import { nearestStops, upcomingDepartures, type GTFS, type Stop } from '../gtfs';
+  import { nearestStops, upcomingDepartures, loadMeta, type GTFS, type Stop, type GtfsMeta } from '../gtfs';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -23,8 +23,15 @@
 
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let gtfsMeta: GtfsMeta | null = null;
 
-  onMount(() => { timer = setInterval(() => tick++, 30_000); });
+  const GTFS_DATE_FMT = new Intl.DateTimeFormat('sl-SI', { day: 'numeric', month: 'short', year: 'numeric' });
+  $: gtfsDateLabel = gtfsMeta ? GTFS_DATE_FMT.format(new Date(gtfsMeta.built)) : '';
+
+  onMount(async () => {
+    timer = setInterval(() => tick++, 30_000);
+    gtfsMeta = await loadMeta();
+  });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
   $: nearStops = gtfs
@@ -51,12 +58,17 @@
 <Screen title="Dom" onRefresh={refresh}>
   <div class="px-4 pb-6 space-y-4 max-w-screen-sm mx-auto">
     <!-- Greeting / context strip -->
-    <div class="flex items-center justify-between">
-      <div class="t-subhead text-muted">
-        {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
+    <div class="flex items-start justify-between">
+      <div class="min-w-0">
+        <div class="t-subhead text-muted">
+          {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
+        </div>
+        {#if gtfsMeta}
+          <div class="t-footnote text-muted mt-0.5">Vozni redi: {gtfsDateLabel}</div>
+        {/if}
       </div>
       {#if weather}
-        <button class="pressable t-subhead flex items-center gap-1.5 rounded-full px-2.5 py-1 -mr-1 surface-2 border border-base"
+        <button class="pressable t-subhead flex items-center gap-1.5 rounded-full px-2.5 py-1 -mr-1 surface-2 border border-base shrink-0"
                 on:click={onOpenWeather} aria-label="Podrobno vreme">
           <span>{weather.emoji}</span>
           <span class="font-semibold">{weather.tempC}°</span>
