@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { routeColor } from '../gtfs';
+  import { routeColor, routeTextColor } from '../gtfs';
   export let short: string;
   export let routeId: number;
   export let size: 'sm' | 'md' | 'lg' = 'md';
@@ -10,7 +10,9 @@
   }[size];
 </script>
 
-<span class="inline-flex items-center justify-center rounded-lg text-white font-bold {s}"
-      style="background-color: {routeColor(routeId)}">
+<!-- Barva teksta po luminanci ozadja — bel tekst na svetlih barvah palete
+     (lime, oranžne) je padel pod 2:1 kontrast. -->
+<span class="inline-flex items-center justify-center rounded-lg font-bold {s}"
+      style="background-color: {routeColor(routeId)}; color: {routeTextColor(routeId)}">
   {short}
 </span>

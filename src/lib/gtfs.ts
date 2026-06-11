@@ -77,6 +77,17 @@ export function routeColor(routeId: number): string {
   return ROUTE_PALETTE[idx];
 }
 
+// Tekst na barvni znački linije: bel na temnih, temen na svetlih barvah palete
+// (lime #C0CA33, oranžne ipd. z belim tekstom padejo pod 2:1 kontrast).
+export function routeTextColor(routeId: number): string {
+  const hex = routeColor(routeId);
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const L = 0.2126 * lin(parseInt(hex.slice(1, 3), 16) / 255)
+          + 0.7152 * lin(parseInt(hex.slice(3, 5), 16) / 255)
+          + 0.0722 * lin(parseInt(hex.slice(5, 7), 16) / 255);
+  return L > 0.35 ? '#1C1C1E' : '#ffffff';
+}
+
 // Crop a shape polyline to the segment between two stops by nearest-point snapping.
 export function cropShape(shape: Shape, from: { lat: number; lon: number }, to: { lat: number; lon: number }): [number, number][] {
   let iFrom = 0, iTo = 0, dF = Infinity, dT = Infinity;
@@ -190,6 +201,13 @@ export function todayServiceIds(gtfs: GTFS, when: Date = new Date()): Set<number
   return active;
 }
 
+// Ali feed sploh še pokriva dani datum (service obdobja se iztečejo!).
+// Uporaba: opozorilo "vozni redi so zastareli" namesto tihega praznega seznama.
+export function feedCoversDate(gtfs: GTFS, when: Date = new Date()): boolean {
+  const ymd = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
+  return gtfs.services.some(s => s.start <= ymd && ymd <= s.end);
+}
+
 // Vse odhode za dano postajo in dan (služba). Uporabljeno za klasičen vozni red.
 export type DayKind = 'weekday' | 'saturday' | 'sunday';
 export function dayKindToDate(kind: DayKind, base: Date = new Date()): Date {
@@ -210,10 +228,12 @@ export function allDeparturesForStop(
   const out: { trip: Trip; route: Route; depSec: number }[] = [];
   for (const t of gtfs.trips) {
     if (!active.has(t.service)) continue;
+    const route = routeById.get(t.route);
+    if (!route) continue;
+    // Brez break: krožne linije obiščejo isto postajo večkrat v enem tripu
+    // (158 tripov v feedu) — celoten vozni red mora pokazati VSE obiske.
     for (const st of t.stops) {
-      if (st[0] !== stopId) continue;
-      out.push({ trip: t, route: routeById.get(t.route)!, depSec: st[2] });
-      break;
+      if (st[0] === stopId) out.push({ trip: t, route, depSec: st[2] });
     }
   }
   out.sort((a, b) => a.depSec - b.depSec);
@@ -245,11 +265,15 @@ export function upcomingDepartures(
   const out: { trip: Trip; route: Route; depSec: number; minutesFromNow: number }[] = [];
   for (const t of gtfs.trips) {
     if (!active.has(t.service)) continue;
+    const route = routeById.get(t.route);
+    if (!route) continue;
+    // Pri krožnih linijah trip obišče isto postajo dvakrat — če je prvi obisk
+    // že mimo, velja naslednji (prej: break na prvem → drugi obisk neviden).
     for (const st of t.stops) {
       if (st[0] !== stopId) continue;
       const dep = st[2];
-      if (dep < nowSec) break; // stops of a trip are chronological
-      out.push({ trip: t, route: routeById.get(t.route)!, depSec: dep, minutesFromNow: Math.round((dep - nowSec) / 60) });
+      if (dep < nowSec) continue;
+      out.push({ trip: t, route, depSec: dep, minutesFromNow: Math.round((dep - nowSec) / 60) });
       break;
     }
   }

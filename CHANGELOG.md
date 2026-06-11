@@ -5,6 +5,43 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.8.0 — 2026-06-12
+
+Celovita revizija (analiza: design / UX tokovi / podatkovni tokovi / točnost podatkov / PWA) + popravki.
+
+### Točnost podatkov
+- **Indikator svežine živih podatkov zdaj dejansko deluje.** `liveStaleSec` se je prej nastavil samo ob uspešnem pollu (vedno ~0) — dodan sekundni ticker; "pred X s" v živo raste, ob izpadu OBA pa se po 90 s vozila samodejno preklopijo iz zamrznjenih GPS pozicij na sintetične (vozni red).
+- **Krožne linije:** trip, ki gre skozi isto postajo dvakrat, je prej v odhodih/voznih redih pokazal samo prvi obisk (`upcomingDepartures`, `allDeparturesForStop`, `LineTimetableModal`) — zdaj se upoštevajo vsi obiski (158 tripov v feedu).
+- **Bus detail se osvežuje v živo:** `selectedLive`/`selectedVehicle` se sinhronizirata z vsakim pollom (prej zamrznjena na stanju ob tapu), odštevalnik v "Naslednje postaje" in trip-match se osvežujeta s 30 s tickom.
+- **Stari živi prihodi na Domu** veljajo 2 min od zadnjega uspešnega fetcha, potem fallback na GTFS (prej so ob izpadu večno prekrivali sveže podatke).
+- "Velja od februar 2026" zamenjan z datumom iz `meta.json` + opozorilo, ko service obdobja v feedu potečejo (trenutni feed se izteče 2026-06-25!).
+- Polnočna normalizacija delayMin fallbacka; vremenski urni graf med 00:00–01:59 ni več prazen (UTC/lokalni datum); "Kreni" uporablja nastavitev hitrosti hoje (prej hardkodiranih 1,3 m/s).
+- Klik na živ prihod odpre vozni red linije v pravi smeri (prej vedno smer 0); opomba pod bus pogledom loči GPS bus od sintetičnega.
+
+### UX
+- **Sistemski "nazaj" (Android/brskalnik) zapira modale in izbire namesto izhoda iz aplikacije** — nov `backstack.ts`, ožičeno: planer, vreme, postaja, plan, bus, vozni redi, share, pripni linijo.
+- Tap na shranjeno pot / deep link: indikator "Iščem pot…" + ob neuspehu se odpre planer s prednastavljenim ciljem (prej tiho nič).
+- Razčlenjena sporočila planerja (čas v preteklosti / predaleč od postaj / ni povezave ob času); pike na gumbu se animirajo.
+- Tap v polje planerja ne razveljavi več izbranega kraja (razveljavi šele sprememba besedila); geocode predlogi imajo seq-token (out-of-order odgovori).
+- Tap na karto zapre tudi izbran bus (prej samo postajo); dvojina "čez 2 minuti".
+
+### Stabilnost
+- `MapView`: async `onMount` je vračal cleanup, ki ga Svelte ignorira → MutationObserver leak + `setStyle` na uničeni mapi; mapa se ni smela ustvariti po unmountu (WebGL leak); kamera ukazi pred pripravljeno mapo se zdaj uvrstijo namesto izgubijo; po menjavi stila se overlay plasti dodajo z retry (prej so lahko trajno izginile).
+- `MapScreen`: napaka shapes.json ne ugasne več živega pollinga; seq-guard za hitri preklop postaj; identity-guard za shape izbranega busa; RAF guard za `activePlan`; odстranjeni non-null asserti na GTFS poteh.
+- Schema validacija `savedRoutes` + sanacija `walkSpeedKmh` iz localStorage; `decodeURIComponent` guard za pokvarjene share linke.
+- Polling se ustavi, ko gre app v ozadje (`visibilitychange` v realtime.ts + guardi v Home/MapScreen) — baterija, podatki, proxy kvota.
+
+### PWA / verzije / deploy
+- **`npm run deploy` je obšel `build-sw.mjs`** (gh-pages je dobival zastarel `sw.js` — na produkciji `0.7.9-a2fcb4e` ob HEAD `7898646`) → `predeploy: npm run build`.
+- **En vir verzije:** `release.ts` bere `__APP_VERSION__` iz package.json (prej: package.json 0.7.9, release.ts 0.7.4, sw.js tretja).
+- SW: hashirani `/assets/` cache-first (prej SWR re-prenos ~430 KB gzip ob vsakem zagonu); glyph fonti pokriti za offline; tiles cache omejen na 500 vnosov.
+- `theme-color` in `color-scheme` sledita temi (status bar v temni temi ni več rdeč; native elementi tematski).
+
+### Design / dostopnost
+- LineBadge: barva teksta po luminanci ozadja (bel tekst na lime/oranžni < 2:1); svetla tema: temnejši `--status-*` in `--text-muted` (WCAG kontrast za "zdaj"/zamude/footnote).
+- Globalni `:focus-visible` indikator; modali: Escape + `role=dialog`/`tabindex` (PlannerModal prej brez role); UpdateToast upošteva safe-area (notch); popravljen `t-largetitle` typo (vreme); seznami v karticah Doma brez `<ul>` v `<button>` (neveljaven HTML).
+- Počiščeno: mrtva `SearchScreen.svelte`, neuporabljen `public/icons.svg`, mrtvi design tokeni (modra brand paleta).
+
 ## 0.7.4 — 2026-04-21
 
 ### Novosti

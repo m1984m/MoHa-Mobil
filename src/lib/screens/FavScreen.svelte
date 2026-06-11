@@ -11,6 +11,7 @@
   import { favLines, type FavLine } from '../favLines';
   import { savedRoutes, type SavedRoute } from '../savedRoutes';
   import { compactLists } from '../settings';
+  import { pushBack } from '../backstack';
   import { onMount, onDestroy } from 'svelte';
 
   export let gtfs: GTFS | null;
@@ -23,9 +24,11 @@
   onDestroy(() => { if (timer) clearInterval(timer); });
 
   $: favList = gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [];
-  $: boards = (tick, gtfs)
-    ? favList.map(s => ({ stop: s, deps: upcomingDepartures(gtfs!, s.id, new Date(), 2) }))
-    : [];
+  // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnost od tick jasna.
+  function makeBoards(g: GTFS | null, list: Stop[], _tick: number) {
+    return g ? list.map(s => ({ stop: s, deps: upcomingDepartures(g, s.id, new Date(), 2) })) : [];
+  }
+  $: boards = makeBoards(gtfs, favList, tick);
 
   function clearAll() {
     if (confirm('Počisti vse priljubljene postaje?')) favStops.clear();
@@ -132,6 +135,20 @@
 
   $: pickerChoices = (gtfs && pickerStop) ? lineChoicesForStop(gtfs, pickerStop.id) : [];
 
+  // Sistemski "nazaj" zapre modal namesto izhoda iz aplikacije.
+  let backPicker: (() => void) | null = null;
+  $: if (pickerStop && !backPicker) {
+    backPicker = pushBack(() => pickerStop = null);
+  } else if (!pickerStop && backPicker) {
+    const r = backPicker; backPicker = null; r();
+  }
+  let backTt: (() => void) | null = null;
+  $: if (ttOpen && !backTt) {
+    backTt = pushBack(() => ttOpen = false);
+  } else if (!ttOpen && backTt) {
+    const r = backTt; backTt = null; r();
+  }
+
   function pinLine(stop: Stop, c: LineChoice) {
     favLines.toggle({
       stopId: stop.id,
@@ -210,7 +227,9 @@
             <Trash2 size={22} />
             <Trash2 size={22} />
           </div>
+          <!-- role=group: pointer handlerji so swipe-to-delete gesta na kartici -->
           <div class="pressable relative w-full text-left surface rounded-2xl border border-base shadow-card overflow-hidden"
+                  role="group"
                   style="transform: translateX({dx}px); transition: {dragKey === key ? 'none' : 'transform 0.22s var(--ease-ios)'}; touch-action: pan-y;"
                   on:pointerdown={(e) => startDrag(e, key)}
                   on:pointermove={(e) => moveDrag(e, key)}
@@ -269,8 +288,10 @@
   <div class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={() => pickerStop = null}
+       on:keydown={(e) => { if (e.key === 'Escape') pickerStop = null; }}
        role="dialog"
-       aria-modal="true">
+       aria-modal="true"
+       tabindex="-1">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);">
       <div class="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0">

@@ -168,6 +168,8 @@
 <div
   class="fixed left-0 right-0 bottom-0 z-30 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.18)] surface border-t border-base flex flex-col pointer-events-auto"
   style="height: {sheetH}px; transform: translateY({$y}px); touch-action: none;"
+  role="region"
+  aria-label="Podrobnosti"
   on:pointerdown={onDown}
   on:pointermove={onMove}
   on:pointerup={onUp}

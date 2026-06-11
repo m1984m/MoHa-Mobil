@@ -71,7 +71,9 @@ export async function fetchDayWeather(lat: number, lon: number): Promise<DayWeat
     const hP: number[] = j.hourly?.precipitation ?? [];
 
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    // Lokalni datum, NE toISOString (UTC): API s timezone=auto vrača lokalne čase,
+    // zato je bil med 00:00 in 01:59 (UTC še prejšnji dan) urni graf prazen.
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const hourly: HourPoint[] = [];
     for (let i = 0; i < hours.length; i++) {
       const t = hours[i];

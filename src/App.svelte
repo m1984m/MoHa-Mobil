@@ -8,6 +8,7 @@
   import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
   import { defaultTab, liveLocationWatch } from './lib/settings';
+  import { pushBack } from './lib/backstack';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
@@ -57,6 +58,35 @@
   let pendingDest: { lat: number; lon: number; name?: string } | null = null;
   let plannerCandidates: Plan[] = [];
   $: hasPlanAlternatives = plannerCandidates.length > 1;
+  // Indikator med večsekundnim izračunom shranjene poti / deep linka —
+  // prej tap na shranjeno pot ni dal NOBENE povratne informacije.
+  let routeRunning = false;
+
+  // Sistemski "nazaj" (Android) zapira modale/izbire namesto izhoda iz PWA.
+  let backPlanner: (() => void) | null = null;
+  $: if (plannerOpen && !backPlanner) {
+    backPlanner = pushBack(() => { plannerOpen = false; pendingDest = null; });
+  } else if (!plannerOpen && backPlanner) {
+    const r = backPlanner; backPlanner = null; r();
+  }
+  let backWeather: (() => void) | null = null;
+  $: if (weatherOpen && !backWeather) {
+    backWeather = pushBack(() => weatherOpen = false);
+  } else if (!weatherOpen && backWeather) {
+    const r = backWeather; backWeather = null; r();
+  }
+  let backStop: (() => void) | null = null;
+  $: if (selectedStop && !backStop) {
+    backStop = pushBack(() => selectedStop = null);
+  } else if (!selectedStop && backStop) {
+    const r = backStop; backStop = null; r();
+  }
+  let backPlan: (() => void) | null = null;
+  $: if (activePlan && !backPlan) {
+    backPlan = pushBack(() => activePlan = null);
+  } else if (!activePlan && backPlan) {
+    const r = backPlan; backPlan = null; r();
+  }
 
   const tabs = [
     { id: 'home',       label: 'Dom',         icon: Home },
@@ -87,13 +117,19 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
     theme = initTheme();
-    await tryLoadGtfs();
-    await requestLocation();
-    await refreshWeather();
-    weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
-    if (gtfs) await tryDeepLinkPlan();
+    // GTFS in geolokacija tečeta PARALELNO — prej je čakanje na geolocation
+    // prompt/timeout (do 8 s) blokiralo nalaganje voznih redov in deep link.
+    (async () => {
+      await tryLoadGtfs();
+      if (gtfs) await tryDeepLinkPlan();
+    })();
+    (async () => {
+      await requestLocation();
+      await refreshWeather();
+      weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
+    })();
   });
 
   function parsePlace(s: string | null): { lat: number; lon: number; name: string } | null {
@@ -103,8 +139,56 @@
     const lat = parseFloat(parts[0]);
     const lon = parseFloat(parts[1]);
     if (!isFinite(lat) || !isFinite(lon)) return null;
-    const name = parts.length >= 3 ? decodeURIComponent(parts.slice(2).join(',')) : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    // Pokvarjen/skrajšan share link z osamljenim '%' vrže URIError — fallback na surov niz.
+    let name = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    if (parts.length >= 3) {
+      const raw = parts.slice(2).join(',');
+      try { name = decodeURIComponent(raw); } catch { name = raw; }
+    }
     return { lat, lon, name };
+  }
+
+  // Skupni pipeline plan→geoms za deep link in shranjene poti (prej 2 kopiji;
+  // tretja, edina z AbortSignal, ostaja v PlannerModal.choosePlan).
+  async function buildAndShowPlan(from: { lat: number; lon: number; name: string }, to: { lat: number; lon: number; name: string }): Promise<boolean> {
+    if (!gtfs) return false;
+    routeRunning = true;
+    try {
+      const { planAll } = await import('./lib/planner');
+      const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
+      const { walkRoute, walkMapForStops } = await import('./lib/routing');
+      const now = new Date();
+      const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      const [accessMap, egressMap] = await Promise.all([
+        walkMapForStops(from, gtfs.stops),
+        walkMapForStops(to, gtfs.stops),
+      ]);
+      const plans = planAll(gtfs, from, to, depSec, now, accessMap, egressMap);
+      if (plans.length === 0) return false;
+      const chosen = plans[0];
+      const shMap = await loadShapes();
+      const walks = await Promise.all(chosen.legs.map(l => l.kind === 'walk' ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }) : Promise.resolve(null)));
+      const geoms = chosen.legs.map((leg, i) => {
+        if (leg.kind === 'walk') {
+          const wr = walks[i]!;
+          (leg as any).meters = wr.meters;
+          (leg as any).sec = wr.sec;
+          return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
+        }
+        const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
+        const coords: [number, number][] = shape
+          ? cropShape(shape, leg.from, leg.to).map(([lat, lon]) => [lon, lat])
+          : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
+        return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
+      });
+      chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
+      handleShowPlan(chosen, geoms, from, to);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      routeRunning = false;
+    }
   }
 
   async function tryDeepLinkPlan() {
@@ -112,35 +196,13 @@
     const from = parsePlace(params.get('from'));
     const to = parsePlace(params.get('to'));
     if (!from || !to || !gtfs) return;
-    const { planAll } = await import('./lib/planner');
-    const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-    const { walkRoute, walkMapForStops } = await import('./lib/routing');
-    const now = new Date();
-    const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const [accessMap, egressMap] = await Promise.all([
-      walkMapForStops(from, gtfs.stops),
-      walkMapForStops(to, gtfs.stops),
-    ]);
-    const plans = planAll(gtfs, from, to, depSec, now, accessMap, egressMap);
-    if (plans.length === 0) return;
-    const chosen = plans[0];
-    const shMap = await loadShapes();
-    const walks = await Promise.all(chosen.legs.map(l => l.kind === 'walk' ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }) : Promise.resolve(null)));
-    const geoms = chosen.legs.map((leg, i) => {
-      if (leg.kind === 'walk') {
-        const wr = walks[i]!;
-        (leg as any).meters = wr.meters;
-        (leg as any).sec = wr.sec;
-        return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
-      }
-      const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
-      const coords: [number, number][] = shape
-        ? cropShape(shape, leg.from, leg.to).map(([lat, lon]) => [lon, lat])
-        : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
-      return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
-    });
-    chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-    handleShowPlan(chosen, geoms, from, to);
+    const ok = await buildAndShowPlan(from, to);
+    if (!ok) {
+      // Deep link brez rešitve: odpri planer s prednastavljenim ciljem,
+      // da uporabnik vidi kontekst in razlog — prej je link tiho odpovedal.
+      pendingDest = { lat: to.lat, lon: to.lon, name: to.name };
+      plannerOpen = true;
+    }
     history.replaceState(null, '', location.pathname);
   }
 
@@ -216,36 +278,14 @@
   }
 
   async function runSavedRoute(r: { from: { lat: number; lon: number; name: string }; to: { lat: number; lon: number; name: string } }) {
-    if (!gtfs) return;
-    const { planAll } = await import('./lib/planner');
-    const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-    const { walkRoute, walkMapForStops } = await import('./lib/routing');
-    const now = new Date();
-    const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const [accessMap, egressMap] = await Promise.all([
-      walkMapForStops(r.from, gtfs.stops),
-      walkMapForStops(r.to, gtfs.stops),
-    ]);
-    const plans = planAll(gtfs, r.from, r.to, depSec, now, accessMap, egressMap);
-    if (plans.length === 0) return;
-    const chosen = plans[0];
-    const shMap = await loadShapes();
-    const walks = await Promise.all(chosen.legs.map(l => l.kind === 'walk' ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }) : Promise.resolve(null)));
-    const geoms = chosen.legs.map((leg, i) => {
-      if (leg.kind === 'walk') {
-        const wr = walks[i]!;
-        (leg as any).meters = wr.meters;
-        (leg as any).sec = wr.sec;
-        return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
-      }
-      const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
-      const coords: [number, number][] = shape
-        ? cropShape(shape, leg.from, leg.to).map(([lat, lon]) => [lon, lat])
-        : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
-      return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
-    });
-    chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-    handleShowPlan(chosen, geoms, r.from, r.to);
+    if (!gtfs || routeRunning) return;
+    const ok = await buildAndShowPlan(r.from, r.to);
+    if (!ok) {
+      // Ni rešitve (npr. konec obratovanja): odpri planer s ciljem,
+      // da uporabnik vidi razlog — prej tap ni naredil ničesar.
+      pendingDest = { lat: r.to.lat, lon: r.to.lon, name: r.to.name };
+      plannerOpen = true;
+    }
   }
 </script>
 
@@ -294,6 +334,16 @@
     onClose={() => weatherOpen = false} />
 
   <UpdateToast />
+
+  {#if routeRunning}
+    <div class="fixed left-1/2 -translate-x-1/2 z-[60] pointer-events-none"
+         style="bottom: calc(env(safe-area-inset-bottom) + 6.5rem)">
+      <div class="surface rounded-full border border-base shadow-elev px-4 h-10 flex items-center gap-2 t-footnote font-medium">
+        <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
+        Iščem pot…
+      </div>
+    </div>
+  {/if}
 
   {#if gtfsError}
     <div class="fixed inset-0 z-[100] flex items-center justify-center surface px-6"

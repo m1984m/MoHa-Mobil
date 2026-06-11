@@ -11,12 +11,19 @@ export type SavedRoute = {
 
 const KEY = 'mm.savedRoutes.v1';
 
+// Schema guard: pokvarjen element (ročna manipulacija, bodoča sprememba sheme)
+// bi sicer sesul render PlannerModal/MapScreen ob prvem branju r.from.name.
+function okPlace(p: any): p is SavedPlace {
+  return !!p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lon);
+}
+
 function load(): SavedRoute[] {
   try {
     const s = localStorage.getItem(KEY);
     if (!s) return [];
     const arr = JSON.parse(s);
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((r: any) => r && typeof r.id === 'string' && okPlace(r.from) && okPlace(r.to));
   } catch { return []; }
 }
 

@@ -2,17 +2,6 @@
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-
-  --color-brand-50:  #E8F2FA;
-  --color-brand-100: #C7E0F2;
-  --color-brand-400: #4DA6D8;
-  --color-brand-500: #1A7DB8;
-  --color-brand-600: #155F8D;
-  --color-brand-700: #10476A;
-
-  --color-ok-500:     #34C759;
-  --color-delay-500:  #FF9500;
-  --color-alert-500:  #FF3B30;
 }
 
 :root {
@@ -25,18 +14,20 @@
   /* Text */
   --text: #1C1C1E;
   --text-secondary: #3A3A3C;
-  --text-muted: #8E8E93;
+  /* #8E8E93 na belem = 3,0:1 — pod WCAG AA za 13px footnote tekste */
+  --text-muted: #6E6E73;
 
   /* Borders */
   --border: #D1D1D6;
   --border-strong: #C7C7CC;
 
-  /* Accent & status */
+  /* Accent & status — temnejše različice za svetlo temo: #34C759/#FF9500
+     kot TEKST na belem padeta na 2,2:1 / 2,1:1 kontrast ("zdaj", zamude). */
   --accent: #D32027;
   --accent-pressed: #A8181E;
-  --status-ontime: #34C759;
-  --status-delay: #FF9500;
-  --status-disrupt: #FF3B30;
+  --status-ontime: #1B8A3F;
+  --status-delay: #C76A00;
+  --status-disrupt: #D70015;
 
   /* Elevation */
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -68,6 +59,10 @@
   --border-strong: #48484A;
   --accent: #EF4F54;
   --accent-pressed: #D32027;
+  /* Svetle status barve so na temnem ozadju kontrastno v redu */
+  --status-ontime: #34C759;
+  --status-delay: #FF9500;
+  --status-disrupt: #FF453A;
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
@@ -152,11 +147,26 @@ body {
 
 * { -webkit-tap-highlight-color: transparent; }
 
+/* Vidna indikacija fokusa za tipkovnico (zunanja tipkovnica, switch access) —
+   :focus-visible se NE proži ob dotiku, zato touch UX ostane čist. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Native elementi (scrollbar, confirm dialog, autofill) sledijo temi. */
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }
+
 /* Onemogočena ležeča orientacija na mobilnih — prikaži obvestilo. */
 @media screen and (orientation: landscape) and (max-height: 500px) {
   #app { display: none; }
   body::before {
-    content: "Obrni telefon v pokončno lego 📱";
+    /* Brez emojija — screen readerji ga preberejo nepredvidljivo. */
+    content: "Obrni telefon v pokončno lego";
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
     padding: 2rem; text-align: center;

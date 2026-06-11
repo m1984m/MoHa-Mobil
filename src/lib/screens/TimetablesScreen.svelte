@@ -58,7 +58,7 @@
     <div class="relative surface-2 rounded-xl border border-base mb-4">
       <Search size={18} color="var(--text-muted)" class="absolute left-3 top-1/2 -translate-y-1/2" />
       <input bind:value={query}
-             class="w-full h-12 bg-transparent pl-10 pr-3 t-body outline-none"
+             class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
              placeholder={mode === 'lines' ? 'Poišči linijo (npr. P16)…' : 'Poišči postajo…'} />
     </div>
 

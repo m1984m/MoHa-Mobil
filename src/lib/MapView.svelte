@@ -522,10 +522,21 @@
     }
   }
 
-  onMount(async () => {
+  // Async onMount NE more vrniti cleanup funkcije (Svelte jo ignorira) —
+  // zato sync onMount + async IIFE + disposed guard. Prej je MutationObserver
+  // preživel vsak unmount komponente (leak + setStyle na uničeni mapi).
+  let themeObserver: MutationObserver | null = null;
+  let disposed = false;
+  // Kamera ukaz, ki je prišel preden je mapa nared (style fetch traja) —
+  // prej se je flyTo/fitBounds ob prvi izbiri postaje tiho izgubil.
+  let pendingCam: (() => void) | null = null;
+
+  onMount(() => {
+    (async () => {
     lastDark = darkNow();
     lastStyleKey = styleKey(lastDark, mapStyle, get(mapLabelSize));
     const spec = await loadStyle(styleSpec(lastDark, mapStyle));
+    if (disposed) return; // unmount med fetchom stila — ne ustvarjaj karte (WebGL leak)
     map = new maplibregl.Map({
       container: el,
       style: spec,
@@ -537,6 +548,7 @@
     map.on('load', () => {
       styleReady = true;
       addLayers();
+      if (pendingCam) { const op = pendingCam; pendingCam = null; op(); }
     });
 
     const stopClick = (e: any) => {
@@ -587,16 +599,26 @@
     map.on('zoomstart', userMove);
     map.on('rotatestart', userMove);
 
-    const observer = new MutationObserver(() => {
+    themeObserver = new MutationObserver(() => {
       const nowDark = darkNow();
       if (nowDark === lastDark) return;
       lastDark = nowDark;
       swapStyle();
     });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    })();
 
-    return () => observer.disconnect();
+    return () => { disposed = true; themeObserver?.disconnect(); };
   });
+
+  // Po setStyle isStyleLoaded() pogosto še ni true ob prvem styledata dogodku —
+  // brez retry-ja so overlay plasti (postaje, busi, plan) trajno izginile.
+  function ensureLayersWhenReady() {
+    if (!map || disposed) return;
+    if (!map.isStyleLoaded()) { map.once('idle', ensureLayersWhenReady); return; }
+    styleReady = true;
+    addLayers();
+  }
 
   async function swapStyle() {
     if (!map) return;
@@ -605,8 +627,9 @@
     lastStyleKey = key;
     styleReady = false;
     const spec = await loadStyle(styleSpec(lastDark ?? darkNow(), mapStyle));
+    if (!map || disposed) return;
     map.setStyle(spec as any);
-    map.once('styledata', () => { styleReady = true; addLayers(); });
+    map.once('styledata', ensureLayersWhenReady);
   }
   $: if (map && mapStyle && styleKey(lastDark ?? darkNow(), mapStyle, $mapLabelSize) !== lastStyleKey) swapStyle();
 
@@ -638,7 +661,8 @@
   }
 
   export function fitBounds(coords: [number, number][], maxZoom = 16) {
-    if (!map || coords.length === 0) return;
+    if (coords.length === 0) return;
+    if (!map) { pendingCam = () => fitBounds(coords, maxZoom); return; }
     let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
     for (const [lon, lat] of coords) {
       if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
@@ -652,6 +676,7 @@
   }
 
   export function flyTo(lat: number, lon: number, zoom = 15) {
+    if (!map) { pendingCam = () => flyTo(lat, lon, zoom); return; }
     const h = map?.getContainer().clientHeight ?? 0;
     // Account for bottom sheet covering ~45% of viewport: shift visible center upward.
     const padding = { top: 60, bottom: Math.round(h * 0.5), left: 20, right: 20 };

@@ -171,7 +171,16 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       delayMin = a.DelayMin;
     } else {
       const schedMin = parseHHMMtoMin(a.ArrivalTime ?? '');
-      delayMin = schedMin != null ? etaMin - (schedMin - nowMin) : 0;
+      if (schedMin != null) {
+        // Polnočni rob: sched 00:05 ob now 23:58 da razliko −1433 min — normaliziraj
+        // na [−720, 720], da fallback ne proizvede absurdne zamude.
+        let diff = schedMin - nowMin;
+        if (diff > 720) diff -= 1440;
+        if (diff < -720) diff += 1440;
+        delayMin = etaMin - diff;
+      } else {
+        delayMin = 0;
+      }
     }
     out.push({
       lineId: a.LineId,
@@ -269,24 +278,56 @@ function populateRaw(vs: LiveVehicle[]) {
 // Marprom GPS se v praksi posodablja ~60 s. 30 s poll = 2× oversampling za lov
 // prve sveže pozicije v povprečju ~15 s po server update-u; 8 s bi bil wasteful.
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let staleTimer: ReturnType<typeof setInterval> | null = null;
+// Ali consumer (MapScreen) trenutno želi polling — visibilitychange pavzira/obnovi
+// timerje, ne da bi izgubil to namero.
+let wantPolling = false;
+let pollIntervalMs = 30_000;
+
+async function poll() {
+  liveVehicles.update(s => ({ ...s, loading: true }));
+  try {
+    const vs = await fetchActiveVehicles();
+    snapshot(vs);
+    liveVehicles.set({ vehicles: vs, updatedAt: Date.now(), error: null, loading: false });
+    populateRaw(vs);
+  } catch (e: any) {
+    liveVehicles.update(s => ({ ...s, error: e?.message ?? String(e), loading: false }));
+  }
+}
+
+function startTimers() {
+  clearTimers();
+  poll();
+  pollTimer = setInterval(poll, pollIntervalMs);
+  // Sekundni ticker svežine — prej se je liveStaleSec nastavil samo ob uspešnem
+  // pollu (vedno ~0), zato indikator "pred X s" ni nikoli rasel, niti ob izpadu.
+  staleTimer = setInterval(() => {
+    if (lastPollAt > 0) liveStaleSec.set(Math.max(0, Math.round((Date.now() - lastPollAt) / 1000)));
+  }, 1_000);
+}
+
+function clearTimers() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (staleTimer) { clearInterval(staleTimer); staleTimer = null; }
+}
 
 export function startPolling(intervalMs = 30_000) {
-  stopPolling();
-  const poll = async () => {
-    liveVehicles.update(s => ({ ...s, loading: true }));
-    try {
-      const vs = await fetchActiveVehicles();
-      snapshot(vs);
-      liveVehicles.set({ vehicles: vs, updatedAt: Date.now(), error: null, loading: false });
-      populateRaw(vs);
-    } catch (e: any) {
-      liveVehicles.update(s => ({ ...s, error: e?.message ?? String(e), loading: false }));
-    }
-  };
-  poll();
-  pollTimer = setInterval(poll, intervalMs);
+  wantPolling = true;
+  pollIntervalMs = intervalMs;
+  startTimers();
 }
 
 export function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  wantPolling = false;
+  clearTimers();
+}
+
+// App v ozadju: ustavi OBA promet (baterija, mobilni podatki, kvota javnega
+// proxyja); ob vrnitvi takojšen svež poll namesto čakanja na naslednji tick.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimers();
+    else if (wantPolling) startTimers();
+  });
 }

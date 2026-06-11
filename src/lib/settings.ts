@@ -29,9 +29,14 @@ export const mapStyleKind = persisted<MapStyleKind>('mm.mapStyleKind.v1', 'map')
 // Hitrost hoje v km/h — vpliva na pešpoti v načrtovalniku
 export const walkSpeedKmh = persisted<number>('mm.walkSpeedKmh.v1', 4);
 
-// Trenutna vrednost v m/s za sinhroni dostop (planner, routing)
+// Trenutna vrednost v m/s za sinhroni dostop (planner, routing).
+// Number() guard: pokvarjen localStorage zapis (ne-numeričen string) bi sicer
+// dal NaN in vsi peš časi v planerju bi postali NaN.
 let _walkMps = 4 * 1000 / 3600;
-walkSpeedKmh.subscribe(v => { _walkMps = (v || 4) * 1000 / 3600; });
+walkSpeedKmh.subscribe(v => {
+  const n = Number(v);
+  _walkMps = ((isFinite(n) && n > 0 ? n : 4) * 1000) / 3600;
+});
 export function getWalkMps(): number { return _walkMps; }
 
 // Privzeti zavihek ob zagonu aplikacije (prvi vstop v seji).

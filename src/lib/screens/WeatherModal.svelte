@@ -30,8 +30,10 @@
   <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={close}
+       on:keydown={(e) => { if (e.key === 'Escape') close(); }}
        role="dialog"
-       aria-modal="true">
+       aria-modal="true"
+       tabindex="-1">
     <div class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float overflow-hidden"
          style="padding-bottom: env(safe-area-inset-bottom);">
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
@@ -52,7 +54,7 @@
             <div class="text-6xl leading-none">{data.emoji}</div>
             <div class="flex-1 min-w-0">
               <div class="flex items-baseline gap-2">
-                <div class="t-largetitle font-bold">{data.tempC}°</div>
+                <div class="t-largeTitle font-bold">{data.tempC}°</div>
                 <div class="t-subhead text-muted">{data.label}</div>
               </div>
               <div class="t-footnote text-muted">

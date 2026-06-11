@@ -5,12 +5,14 @@
 //
 // Pravilo: UI "Novosti" ima največ 4 bullete. Polna zgodovina živi v /CHANGELOG.md.
 
-export const APP_VERSION = '0.7.4';
-export const RELEASE_DATE = 'april 2026';
+// Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
+// vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
+export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+export const RELEASE_DATE = 'junij 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Bus → klik na naslednjo postajo te tja pelje',
-  'Linija → "Odpri postajo" skoči na postajni pogled',
-  'Postaja → klik na linijo odpre njen vozni red',
-  'Vse je medsebojno povezano — brez slepih ulic',
+  'Gumb "nazaj" zapira poglede, ne aplikacije',
+  'Zanesljivejši živi podatki in svežina busov',
+  'Bus pogled se osvežuje v živo (postaje, zamuda)',
+  'Popravki kontrastov, dostopnosti in manjših napak',
 ];

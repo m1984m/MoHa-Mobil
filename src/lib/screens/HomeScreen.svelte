@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { MapPinned, Bus, CloudOff, Star } from 'lucide-svelte';
-  import { nearestStops, upcomingDepartures, type GTFS, type Stop } from '../gtfs';
+  import { nearestStops, upcomingDepartures, loadMeta, feedCoversDate, type GTFS, type Stop } from '../gtfs';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -33,10 +33,25 @@
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
   let liveByStop: Record<number, StopArrival[]> = {};
+  // Cas zadnjega uspesnega fetcha per postaja — stari zivi prihodi ob izpadu
+  // OBA ne smejo vecno prekrivati svezih GTFS podatkov.
+  let liveAt: Record<number, number> = {};
   let lastFetchedKey = '';
 
-  onMount(() => {
+  // Datum veljavnosti voznih redov iz meta.json (prej hardkodiran string,
+  // ki je ob vsaki osvezitvi GTFS zastarel).
+  let feedLabel = '';
+  $: feedExpired = gtfs ? !feedCoversDate(gtfs) : false;
+
+  onMount(async () => {
     timer = setInterval(() => { tick++; refreshLive(); }, 30_000);
+    const m = await loadMeta();
+    if (m?.built) {
+      const d = new Date(m.built);
+      if (!isNaN(d.getTime())) {
+        feedLabel = `Velja od ${new Intl.DateTimeFormat('sl-SI', { month: 'long', year: 'numeric' }).format(d)}`;
+      }
+    }
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
@@ -61,6 +76,7 @@
 
   async function refreshLive() {
     if (!gtfs) return;
+    if (document.hidden) return; // app v ozadju — ne trosi proxy kvote
     const ids = Array.from(new Set([...nearStops.map(s => s.id), ...favStopList.map(s => s.id)]));
     if (ids.length === 0) return;
     const results = await Promise.allSettled(
@@ -68,7 +84,10 @@
     );
     const next: Record<number, StopArrival[]> = { ...liveByStop };
     for (const r of results) {
-      if (r.status === 'fulfilled') next[r.value[0]] = r.value[1];
+      if (r.status === 'fulfilled') {
+        next[r.value[0]] = r.value[1];
+        liveAt[r.value[0]] = Date.now();
+      }
     }
     liveByStop = next;
   }
@@ -99,15 +118,18 @@
 
   function rowsFor(stopId: number): Row[] {
     const live = liveByStop[stopId];
-    return (live && live.length > 0) ? liveRows(live) : gtfsRows(stopId);
+    // Zivi podatki veljajo 2 min od zadnjega uspesnega fetcha; starejsi
+    // padejo nazaj na GTFS (etaMin iz starega fetcha je ze zlagan).
+    const fresh = Date.now() - (liveAt[stopId] ?? 0) < 120_000;
+    return (live && live.length > 0 && fresh) ? liveRows(live) : gtfsRows(stopId);
   }
 
-  $: boards = (tick, gtfs, liveByStop, nearStops)
-    ? nearStops.map(s => ({ stop: s, rows: rowsFor(s.id) }))
-    : [];
-  $: favBoards = (tick, gtfs, liveByStop, favStopList)
-    ? favStopList.map(s => ({ stop: s, rows: rowsFor(s.id) }))
-    : [];
+  // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnosti jasne.
+  function makeBoards<T extends Stop>(g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number) {
+    return g ? list.map(s => ({ stop: s, rows: rowsFor(s.id) })) : [];
+  }
+  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick);
+  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick);
 
   async function refresh() {
     await onRequestLocation();
@@ -124,7 +146,11 @@
         <div class="t-subhead text-muted">
           {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
         </div>
-        <div class="t-footnote text-muted mt-0.5">Velja od februar 2026</div>
+        {#if feedExpired}
+          <div class="t-footnote mt-0.5" style="color: var(--status-delay)">Vozni redi so zastareli — preveri posodobitev</div>
+        {:else if feedLabel}
+          <div class="t-footnote text-muted mt-0.5">{feedLabel}</div>
+        {/if}
       </div>
       {#if weather}
         <button class="pressable t-subhead flex items-center gap-1.5 rounded-full px-2.5 py-1 -mr-1 surface-2 border border-base shrink-0"
@@ -188,17 +214,18 @@
           {#if b.rows.length === 0}
             <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
           {:else}
-            <ul>
+            <!-- div namesto ul/li: seznam je znotraj button elementa, kjer je ul neveljaven HTML -->
+            <div>
               {#each b.rows as r}
-                <li class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
+                <div class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
                   <LineBadge short={r.routeShort} routeId={r.routeId} size={$compactLists ? 'sm' : 'md'} />
                   <div class="flex-1 min-w-0">
                     <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{r.headsign}</div>
                   </div>
                   <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-                </li>
+                </div>
               {/each}
-            </ul>
+            </div>
           {/if}
         </button>
       {/each}
@@ -226,17 +253,18 @@
           {#if b.rows.length === 0}
             <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
           {:else}
-            <ul>
+            <!-- div namesto ul/li: seznam je znotraj button elementa, kjer je ul neveljaven HTML -->
+            <div>
               {#each b.rows as r}
-                <li class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
+                <div class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
                   <LineBadge short={r.routeShort} routeId={r.routeId} size={$compactLists ? 'sm' : 'md'} />
                   <div class="flex-1 min-w-0">
                     <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{r.headsign}</div>
                   </div>
                   <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-                </li>
+                </div>
               {/each}
-            </ul>
+            </div>
           {/if}
         </button>
       {/each}

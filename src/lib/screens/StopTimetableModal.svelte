@@ -56,8 +56,10 @@
   <div class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onClose}
+       on:keydown={(e) => { if (e.key === 'Escape') onClose(); }}
        role="dialog"
-       aria-modal="true">
+       aria-modal="true"
+       tabindex="-1">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);">
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">

@@ -52,14 +52,27 @@ function staleWhileRevalidate(req, cacheName) {
   });
 }
 
-function cacheFirst(req, cacheName) {
+// trimTo: mehka zgornja meja števila vnosov (FIFO — Cache API vrača keys v
+// vrstnem redu vstavljanja). Brez nje tiles cache raste neomejeno.
+function cacheFirst(req, cacheName, trimTo) {
   return caches.open(cacheName).then(async (cache) => {
     const cached = await cache.match(req);
     if (cached) return cached;
     const resp = await fetch(req);
-    if (resp && resp.ok) cache.put(req, resp.clone());
+    if (resp && resp.ok) {
+      cache.put(req, resp.clone());
+      if (trimTo) trimCache(cache, trimTo); // fire-and-forget
+    }
     return resp;
   });
+}
+
+async function trimCache(cache, max) {
+  try {
+    const keys = await cache.keys();
+    if (keys.length <= max) return;
+    for (const k of keys.slice(0, keys.length - max)) await cache.delete(k);
+  } catch {}
 }
 
 self.addEventListener('fetch', (event) => {
@@ -81,16 +94,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Basemap tiles and style (CARTO + Esri satelit)
+  // Basemap tiles, style in glyph fonti (CARTO + Esri satelit + OpenMapTiles).
+  // Glyphs prej niso bili pokriti → offline karta brez imen postaj in puščic.
   if (url.hostname.includes('basemaps.cartocdn.com') ||
-      url.hostname.includes('server.arcgisonline.com')) {
-    event.respondWith(cacheFirst(req, TILES_CACHE));
+      url.hostname.includes('server.arcgisonline.com') ||
+      url.hostname === 'fonts.openmaptiles.org') {
+    event.respondWith(cacheFirst(req, TILES_CACHE, 500));
     return;
   }
 
   // OSRM hodilne poti — stale-while-revalidate (koristno offline za predhodno zahtevane poti)
   if (url.hostname === 'router.project-osrm.org') {
     event.respondWith(staleWhileRevalidate(req, APP_CACHE));
+    return;
+  }
+
+  // Hashirani build asseti (/assets/index-[hash].js) so immutable — cache-first.
+  // SWR jih je ob vsakem zagonu po nepotrebnem re-prenašal (~430 KB gzip).
+  if (url.origin === self.location.origin && url.pathname.includes('/assets/')) {
+    event.respondWith(cacheFirst(req, APP_CACHE));
     return;
   }
 

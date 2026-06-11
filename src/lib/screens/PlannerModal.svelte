@@ -70,15 +70,22 @@
   $: scheduleAddr('from', fromQuery, fromFocus, fromPlace);
   $: scheduleAddr('to', toQuery, toFocus, toPlace);
 
+  // Seq token prepreci out-of-order: pocasnejsi Nominatim odgovor za starejsi
+  // niz ne sme prepisati predlogov za novejsi vnos.
+  let addrSeq: Record<'from' | 'to', number> = { from: 0, to: 0 };
+
   function scheduleAddr(which: 'from' | 'to', q: string, focus: boolean, place: Place | null) {
     const timerRef = which === 'from' ? fromAddrTimer : toAddrTimer;
     if (timerRef) clearTimeout(timerRef);
     if (!focus || place || !q.trim() || q.trim().length < 3) {
+      addrSeq[which]++; // razveljavi morebitni fetch v teku
       if (which === 'from') fromAddrResults = []; else toAddrResults = [];
       return;
     }
     const t = setTimeout(async () => {
+      const myToken = ++addrSeq[which];
       const res = await geocodeMany(q.trim());
+      if (myToken !== addrSeq[which]) return; // medtem je bil sprozen novejsi
       if (which === 'from') fromAddrResults = res; else toAddrResults = res;
     }, 350);
     if (which === 'from') fromAddrTimer = t; else toAddrTimer = t;
@@ -176,6 +183,14 @@
   async function run() {
     if (!gtfs) return;
     error = '';
+    // Validiraj vnos pred dragimi klici: prihod ob času v preteklosti nima rešitve.
+    if (timeMode === 'arrive') {
+      const n = new Date();
+      if (parseHM(timeStr) <= n.getHours() * 3600 + n.getMinutes() * 60) {
+        error = 'Izbrani čas prihoda je že mimo — izberi poznejšega.';
+        return;
+      }
+    }
     if (!fromPlace && fromQuery.trim()) {
       const ql = fromQuery.trim().toLowerCase();
       const st = gtfs.stops.find(s => s.name.toLowerCase() === ql);
@@ -228,14 +243,23 @@
         plans = planAll(gtfs, fromPlace, toPlace, depSec, now, accessMap, egressMap);
       }
       if (ctl.signal.aborted) return;
-      if (plans.length === 0) { error = 'Ni povezave.'; return; }
+      if (plans.length === 0) {
+        // Razčlenjena diagnoza namesto generičnega "Ni povezave." (slepa ulica).
+        error = accessMap.size === 0
+          ? 'Izhodišče je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.'
+          : egressMap.size === 0
+            ? 'Cilj je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.'
+            : 'Ob izbranem času ni povezave — poskusi drug čas odhoda.';
+        return;
+      }
       candidates = plans;
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
       error = 'Napaka: ' + (e?.message ?? e);
     } finally {
-      if (activeCtl === ctl) activeCtl = null;
-      running = false;
+      // running sprosti samo run, ki je še aktiven — sicer starejši finally
+      // ugasne indikator novejšemu (double-run race ob auto-run + ročnem kliku).
+      if (activeCtl === ctl) { activeCtl = null; running = false; }
     }
   }
 
@@ -272,8 +296,7 @@
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
       throw e;
     } finally {
-      if (activeCtl === ctl) activeCtl = null;
-      running = false;
+      if (activeCtl === ctl) { activeCtl = null; running = false; }
     }
   }
 
@@ -299,8 +322,11 @@
   function handleClose() { reset(); onClose(); }
 </script>
 
+<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') handleClose(); }} />
+
 {#if open}
-  <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);">
+  <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
+       role="dialog" aria-modal="true" aria-label="Načrtuj pot">
     <div class="surface rounded-b-3xl shadow-float"
          style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;">
       <div class="flex items-center justify-between px-4 pt-4 pb-2">
@@ -315,10 +341,13 @@
         <div class="relative">
           <div class="relative surface-2 rounded-xl border border-base">
             <MapPin size={18} color="var(--status-ontime)" class="absolute left-3 top-1/2 -translate-y-1/2" />
+            <!-- Place se razveljavi ob dejanski spremembi besedila (input), NE ob fokusu —
+                 tap v polje za pregled vnosa ne sme tiho zavreči izbranih koordinat. -->
             <input bind:value={fromQuery}
-              on:focus={() => { fromFocus = true; if (fromPlace) fromPlace = null; }}
+              on:focus={() => { fromFocus = true; }}
+              on:input={() => { if (fromPlace) fromPlace = null; }}
               on:blur={() => setTimeout(() => fromFocus = false, 150)}
-              class="w-full h-12 bg-transparent pl-10 pr-3 t-body outline-none"
+              class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
               placeholder="Od — postaja, naslov ali moja lokacija" />
           </div>
           {#if fromFocus && !fromPlace && (hasGeo || fromResults.length > 0 || fromAddrResults.length > 0 || showFromFavs)}
@@ -370,9 +399,10 @@
           <div class="relative surface-2 rounded-xl border border-base">
             <Flag size={18} color="var(--status-disrupt)" class="absolute left-3 top-1/2 -translate-y-1/2" />
             <input bind:value={toQuery}
-              on:focus={() => { toFocus = true; if (toPlace) toPlace = null; }}
+              on:focus={() => { toFocus = true; }}
+              on:input={() => { if (toPlace) toPlace = null; }}
               on:blur={() => setTimeout(() => toFocus = false, 150)}
-              class="w-full h-12 bg-transparent pl-10 pr-3 t-body outline-none"
+              class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
               placeholder="Do — postaja ali naslov" />
           </div>
           {#if toFocus && !toPlace && (toResults.length > 0 || toAddrResults.length > 0 || showToFavs)}
@@ -457,7 +487,7 @@
                 <label class="flex items-center gap-3">
                   <span class="t-callout">Čas:</span>
                   <input type="time" bind:value={timeStr}
-                         class="flex-1 h-11 surface rounded-lg border border-base px-3 t-body tabular-nums outline-none" />
+                         class="flex-1 h-11 surface rounded-lg border border-base px-3 t-body tabular-nums" />
                 </label>
               {/if}
             </div>
@@ -468,9 +498,9 @@
           disabled={(!fromPlace && !fromQuery.trim()) || (!toPlace && !toQuery.trim()) || running}
           on:click={run}>
           {#if running}
-            <div class="w-2 h-2 rounded-full bg-white"></div>
-            <div class="w-2 h-2 rounded-full bg-white" style="animation-delay: 0.15s"></div>
-            <div class="w-2 h-2 rounded-full bg-white" style="animation-delay: 0.3s"></div>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce"></div>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.15s"></div>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.3s"></div>
           {:else}
             Poišči pot
           {/if}

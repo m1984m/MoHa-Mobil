@@ -17,7 +17,10 @@
 </script>
 
 {#if $updateAvailable}
-  <div class="fixed left-3 right-3 bottom-[84px] z-50 surface rounded-2xl border border-base shadow-elev p-4"
+  <!-- safe-area-inset-bottom: na iPhonih z notch-em je TabBar višji za home indicator,
+       fiksnih 84px je toast polagalo čezenj. -->
+  <div class="fixed left-3 right-3 z-50 surface rounded-2xl border border-base shadow-elev p-4"
+       style="bottom: calc(env(safe-area-inset-bottom) + 84px)"
        transition:fly={{ y: 20, duration: 260 }}>
     <div class="flex items-start gap-3">
       <div class="shrink-0 w-9 h-9 rounded-full grid place-items-center bg-accent">

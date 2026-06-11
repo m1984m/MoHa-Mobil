@@ -52,7 +52,9 @@
         </div>
       </div>
     {/if}
+    <!-- role=group: touch handlerji so pull-to-refresh gesta, ne interakcija z vsebino -->
     <div bind:this={scrollEl}
+         role="group"
          class="absolute inset-0 {scrollable ? 'overflow-y-auto scrollbox' : 'overflow-hidden'}"
          style="padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); transform: translateY({pullY}px); transition: {pulling ? 'none' : 'transform var(--dur-base) var(--ease-ios)'};"
          on:touchstart={onTouchStart}

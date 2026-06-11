@@ -84,15 +84,17 @@
   // Prej smo vračali arrival (st[1]) s fallback na departure → pri postajah z dwell time
   // (arr ≠ dep) sta se vozni redi postaje in linije za isti trip razhajali za 1 min.
   // Fallback na arrival pokrije zadnjo postajo (terminus, kjer departure=0).
-  function tripStopTime(t: Trip, stopId: number): number | null {
-    for (const st of t.stops) if (st[0] === stopId) return st[2] || st[1];
-    return null;
+  // Vrne VSE obiske postaje v tripu — krožne linije gredo skozi isto postajo
+  // dvakrat in oba odhoda morata biti v voznem redu.
+  function tripStopTimes(t: Trip, stopId: number): number[] {
+    const out: number[] = [];
+    for (const st of t.stops) if (st[0] === stopId) out.push(st[2] || st[1]);
+    return out;
   }
 
   $: stopSchedule = selectedStopId != null
     ? trips
-        .map(t => ({ t, sec: tripStopTime(t, selectedStopId!) }))
-        .filter((x): x is { t: Trip; sec: number } => x.sec != null)
+        .flatMap(t => tripStopTimes(t, selectedStopId!).map(sec => ({ t, sec })))
         .sort((a, b) => a.sec - b.sec)
     : [];
 
@@ -103,8 +105,10 @@
   <div class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onClose}
+       on:keydown={(e) => { if (e.key === 'Escape') onClose(); }}
        role="dialog"
-       aria-modal="true">
+       aria-modal="true"
+       tabindex="-1">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);">
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">

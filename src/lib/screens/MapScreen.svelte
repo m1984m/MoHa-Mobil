@@ -12,7 +12,8 @@
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
   import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
-  import { mapStyleKind, departureDisplay, compactLists } from '../settings';
+  import { mapStyleKind, departureDisplay, compactLists, getWalkMps } from '../settings';
+  import { pushBack } from '../backstack';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
 
@@ -60,17 +61,57 @@
   let pinMode = false;
   $: if (selectedStop || activePlan || selectedVehicle) pinMode = false;
 
+  // Sistemski "nazaj" zapira poglede tega zaslona (bus detail, vozni redi, share)
+  // namesto izhoda iz aplikacije. Vzorec: ob odprtju pushBack(close), ob ročnem
+  // zaprtju release(); če je zaprl back gumb, je release no-op.
+  let backVehicle: (() => void) | null = null;
+  $: if (selectedVehicle && !backVehicle) {
+    backVehicle = pushBack(() => closeVehicle());
+  } else if (!selectedVehicle && backVehicle) {
+    const r = backVehicle; backVehicle = null; r();
+  }
+  let backStopTt: (() => void) | null = null;
+  $: if (stopTimetableOpen && !backStopTt) {
+    backStopTt = pushBack(() => stopTimetableOpen = false);
+  } else if (!stopTimetableOpen && backStopTt) {
+    const r = backStopTt; backStopTt = null; r();
+  }
+  let backLineTt: (() => void) | null = null;
+  $: if (lineTimetableOpen && !backLineTt) {
+    backLineTt = pushBack(() => lineTimetableOpen = false);
+  } else if (!lineTimetableOpen && backLineTt) {
+    const r = backLineTt; backLineTt = null; r();
+  }
+  let backShare: (() => void) | null = null;
+  $: if (shareDialogOpen && !backShare) {
+    backShare = pushBack(() => shareDialogOpen = false);
+  } else if (!shareDialogOpen && backShare) {
+    const r = backShare; backShare = null; r();
+  }
+
   function openLineTimetable(route: any, dir = 0, stopId: number | null = null) {
     lineTimetableRoute = route;
     lineTimetableDir = dir;
     lineTimetableStopId = stopId;
     lineTimetableOpen = true;
   }
+
+  // Smer linije iz OBA headsigna — prej je klik na živ prihod vedno odprl smer 0,
+  // tudi ko je bus vozil v nasprotno (LineDescription ≈ GTFS trip headsign).
+  function dirForArrival(a: StopArrival, routeId: number): number {
+    if (!gtfs) return 0;
+    const hs = a.headsign.trim().toLowerCase();
+    if (!hs) return 0;
+    const t = gtfs.trips.find(t => t.route === routeId && t.headsign.trim().toLowerCase() === hs);
+    return t?.dir ?? 0;
+  }
   let tick30 = 0;
   let tick30Timer: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
-    shapesMap = await loadShapes();
+    // Napaka shapes.json NE sme ustaviti živih podatkov — prej je throw tu
+    // tiho preskočil refreshSynth/startPolling in karta je ostala mrtva.
+    try { shapesMap = await loadShapes(); } catch { shapesMap = null; }
     refreshSynth();
     vehicleTimer = setInterval(refreshSynth, 10_000);
     tick30Timer = setInterval(() => tick30++, 30_000);
@@ -88,6 +129,7 @@
   // vrstico s tem busCode. Auto-refresh vsakih 15 s (enako kot postajni view). Ta ETA
   // je authoritative za top card — odpravi neujemanje z stop view-om.
   async function refreshVehicleArrival(live: LiveVehicle) {
+    if (document.hidden) return; // app v ozadju — ne troši proxy kvote
     if (live.nextStopPointId == null || !live.busCode) return;
     try {
       const arr = await fetchArrivalsForStopPoint(live.nextStopPointId);
@@ -113,6 +155,7 @@
   }
 
   async function refreshArrivals(stopId: number) {
+    if (document.hidden) return; // app v ozadju — ne troši proxy kvote
     liveArrivalsLoading = liveArrivals.length === 0;
     try {
       const arr = await fetchArrivalsForStopPoint(stopId);
@@ -140,6 +183,18 @@
     : new Map<string, number>();
 
   $: smoothedById = new Map(smoothed.map(s => [s.deviceId, s]));
+
+  // Osveži izbran živ bus iz vsakega polla — sicer detail pogled (pozicija,
+  // nextStopPointId, headsign) zamrzne na stanju ob tapu. Identity guard
+  // (fresh !== selectedLive) prepreči neskončno reaktivno zanko.
+  $: if (selectedLive) {
+    const fresh = live.vehicles.find(v => v.deviceId === selectedLive!.deviceId);
+    if (fresh && fresh !== selectedLive) selectedLive = fresh;
+  }
+  $: if (selectedVehicle && selectedLive) {
+    const dv = liveDisplay.find(d => d.tripId === selectedLive!.deviceId);
+    if (dv && dv !== selectedVehicle) selectedVehicle = dv;
+  }
   $: liveDisplay = live.vehicles.map(v => {
     const gtfsRouteId = routeIdByShort.get(v.lineCode.toLowerCase());
     const sm = smoothedById.get(v.deviceId);
@@ -156,17 +211,24 @@
       dwelling: false,
     } as Vehicle;
   });
-  $: vehicles = live.vehicles.length > 0 ? liveDisplay : synthVehicles;
-  $: isLive = live.vehicles.length > 0 && !live.error;
+  // staleSec zdaj dejansko raste (ticker v realtime.ts) — ob izpadu OBA po 90 s
+  // preklopimo na sintetične buse namesto prikazovanja zamrznjenih GPS pozicij.
+  $: isLive = live.vehicles.length > 0 && staleSec < 90;
+  $: vehicles = isLive ? liveDisplay : synthVehicles;
 
   // React to incoming selectedStop / activePlan
   $: handleStopChange(selectedStop);
+  // Seq guard: hitri preklop med postajami sproži dve prekrivajoči se async
+  // izvedbi — starejša po await-ih ne sme prepisati novejšega stanja.
+  let stopChangeSeq = 0;
   async function handleStopChange(s: Stop | null) {
+    const seq = ++stopChangeSeq;
     if (liveArrivalsTimer) { clearInterval(liveArrivalsTimer); liveArrivalsTimer = null; }
     liveArrivals = [];
     if (s) {
       selectedVehicle = null;
       await tick();
+      if (seq !== stopChangeSeq) return;
       // Posnami trenutni pogled pred prvim flyTo — samo ob prvi izbiri (ne prepiši pri preklopu
       // med postajami), da deselect vedno vrne na izvirno stanje karte.
       if (!prevView && mapRef) {
@@ -180,7 +242,9 @@
       liveArrivalsTimer = setInterval(() => refreshArrivals(s.id), 15_000);
       if (!gtfs) return;
       const combos = shapesForStop(gtfs, s.id);
-      const shMap = await loadShapes();
+      let shMap: Map<number, Shape>;
+      try { shMap = await loadShapes(); } catch { return; }
+      if (seq !== stopChangeSeq) return;
       activeShapes = combos
         .map(c => { const sh = shMap.get(c.shape); return sh ? { ...sh, color: routeColor(c.route) } : null; })
         .filter((x): x is Shape & { color: string } => !!x);
@@ -205,7 +269,8 @@
 
   $: if (activePlan) {
     requestAnimationFrame(() => {
-      const all = activePlan!.geoms.flatMap(g => g.coords);
+      if (!activePlan) return; // plan lahko izgine pred izvedbo frame-a
+      const all = activePlan.geoms.flatMap(g => g.coords);
       if (all.length) mapRef?.fitBounds(all);
       sheetRef?.setSnap(0);
     });
@@ -282,7 +347,11 @@
       ? vehicles.filter(v => v.tripId === selectedVehicle!.tripId)
       : vehicles;
 
-  $: departures = (tick30, gtfs && selectedStop) ? upcomingDepartures(gtfs!, selectedStop.id, new Date(), 5) : [];
+  // Eksplicitni parametri namesto comma-operator trika — TS-čisto in jasna odvisnost od tick30.
+  function calcDepartures(g: GTFS | null, s: Stop | null, _tick: number) {
+    return g && s ? upcomingDepartures(g, s.id, new Date(), 5) : [];
+  }
+  $: departures = calcDepartures(gtfs, selectedStop, tick30);
   $: nextWait = liveArrivals.length > 0
     ? liveArrivals[0].etaMin
     : (departures[0]?.minutesFromNow ?? null);
@@ -317,40 +386,48 @@
   }
 
   // Matcha GTFS trip za izbrano vozilo — za sintetična po ID-ju, za žive preko
-  // heuristike (linija + headsign + najbližja postaja busu).
-  $: vehTrip = (() => {
-    if (!gtfs || !selectedVehicle) return null as Trip | null;
-    const syn = gtfs.trips.find(t => t.id === selectedVehicle!.tripId);
+  // heuristike (linija + headsign + najbližja postaja busu). tick30 dependency:
+  // heuristika je časovno odvisna (nowSec), brez nje je bil match zamrznjen na tap.
+  function calcVehTrip(g: GTFS | null, v: Vehicle | null, lv: LiveVehicle | null, _tick: number): Trip | null {
+    if (!g || !v) return null;
+    const syn = g.trips.find(t => t.id === v.tripId);
     if (syn) return syn;
-    if (!selectedLive) return null;
+    if (!lv) return null;
     const now = new Date();
     const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     return findTripForLiveBus({
-      lineCode: selectedLive.lineCode,
-      headsign: selectedLive.headsign,
-      lat: selectedLive.lat,
-      lon: selectedLive.lon,
-    }, nowSec, precomputeVehiclesIndexes(gtfs, now));
-  })();
+      lineCode: lv.lineCode,
+      headsign: lv.headsign,
+      lat: lv.lat,
+      lon: lv.lon,
+    }, nowSec, precomputeVehiclesIndexes(g, now));
+  }
+  $: vehTrip = calcVehTrip(gtfs, selectedVehicle, selectedLive, tick30);
 
-  $: vehNextStops = (() => {
-    if (!gtfs || !selectedVehicle || !vehTrip) return [];
+  // tick30 dependency: odštevalnik minut se je prej izračunal enkrat ob tapu
+  // in nikoli več osvežil. Filter izloči postaje, ki jih GTFS lookup ne najde
+  // (prej non-null assert → potencialni crash renderja).
+  function calcVehNextStops(g: GTFS | null, v: Vehicle | null, trip: Trip | null, _tick: number) {
+    if (!g || !v || !trip) return [];
     const nowSec = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
-    const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
+    const stopById = new Map(g.stops.map(s => [s.id, s]));
     // Najprej poskusi po nextStopId (sintetični bus). Če ne ujame (živi bus z OBA ID-jem),
     // vrni geografsko najbližjo postajo + 1 kot "naslednja".
-    let idx = vehTrip.stops.findIndex(st => st[0] === selectedVehicle!.nextStopId);
+    let idx = trip.stops.findIndex(st => st[0] === v.nextStopId);
     if (idx < 0) {
-      const near = nearestTripStopIdx(gtfs, vehTrip, selectedVehicle!.lat, selectedVehicle!.lon);
-      idx = Math.min(vehTrip.stops.length - 1, near + 1);
+      const near = nearestTripStopIdx(g, trip, v.lat, v.lon);
+      idx = Math.min(trip.stops.length - 1, near + 1);
     }
     if (idx < 0) return [];
-    return vehTrip.stops.slice(idx).map(st => ({
-      stop: stopById.get(st[0])!,
-      arr: st[1],
-      minutes: Math.max(0, Math.round((st[1] - nowSec) / 60)),
-    }));
-  })();
+    return trip.stops.slice(idx)
+      .map(st => ({
+        stop: stopById.get(st[0]),
+        arr: st[1],
+        minutes: Math.max(0, Math.round((st[1] - nowSec) / 60)),
+      }))
+      .filter((x): x is { stop: Stop; arr: number; minutes: number } => !!x.stop);
+  }
+  $: vehNextStops = calcVehNextStops(gtfs, selectedVehicle, vehTrip, tick30);
 
   // Ime naslednje postaje: prioritetno po OBA nextStopPointId (source of truth za
   // etaMin), fallback na vehNextStops[0]. Prej je top-card kazal samo ETA brez imena
@@ -358,22 +435,26 @@
   // findIndex-fallbacka ni nujno ista postaja kot tista, na katero se etaMin nanaša.
   $: liveNextStopName = (() => {
     if (!gtfs || !selectedLive) return null;
-    if (selectedLive.nextStopPointId != null) {
-      const s = gtfs.stops.find(x => x.id === selectedLive.nextStopPointId);
+    const lv = selectedLive;
+    if (lv.nextStopPointId != null) {
+      const s = gtfs.stops.find(x => x.id === lv.nextStopPointId);
       if (s) return s.name;
     }
     return vehNextStops[0]?.stop.name ?? null;
   })();
 
   // Naloži shape izbranega vozila za izris celotne linije na karti.
+  // Identity guard po await-u: ob hitri menjavi vozil je pozni callback za bus A
+  // sicer izrisal linijo A, čeprav je bil izbran že bus B.
   $: {
     if (selectedVehicle && vehTrip && vehTrip.shape != null) {
       const shapeId = vehTrip.shape;
       const color = selectedVehicle.color;
+      const capturedTripId = selectedVehicle.tripId;
       loadShapes().then(sh => {
         const s = sh.get(shapeId);
-        if (selectedVehicle && s) vehicleShapes = [{ ...s, color }];
-      });
+        if (selectedVehicle?.tripId === capturedTripId && s) vehicleShapes = [{ ...s, color }];
+      }).catch(() => {});
     } else {
       vehicleShapes = [];
     }
@@ -483,22 +564,18 @@
     if (m === null) return 'Danes ni več odhodov';
     if (m <= 0) return 'Avtobus prihaja zdaj';
     if (m === 1) return 'Naslednji avtobus čez 1 minuto';
+    if (m === 2) return 'Naslednji avtobus čez 2 minuti'; // dvojina
     if (m < 5) return `Naslednji avtobus čez ${m} minute`;
     if (m < 60) return `Naslednji avtobus čez ${m} minut`;
     const h = Math.floor(m / 60), r = m % 60;
     return r === 0 ? `Naslednji avtobus čez ${h} h` : `Čez ${h} h ${r} min`;
   }
 
-  // Hitra hoja: 1.3 m/s (≈4.7 km/h) + 30 s buffer.
+  // Čas hoje do postaje + 30 s buffer. Uporablja isto nastavitev hitrosti hoje
+  // kot planer (prej hardkodiranih 1,3 m/s — "Kreni" je ignoriral nastavitev).
   function walkMinutes(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-    const R = 6371000;
-    const toRad = (d: number) => d * Math.PI / 180;
-    const dLat = toRad(b.lat - a.lat);
-    const dLon = toRad(b.lon - a.lon);
-    const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-    const meters = 2 * R * Math.asin(Math.sqrt(h));
-    return Math.ceil((meters / 1.3 + 30) / 60);
+    const meters = haversineM(a.lat, a.lon, b.lat, b.lon);
+    return Math.ceil((meters / getWalkMps() + 30) / 60);
   }
 </script>
 
@@ -518,7 +595,7 @@
     mapStyle={$mapStyleKind}
     showCrosshair={pinMode}
     onStopTap={(s) => onStopChange(s)}
-    onMapTap={() => { if (selectedStop) onStopChange(null); }}
+    onMapTap={() => { if (selectedStop) onStopChange(null); else if (selectedVehicle) closeVehicle(); }}
     onMapLongPress={onMapLongPress}
     onVehicleTap={onVehicleTap}
     onUserPan={() => { if (followBus) followBus = false; }} />
@@ -827,7 +904,7 @@
               {@const absDelay = Math.abs(a.delayMin)}
               {@const delayColor = absDelay > 5 ? 'var(--status-disrupt)' : absDelay >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}
               <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, 0, selectedStop?.id ?? null)} aria-label="Vozni red linije {a.lineCode}">
+                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, dirForArrival(a, gtfsRoute.id), selectedStop?.id ?? null)} aria-label="Vozni red linije {a.lineCode}">
                   <LineBadge short={a.lineCode} routeId={gtfsRoute?.id ?? a.lineId} size="md" />
                 </button>
                 <button class="pressable flex-1 {$compactLists ? 'py-1.5' : 'py-3'} pr-4 pl-1 flex items-center gap-3 text-left min-w-0"
@@ -973,7 +1050,11 @@
             </li>
           {/each}
         </ul>
-        <p class="mt-3 t-footnote text-muted px-1">Pozicija je ocenjena iz voznega reda (±1–2 min).</p>
+        {#if selectedLive}
+          <p class="mt-3 t-footnote text-muted px-1">Pozicija je GPS v živo; časi prihodov so iz voznega reda.</p>
+        {:else}
+          <p class="mt-3 t-footnote text-muted px-1">Pozicija je ocenjena iz voznega reda (±1–2 min).</p>
+        {/if}
 
       {/if}
     </div>
@@ -983,7 +1064,8 @@
     <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
          style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
          on:click|self={() => shareDialogOpen = false}
-         role="dialog" aria-modal="true">
+         on:keydown={(e) => { if (e.key === 'Escape') shareDialogOpen = false; }}
+         role="dialog" aria-modal="true" tabindex="-1">
       <div class="surface w-full sm:max-w-md rounded-3xl shadow-float overflow-hidden flex flex-col"
            style="max-height: calc(100dvh - 2rem);">
         <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
