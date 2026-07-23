@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,8 @@
     "build": "vite build",
     "prebuild": "node scripts/build-sw.mjs",
     "preview": "vite preview",
+    "gtfs": "node scripts/fetch-gtfs.mjs && node scripts/build-gtfs.mjs",
+    "gtfs:check": "node scripts/fetch-gtfs.mjs --check",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

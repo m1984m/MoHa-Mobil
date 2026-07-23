@@ -5,6 +5,19 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.8.1 — 2026-07-23
+
+Posodobitev voznega reda + orodje za samodejni prevzem GTFS.
+
+### Podatki
+- **Nov GTFS feed Marprom (velja 06.07.2026 – 31.12.2026).** Prejšnji feed je potekel 25.06.2026, aplikacija je torej ~4 tedne prikazovala zastarele vozne rede.
+- Poletni vozni red: 454 → **457 postaj**, 2.067 → **1.833 voženj**, 39.714 → **35.397 postankov**; linije (G1–G6, P7–P19) nespremenjene.
+- ⚠️ Delovni servis v tem feedu velja **samo do 31.08.2026** (sobota/nedelja do 31.12.). Šolski vozni red Marprom objavi konec avgusta — takrat je nujen nov prevzem.
+
+### Orodja
+- Nov `scripts/fetch-gtfs.mjs`: prenese `vozniredi.marprom.si/gtfs/gtfs.zip`, razpakira (lasten minimalni ZIP reader, brez odvisnosti), naredi varnostno kopijo prejšnjega feeda in namesti novega. `npm run gtfs` = prevzem + build, `npm run gtfs:check` = samo preverjanje.
+- Opozorilo pred potekom se računa **po dnevih v tednu iz `calendar.txt`**, ne iz `feed_end_date` — sicer bi trenutni feed izgledal veljaven do 31.12., čeprav delavniki potečejo 31.08.
+
 ## 0.8.0 — 2026-06-12
 
 Celovita revizija (analiza: design / UX tokovi / podatkovni tokovi / točnost podatkov / PWA) + popravki.
