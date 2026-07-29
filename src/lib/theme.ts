@@ -1,4 +1,7 @@
 const KEY = 'mmob-theme';
+// Izvožen, ker se ne drži predpone 'mm.' kot ostale nastavitve — "Počisti vse
+// podatke" ga je zato spregledal in tema je preživela ponastavitev.
+export const THEME_KEY = KEY;
 export type Theme = 'light' | 'dark' | 'auto' | 'contrast' | 'mono';
 
 const THEME_CLASSES = ['dark', 'contrast', 'mono'] as const;
@@ -33,7 +36,9 @@ export function applyTheme(t: Theme) {
 export function initTheme(): Theme {
   const stored = localStorage.getItem(KEY) as Theme | null;
   const valid: Theme[] = ['light', 'dark', 'auto', 'contrast', 'mono'];
-  const t: Theme = (stored && valid.includes(stored)) ? stored : 'light';
+  // Privzeto 'auto': aplikacija se uporablja tudi ponoči na postaji — telefon v
+  // nočnem načinu je prej dobil bel zaslon, ker je bil privzetek trdo 'light'.
+  const t: Theme = (stored && valid.includes(stored)) ? stored : 'auto';
   applyTheme(t);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if ((localStorage.getItem(KEY) as Theme) === 'auto') applyTheme('auto');

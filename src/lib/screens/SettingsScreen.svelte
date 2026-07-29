@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
-  import { applyTheme, type Theme } from '../theme';
+  import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+  import { applyTheme, THEME_KEY, type Theme } from '../theme';
   import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
@@ -67,8 +68,9 @@
     onThemeChange(t);
   }
 
+  let clearConfirmOpen = false;
+
   function clearAllData() {
-    if (!confirm('Počisti vse shranjene podatke aplikacije?\n\nTo bo odstranilo priljubljena postajališča, shranjene poti in vse tvoje nastavitve. Aplikacija se bo po tem osvežila.')) return;
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -76,6 +78,8 @@
         if (k && k.startsWith('mm.')) keysToRemove.push(k);
       }
       for (const k of keysToRemove) localStorage.removeItem(k);
+      // Tema se ne drži predpone 'mm.' — brez tega je preživela "ponastavitev vseh nastavitev".
+      localStorage.removeItem(THEME_KEY);
       try { sessionStorage.removeItem('mm_tab'); } catch {}
     } catch {}
     location.reload();
@@ -303,7 +307,7 @@
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[56px] px-4">
           <button class="pressable w-full min-h-[56px] flex items-center gap-3 text-left"
-                  on:click={clearAllData}>
+                  on:click={() => clearConfirmOpen = true}>
             <Trash2 size={20} color="var(--status-disrupt)" />
             <div class="flex-1">
               <div class="t-body" style="color: var(--status-disrupt)">Počisti vse podatke</div>
@@ -339,13 +343,16 @@
           <div class="flex-1 t-body">Razvijalec</div>
           <div class="t-footnote text-muted">Matej</div>
         </li>
-        <li class="min-h-[56px] px-4 flex items-center gap-3">
-          <Code2 size={20} color="var(--text-muted)" />
-          <div class="flex-1 t-body">Odprtokodno</div>
-          <div class="t-footnote text-muted">PWA</div>
+        <li>
+          <a class="pressable min-h-[56px] px-4 flex items-center gap-3"
+             href="https://github.com/m1984m/MoHa-Mobil" target="_blank" rel="noopener noreferrer">
+            <Code2 size={20} color="var(--text-muted)" />
+            <div class="flex-1 t-body">Izvorna koda</div>
+            <ExternalLink size={16} color="var(--text-muted)" />
+          </a>
         </li>
       </ul>
-      <p class="mt-3 px-1 t-footnote text-muted">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>
+      <p class="mt-3 px-1 t-footnote text-muted">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>
     </section>
 
     <section>
@@ -362,3 +369,10 @@
 
   </div>
 </Screen>
+
+<ConfirmDialog open={clearConfirmOpen}
+               title="Počisti vse shranjene podatke?"
+               body="Odstrani priljubljena postajališča, shranjene poti in vse nastavitve, vključno s temo. Aplikacija se bo nato osvežila. Tega dejanja ni mogoče razveljaviti."
+               confirmLabel="Počisti vse" destructive
+               onConfirm={clearAllData}
+               onCancel={() => clearConfirmOpen = false} />

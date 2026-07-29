@@ -235,18 +235,8 @@ function snapshot(vs: LiveVehicle[]) {
   for (const v of vs) {
     curSnap.set(v.deviceId, { lat: v.lat, lon: v.lon, at: now });
   }
-  let movedCount = 0;
-  for (const [id, cur] of curSnap) {
-    const prev = prevSnap.get(id);
-    if (!prev) continue;
-    const dxM = (cur.lon - prev.lon) * LON_M_PER_DEG;
-    const dyM = (cur.lat - prev.lat) * LAT_M_PER_DEG;
-    if (Math.hypot(dxM, dyM) > 5) movedCount++;
-  }
-  if (prevSnap.size > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[OBA poll] vehicles=${vs.length} newGps=${movedCount}/${vs.length}`);
-  }
+  // Diagnostični console.log ob vsakem pollu je odstranjen — v produkciji je
+  // onesnaževal konzolo na 30 s. Za razhroščevanje uporabi Network zavihek.
 }
 
 // Posledni bearing per deviceId — ohranjen preko pollov, da ikona ne poskoči

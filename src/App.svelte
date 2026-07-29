@@ -19,6 +19,7 @@
   import PlannerModal from './lib/screens/PlannerModal.svelte';
   import WeatherModal from './lib/screens/WeatherModal.svelte';
   import UpdateToast from './lib/ui/UpdateToast.svelte';
+  import Toast from './lib/ui/Toast.svelte';
 
   type TabId = 'home' | 'timetables' | 'map' | 'fav' | 'settings';
 
@@ -334,6 +335,7 @@
     onClose={() => weatherOpen = false} />
 
   <UpdateToast />
+  <Toast />
 
   {#if routeRunning}
     <div class="fixed left-1/2 -translate-x-1/2 z-[60] pointer-events-none"

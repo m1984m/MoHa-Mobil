@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ListOrdered, ArrowLeft, MapPin, Check } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
   import BottomSheet from '../BottomSheet.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
-  import { upcomingDepartures, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { upcomingDepartures, nextServiceDeparture, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
@@ -16,6 +16,10 @@
   import { pushBack } from '../backstack';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
+  import { focusTrap } from '../focusTrap';
+  import { toast } from '../toast';
+  import { walkRoutingDegraded } from '../routing';
+  import { fmtClock, fmtDuration, fmtWaitSentence, fmtDayOffset, LEAVE_HINT_MAX_MIN } from '../time';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -352,11 +356,18 @@
     return g && s ? upcomingDepartures(g, s.id, new Date(), 5) : [];
   }
   $: departures = calcDepartures(gtfs, selectedStop, tick30);
+  // Ko danes ni več odhodov, poišči prvi odhod naslednjega dne s prometom —
+  // sicer je "Danes ni več odhodov s te postaje" slepa ulica.
+  $: nextDayDep = (gtfs && selectedStop && departures.length === 0 && liveArrivals.length === 0)
+    ? nextServiceDeparture(gtfs, selectedStop.id)
+    : null;
   $: nextWait = liveArrivals.length > 0
     ? liveArrivals[0].etaMin
     : (departures[0]?.minutesFromNow ?? null);
   $: walkToStopMin = (hasGeo && selectedStop) ? walkMinutes(origin, selectedStop) : null;
   $: leaveInMin = (walkToStopMin != null && nextWait != null) ? nextWait - walkToStopMin : null;
+  // Nasvet "kreni čez 277 minut" nima vsebine — odštevalnik ima smisel le blizu odhoda.
+  $: showLeaveHint = leaveInMin != null && leaveInMin <= LEAVE_HINT_MAX_MIN;
   $: isFav = selectedStop ? $favStops.has(selectedStop.id) : false;
 
   // Vehicle trip info
@@ -460,17 +471,10 @@
     }
   }
 
-  function fmtTime(sec: number) {
-    const h = Math.floor(sec / 3600) % 24;
-    const m = Math.floor((sec % 3600) / 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
-  function fmtDur(sec: number) {
-    const m = Math.round(sec / 60);
-    if (m < 60) return `${m} min`;
-    const h = Math.floor(m / 60), r = m % 60;
-    return r === 0 ? `${h} h` : `${h} h ${r} min`;
-  }
+  // Oblikovanje časov je skupno (lib/time.ts) — prej so bili v tej datoteki
+  // trije neodvisni formati za isto stvar.
+  const fmtTime = fmtClock;
+  function fmtDur(sec: number) { return fmtDuration(sec / 60); }
   function sameCoord(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
     return Math.abs(a.lat - b.lat) < 0.0001 && Math.abs(a.lon - b.lon) < 0.0001;
   }
@@ -478,29 +482,53 @@
     ? $savedRoutes.some(r => sameCoord(r.from, activePlan!.from) && sameCoord(r.to, activePlan!.to))
     : false;
 
-  let saveToast = '';
-  let saveToastTimer: ReturnType<typeof setTimeout> | null = null;
-  function flashToast(msg: string) {
-    saveToast = msg;
-    if (saveToastTimer) clearTimeout(saveToastTimer);
-    saveToastTimer = setTimeout(() => saveToast = '', 2200);
-  }
+  // Toast je zdaj skupen (lib/toast.ts) — z gumbom Razveljavi tam, kjer je akcija rušilna.
+  const flashToast = (msg: string) => toast.show(msg);
+
   function savePlan() {
     if (!activePlan) return;
     const match = $savedRoutes.find(r => sameCoord(r.from, activePlan!.from) && sameCoord(r.to, activePlan!.to));
     if (match) {
+      const snapshot = { label: match.label, from: match.from, to: match.to };
       savedRoutes.remove(match.id);
-      flashToast('Pot odstranjena iz priljubljenih');
+      toast.showUndo('Pot odstranjena iz priljubljenih', () => savedRoutes.add(snapshot));
       return;
     }
     const label = `${activePlan.from.name} → ${activePlan.to.name}`;
     savedRoutes.add({ label, from: activePlan.from, to: activePlan.to });
-    flashToast('Pot shranjena med priljubljene');
+    toast.show('Pot shranjena med priljubljene');
   }
 
   let shareDialogOpen = false;
   let shareText = '';
   let shareUrl = '';
+
+  // ── Iskanje postaje na karti ──
+  // Prej se je do postaje po imenu prišlo samo prek zavihka "Vozni redi";
+  // na karti je bil edini vstop tap po pikici.
+  let stopSearchOpen = false;
+  let stopQuery = '';
+  $: stopSearchResults = (gtfs && stopQuery.trim().length >= 2)
+    ? gtfs.stops
+        .filter(s => s.name.toLowerCase().includes(stopQuery.trim().toLowerCase()))
+        .slice(0, 20)
+    : [];
+
+  let backSearch: (() => void) | null = null;
+  $: if (stopSearchOpen && !backSearch) {
+    backSearch = pushBack(() => stopSearchOpen = false);
+  } else if (!stopSearchOpen && backSearch) {
+    const r = backSearch; backSearch = null; r();
+  }
+
+  function openStopSearch() { stopQuery = ''; stopSearchOpen = true; }
+  function pickSearchedStop(s: Stop) {
+    stopSearchOpen = false;
+    selectedVehicle = null;
+    selectedLive = null;
+    followBus = false;
+    onStopChange(s);
+  }
 
   function buildShareInfo(): { title: string; text: string; url: string } {
     const f = activePlan!.from, t = activePlan!.to;
@@ -560,16 +588,7 @@
     }
   }
 
-  function waitLabel(m: number | null): string {
-    if (m === null) return 'Danes ni več odhodov';
-    if (m <= 0) return 'Avtobus prihaja zdaj';
-    if (m === 1) return 'Naslednji avtobus čez 1 minuto';
-    if (m === 2) return 'Naslednji avtobus čez 2 minuti'; // dvojina
-    if (m < 5) return `Naslednji avtobus čez ${m} minute`;
-    if (m < 60) return `Naslednji avtobus čez ${m} minut`;
-    const h = Math.floor(m / 60), r = m % 60;
-    return r === 0 ? `Naslednji avtobus čez ${h} h` : `Čez ${h} h ${r} min`;
-  }
+  const waitLabel = fmtWaitSentence;
 
   // Čas hoje do postaje + 30 s buffer. Uporablja isto nastavitev hitrosti hoje
   // kot planer (prej hardkodiranih 1,3 m/s — "Kreni" je ignoriral nastavitev).
@@ -578,6 +597,12 @@
     return Math.ceil((meters / getWalkMps() + 30) / 60);
   }
 </script>
+
+<svelte:window on:keydown={(e) => {
+  if (e.key !== 'Escape') return;
+  if (stopSearchOpen) stopSearchOpen = false;
+  else if (shareDialogOpen) shareDialogOpen = false;
+}} />
 
 <div class="absolute inset-0">
   <MapView bind:this={mapRef}
@@ -721,6 +746,12 @@
               <div class="t-footnote text-muted px-1 mb-3">
                 Razdalja z avtom je ~{planSummary.driveKm} km.
               </div>
+              {#if $walkRoutingDegraded}
+                <div class="t-footnote px-1 mb-3 flex items-start gap-1.5" style="color: var(--status-delay)">
+                  <TriangleAlert size={14} class="shrink-0 mt-0.5" />
+                  <span>Pešpoti trenutno niso na voljo — časi hoje so ocenjeni po zračni razdalji in so lahko prekratki.</span>
+                </div>
+              {/if}
 
               <button type="button"
                       class="pressable w-full h-11 rounded-xl surface-2 border border-base mb-4 flex items-center justify-center gap-2"
@@ -762,6 +793,16 @@
         {/if}
       </div>
     </div>
+  {/if}
+
+  <!-- Iskanje postaje po imenu -->
+  {#if !activePlan}
+    <button class="pressable absolute z-30 right-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
+            style="top: calc(env(safe-area-inset-top) + 0.75rem)"
+            on:click={openStopSearch}
+            aria-label="Poišči postajo">
+      <Search size={18} color="var(--accent)" />
+    </button>
   {/if}
 
   <!-- Live indicator -->
@@ -840,30 +881,30 @@
     <div class="px-4 pb-28 max-w-screen-sm mx-auto">
 
       {#if selectedStop}
-        <div class="flex items-start justify-between gap-3 mb-3">
-          <div class="min-w-0">
-            <div class="t-footnote text-muted uppercase tracking-wide">Postaja</div>
-            <h2 class="t-title2 font-semibold truncate">{selectedStop.name}</h2>
-            {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="pressable w-10 h-10 rounded-full grid place-items-center shadow-card"
+        <!-- Naslov v svoji vrstici, akcije pod njim: s 44 px tarčami so štirje gumbi
+             odjedli toliko širine, da so se daljša imena postaj obrezala na tretjini. -->
+        <div class="mb-3">
+          <div class="t-footnote text-muted uppercase tracking-wide">Postaja</div>
+          <h2 class="t-title2 font-semibold">{selectedStop.name}</h2>
+          {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
+          <div class="flex items-center gap-2 mt-2.5">
+            <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card"
                     style="background: var(--accent); color: #ffffff"
                     on:click={() => onPlanToStop(selectedStop!)}
                     aria-label="Načrtuj pot do te postaje">
               <Navigation size={18} color="#ffffff" />
             </button>
-            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => stopTimetableOpen = true}
                     aria-label="Vozni red postaje">
               <CalendarClock size={18} />
             </button>
-            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => favStops.toggle(selectedStop!.id)}
                     aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljena'}>
               <Star size={18} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'} />
             </button>
-            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center" on:click={() => onStopChange(null)} aria-label="Zapri">
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center ml-auto" on:click={() => onStopChange(null)} aria-label="Zapri">
               <X size={18} />
             </button>
           </div>
@@ -874,11 +915,21 @@
           <div class="w-11 h-11 rounded-xl grid place-items-center" style="background: var(--accent); color: white;">
             <Clock size={20} />
           </div>
-          <div class="flex-1 min-w-0">
+          <!-- aria-live: čas se osvežuje vsakih 15–30 s; bralnik zaslona sprememb prej ni javil. -->
+          <div class="flex-1 min-w-0" aria-live="polite">
             <div class="t-footnote text-muted">Čakanje</div>
-            <div class="t-headline font-semibold">{waitLabel(nextWait)}</div>
+            <div class="t-headline font-semibold">
+              {#if nextDayDep}
+                Prvi {fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday)} ob {fmtTime(nextDayDep.depSec)}
+              {:else}
+                {waitLabel(nextWait)}
+              {/if}
+            </div>
+            {#if nextDayDep}
+              <div class="t-footnote text-muted mt-0.5">Danes ni več odhodov · linija {nextDayDep.route.short}</div>
+            {/if}
           </div>
-          {#if leaveInMin != null}
+          {#if showLeaveHint && leaveInMin != null}
             {@const c = leaveInMin <= 0 ? 'var(--status-disrupt)' : leaveInMin <= 2 ? 'var(--status-delay)' : 'var(--status-ontime)'}
             <div class="text-right pl-3 border-l border-base shrink-0">
               <div class="t-footnote text-muted flex items-center gap-1 justify-end">
@@ -894,8 +945,8 @@
         </div>
 
         <div class="flex items-center justify-between mb-2">
-          <div class="t-footnote text-muted uppercase tracking-wide">Naslednji odhodi</div>
-          <LiveDot label={liveArrivals.length > 0 ? 'V živo' : 'Po voznem redu'} />
+          <h2 class="t-footnote text-muted uppercase tracking-wide">Naslednji odhodi</h2>
+          <LiveDot live={liveArrivals.length > 0} label={liveArrivals.length > 0 ? 'V živo' : 'Po voznem redu'} />
         </div>
         {#if liveArrivals.length > 0}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
@@ -947,12 +998,29 @@
         {:else if liveArrivalsLoading}
           <div class="surface-2 rounded-2xl p-4 t-callout text-muted">Nalagam žive prihode…</div>
         {:else if departures.length === 0}
-          <div class="surface-2 rounded-2xl p-4 t-callout text-muted">Danes ni več odhodov s te postaje.</div>
+          <div class="surface-2 rounded-2xl p-4 flex items-center gap-3">
+            <MoonStar size={20} color="var(--text-muted)" />
+            <div class="flex-1 min-w-0">
+              <div class="t-callout text-muted">Danes ni več odhodov s te postaje.</div>
+              {#if nextDayDep}
+                <div class="t-footnote mt-0.5">
+                  Prvi {fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday)} ob
+                  <span class="font-semibold tabular-nums">{fmtTime(nextDayDep.depSec)}</span>
+                  · {nextDayDep.trip.headsign}
+                </div>
+              {/if}
+            </div>
+            {#if nextDayDep}
+              <LineBadge short={nextDayDep.route.short} routeId={nextDayDep.route.id} size="sm" />
+            {/if}
+          </div>
         {:else}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
             {#each departures as d, i}
               <li class="px-4 {$compactLists ? 'py-1.5' : 'py-3'} flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable" on:click={() => openLineTimetable(d.route, d.trip.dir, selectedStop?.id ?? null)} aria-label="Vozni red linije {d.route.short}">
+                <button class="pressable min-w-[44px] min-h-[44px] grid place-items-center -ml-1"
+                        on:click={() => openLineTimetable(d.route, d.trip.dir, selectedStop?.id ?? null)}
+                        aria-label="Vozni red linije {d.route.short}">
                   <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                 </button>
                 <div class="flex-1 min-w-0">
@@ -989,13 +1057,13 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button class="pressable w-10 h-10 rounded-full grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full grid place-items-center"
                     style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
                     on:click={() => followBus = !followBus}
                     aria-label={followBus ? 'Prenehaj slediti' : 'Sledim avtobus'}>
               <Navigation size={18} />
             </button>
-            <button class="pressable w-10 h-10 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
               <X size={18} />
             </button>
           </div>
@@ -1034,8 +1102,8 @@
           </div>
         {/if}
         <div class="flex items-center justify-between mb-2">
-          <div class="t-footnote text-muted uppercase tracking-wide">Naslednje postaje</div>
-          <LiveDot label={isLive ? 'V živo' : 'Ocenjeno'} />
+          <h2 class="t-footnote text-muted uppercase tracking-wide">Naslednje postaje</h2>
+          <LiveDot live={isLive} label={isLive ? 'V živo' : 'Ocenjeno'} />
         </div>
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each vehNextStops as ns, i}
@@ -1060,20 +1128,71 @@
     </div>
   </BottomSheet>
 
+  {#if stopSearchOpen}
+    <div class="fixed inset-0 z-50 flex flex-col"
+         style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
+         on:click|self={() => stopSearchOpen = false}
+         role="presentation">
+      <div class="surface w-full sm:max-w-lg mx-auto rounded-b-3xl shadow-float flex flex-col overflow-hidden"
+           style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - 4rem);"
+           role="dialog" aria-modal="true" aria-label="Poišči postajo" tabindex="-1"
+           use:focusTrap>
+        <div class="flex items-center gap-2 px-4 pt-3 pb-3 shrink-0">
+          <div class="relative flex-1 surface-2 rounded-xl border border-base">
+            <Search size={18} color="var(--text-muted)" class="absolute left-3 top-1/2 -translate-y-1/2" />
+            <!-- svelte-ignore a11y-autofocus -->
+            <input bind:value={stopQuery}
+                   autofocus
+                   class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
+                   placeholder="Ime postaje…"
+                   aria-label="Ime postaje" />
+          </div>
+          <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
+                  on:click={() => stopSearchOpen = false} aria-label="Zapri">
+            <X size={18} />
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 pb-4">
+          {#if stopQuery.trim().length < 2}
+            <div class="t-footnote text-muted text-center py-6">Vnesi vsaj dve črki imena postaje.</div>
+          {:else if stopSearchResults.length === 0}
+            <div class="t-body text-muted text-center py-6">Ni zadetkov.</div>
+          {:else}
+            <ul class="surface-2 rounded-2xl overflow-hidden">
+              {#each stopSearchResults as s, i}
+                <li>
+                  <button class="pressable w-full px-4 min-h-[52px] py-3 flex items-center gap-3 text-left {i > 0 ? 'border-t border-base' : ''}"
+                          on:click={() => pickSearchedStop(s)}>
+                    <MapPin size={18} color="var(--accent)" />
+                    <div class="flex-1 min-w-0">
+                      <div class="t-body font-medium truncate">{s.name}</div>
+                      {#if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
+                    </div>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if shareDialogOpen}
     <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
          style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
          on:click|self={() => shareDialogOpen = false}
-         on:keydown={(e) => { if (e.key === 'Escape') shareDialogOpen = false; }}
-         role="dialog" aria-modal="true" tabindex="-1">
+         role="presentation">
       <div class="surface w-full sm:max-w-md rounded-3xl shadow-float overflow-hidden flex flex-col"
-           style="max-height: calc(100dvh - 2rem);">
+           style="max-height: calc(100dvh - 2rem);"
+           role="dialog" aria-modal="true" aria-label="Deli pot" tabindex="-1"
+           use:focusTrap>
         <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
           <div class="min-w-0 flex-1">
             <div class="t-footnote text-muted uppercase tracking-wide">Deli pot</div>
             <div class="t-title3 font-semibold">Predogled</div>
           </div>
-          <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+          <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                   on:click={() => shareDialogOpen = false} aria-label="Zapri">
             <X size={18} />
           </button>
@@ -1089,15 +1208,6 @@
                     on:click={() => copyShare('url')}>Samo povezavo</button>
           </div>
         </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if saveToast}
-    <div class="absolute z-50 left-1/2 -translate-x-1/2 px-4"
-         style="bottom: calc(env(safe-area-inset-bottom) + 6.5rem); pointer-events: none;">
-      <div class="surface rounded-full border border-base shadow-elev px-4 h-10 flex items-center t-footnote font-medium">
-        {saveToast}
       </div>
     </div>
   {/if}

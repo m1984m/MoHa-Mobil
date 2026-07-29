@@ -3,6 +3,7 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import { allDeparturesForStop, dayKindToDate, type GTFS, type Stop, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
+  import { focusTrap } from '../focusTrap';
 
   export let open = false;
   export let gtfs: GTFS | null;
@@ -52,16 +53,19 @@
   }
 </script>
 
+<!-- Escape na <svelte:window>, ne na overlay div-u: ta nikoli ne dobi fokusa,
+     zato keydown nanj ni nikoli prišel in modala ni bilo mogoče zapreti s tipkovnico. -->
+<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onClose(); }} />
+
 {#if open && stop}
   <div class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onClose}
-       on:keydown={(e) => { if (e.key === 'Escape') onClose(); }}
-       role="dialog"
-       aria-modal="true"
-       tabindex="-1">
+       role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
-         style="max-height: calc(100dvh - 2rem);">
+         style="max-height: calc(100dvh - 2rem);"
+         role="dialog" aria-modal="true" aria-label="Vozni red postaje {stop.name}" tabindex="-1"
+         use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <div class="min-w-0 flex-1">
           <div class="t-footnote text-muted uppercase tracking-wide">
@@ -69,7 +73,7 @@
           </div>
           <div class="t-title2 truncate">{stop.name}</div>
         </div>
-        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={() => favStops.toggle(stop.id)}
                 aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
                 aria-pressed={isFav}>
@@ -77,7 +81,7 @@
                 color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'}
                 fill={isFav ? 'var(--status-delay)' : 'none'} />
         </button>
-        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={onClose} aria-label="Zapri">
           <X size={18} />
         </button>

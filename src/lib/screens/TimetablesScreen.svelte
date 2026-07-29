@@ -5,6 +5,7 @@
   import LineTimetableModal from './LineTimetableModal.svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
+  import { pushBack } from '../backstack';
   import type { GTFS, Route, Stop } from '../gtfs';
 
   export let gtfs: GTFS | null;
@@ -37,6 +38,21 @@
           .slice(0, 40)
       : []
     : [];
+
+  // Sistemski "nazaj" (Android) mora zapreti vozni red, ne aplikacije. Ta zaslon
+  // je bil edini z modali brez te vezave — back gumb je uporabnika vrgel iz PWA.
+  let backLine: (() => void) | null = null;
+  $: if (lineOpen && !backLine) {
+    backLine = pushBack(() => lineOpen = false);
+  } else if (!lineOpen && backLine) {
+    const r = backLine; backLine = null; r();
+  }
+  let backStop: (() => void) | null = null;
+  $: if (stopOpen && !backStop) {
+    backStop = pushBack(() => stopOpen = false);
+  } else if (!stopOpen && backStop) {
+    const r = backStop; backStop = null; r();
+  }
 
   function openLine(r: Route, dir = 0) { lineRoute = r; lineDir = dir; lineOpen = true; }
   function openStop(s: Stop) { selectedStop = s; stopOpen = true; }

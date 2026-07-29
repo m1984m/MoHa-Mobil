@@ -5,6 +5,7 @@
 // Za razliko od javnega OSRM foot profila (ki včasih vodi pešce po hitri cesti/primary cestah),
 // ORS foot-walking striktno preferira pešpoti, pločnike in tiha območja.
 
+import { writable } from 'svelte/store';
 import { getWalkMps } from './settings';
 
 type LL = { lat: number; lon: number };
@@ -12,6 +13,12 @@ export type WalkRoute = { coords: [number, number][]; meters: number; sec: numbe
 
 const ORS_KEY = (import.meta.env.VITE_ORS_KEY as string | undefined) ?? '';
 const ORS_BASE = 'https://api.openrouteservice.org/v2';
+
+// Ko ORS ni na voljo (ni ključa, potekla kvota, napaka), pešpoti tiho padejo na
+// zračno črto in časi hoje postanejo prekratki. Prej uporabnik o tem ni izvedel
+// ničesar — zdaj načrt poti prikaže opozorilo, da so peš odseki ocenjeni.
+export const walkRoutingDegraded = writable(false);
+function markDegraded() { walkRoutingDegraded.set(true); }
 
 const cache = new Map<string, WalkRoute>();
 const key = (a: LL, b: LL, mps: number) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}|${b.lat.toFixed(5)},${b.lon.toFixed(5)}|${mps.toFixed(3)}`;
@@ -34,6 +41,7 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
   }
 
   if (!ORS_KEY) {
+    markDegraded();
     cache.set(k, straight);
     return straight;
   }
@@ -74,6 +82,7 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
     return wr;
   } catch (e: any) {
     if (e?.name === 'AbortError' && signal?.aborted) throw e;
+    markDegraded();
     cache.set(k, straight);
     return straight;
   }
@@ -123,7 +132,7 @@ export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Pro
   const missing: number[] = [];
   for (let i = 0; i < out.length; i++) if (!out[i]) missing.push(i);
   if (missing.length === 0) return out;
-  if (!ORS_KEY) return out;
+  if (!ORS_KEY) { markDegraded(); return out; }
 
   // ORS matrix dovoli do ~50 lokacij naenkrat, a za zanesljivost sekamo po 25 destinacij.
   const CHUNK = 25;
@@ -172,6 +181,7 @@ export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Pro
     } catch (e: any) {
       if (e?.name === 'AbortError' && signal?.aborted) throw e;
       // pusti null za neuspele — caller padne nazaj na haversine
+      markDegraded();
     }
   }
   return out;

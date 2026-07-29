@@ -252,6 +252,38 @@ export function allTripsForRouteDirection(
     .sort((a, b) => (a.stops[0]?.[2] ?? 0) - (b.stops[0]?.[2] ?? 0));
 }
 
+// Prvi odhod s postaje na naslednjem dnevu, ki sploh ima vozni red (do 7 dni naprej).
+// Zakaj: po zadnjem avtobusu je uporabnik prej videl samo "Danes ni več odhodov" —
+// slepa ulica brez podatka, kdaj gre naslednji. Zanka čez dneve pokrije praznike in
+// nedelje, kjer naslednji dan lahko sploh nima aktivnega servisa.
+export function nextServiceDeparture(
+  gtfs: GTFS,
+  stopId: number,
+  when: Date = new Date(),
+): { trip: Trip; route: Route; depSec: number; dayOffset: number; weekday: number } | null {
+  const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
+  for (let offset = 1; offset <= 7; offset++) {
+    const day = new Date(when);
+    day.setDate(day.getDate() + offset);
+    day.setHours(12, 0, 0, 0); // poldne — izogne se poletnemu/zimskemu času na robu dneva
+    const active = todayServiceIds(gtfs, day);
+    if (active.size === 0) continue;
+    let best: { trip: Trip; route: Route; depSec: number } | null = null;
+    for (const t of gtfs.trips) {
+      if (!active.has(t.service)) continue;
+      const route = routeById.get(t.route);
+      if (!route) continue;
+      for (const st of t.stops) {
+        if (st[0] !== stopId) continue;
+        if (!best || st[2] < best.depSec) best = { trip: t, route, depSec: st[2] };
+        break;
+      }
+    }
+    if (best) return { ...best, dayOffset: offset, weekday: day.getDay() };
+  }
+  return null;
+}
+
 // Upcoming departures from a stop today, sorted asc. Returns up to `k` entries.
 export function upcomingDepartures(
   gtfs: GTFS,

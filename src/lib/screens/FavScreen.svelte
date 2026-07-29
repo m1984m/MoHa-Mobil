@@ -1,17 +1,20 @@
 <script lang="ts">
-  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X } from 'lucide-svelte';
+  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
   import { upcomingDepartures } from '../gtfs';
   import Screen from '../ui/Screen.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
+  import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
   import { favLines, type FavLine } from '../favLines';
   import { savedRoutes, type SavedRoute } from '../savedRoutes';
   import { compactLists } from '../settings';
   import { pushBack } from '../backstack';
+  import { focusTrap } from '../focusTrap';
+  import { toast } from '../toast';
   import { onMount, onDestroy } from 'svelte';
 
   export let gtfs: GTFS | null;
@@ -30,8 +33,18 @@
   }
   $: boards = makeBoards(gtfs, favList, tick);
 
+  // Poteg navzdol osveži odštevalnike (prej je bil na voljo samo na Domu, čeprav
+  // so odhodi tu enako časovno občutljivi).
+  async function refresh() { tick++; }
+
+  let clearConfirmOpen = false;
   function clearAll() {
-    if (confirm('Počisti vse priljubljene postaje?')) favStops.clear();
+    const snapshot = [...$favStops];
+    favStops.clear();
+    clearConfirmOpen = false;
+    toast.showUndo('Priljubljene postaje počiščene', () => {
+      for (const id of snapshot) favStops.toggle(id);
+    });
   }
 
   // ── Swipe-to-delete ──
@@ -107,6 +120,35 @@
 
   function off(key: string): number { return offsets.get(key) ?? 0; }
 
+  // Poteg v stran je bil nepovraten. Obe brisanji zdaj ponudita razveljavitev;
+  // pripete linije postaje se ob razveljavitvi vrnejo skupaj s postajo.
+  function deleteStop(stop: Stop) {
+    const pinned = $favLines.filter(f => f.stopId === stop.id);
+    favStops.toggle(stop.id);
+    for (const p of pinned) favLines.remove(p.stopId, p.routeId, p.dir);
+    toast.showUndo(`${stop.name} odstranjena`, () => {
+      favStops.toggle(stop.id);
+      for (const p of pinned) favLines.toggle(p);
+    });
+  }
+
+  function deleteRoute(r: SavedRoute) {
+    savedRoutes.remove(r.id);
+    toast.showUndo('Pot odstranjena', () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
+  }
+
+  // ── Preimenovanje shranjene poti ──
+  // savedRoutes.rename() je obstajal, a ga ni klical noben zaslon — oznaka je
+  // ostala samodejna ("Moja lokacija → Dvorana Tabor"), namesto "Dom → Služba".
+  let renameId: string | null = null;
+  let renameValue = '';
+  function openRename(r: SavedRoute) { renameId = r.id; renameValue = r.label; }
+  function commitRename() {
+    const v = renameValue.trim();
+    if (renameId && v) savedRoutes.rename(renameId, v);
+    renameId = null;
+  }
+
   // ── Shortcut linija+smer ──
   let pickerStop: Stop | null = null;
   let ttStop: Stop | null = null;
@@ -148,6 +190,12 @@
   } else if (!ttOpen && backTt) {
     const r = backTt; backTt = null; r();
   }
+  let backRename: (() => void) | null = null;
+  $: if (renameId && !backRename) {
+    backRename = pushBack(() => renameId = null);
+  } else if (!renameId && backRename) {
+    const r = backRename; backRename = null; r();
+  }
 
   function pinLine(stop: Stop, c: LineChoice) {
     favLines.toggle({
@@ -172,10 +220,16 @@
   }
 </script>
 
-<Screen title="Priljubljene">
+<svelte:window on:keydown={(e) => {
+  if (e.key !== 'Escape') return;
+  if (renameId) renameId = null;
+  else if (pickerStop) pickerStop = null;
+}} />
+
+<Screen title="Priljubljene" onRefresh={refresh}>
   <div class="px-4 max-w-screen-sm mx-auto space-y-3">
     {#if $savedRoutes.length > 0}
-      <div class="t-footnote text-muted uppercase tracking-wide mt-1">Shranjene poti</div>
+      <h2 class="t-footnote text-muted uppercase tracking-wide mt-1">Shranjene poti</h2>
       {#each $savedRoutes as r (r.id)}
         {@const key = `r:${r.id}`}
         {@const dx = off(key)}
@@ -185,27 +239,38 @@
             <Trash2 size={22} />
             <Trash2 size={22} />
           </div>
-          <button class="pressable relative w-full text-left surface rounded-2xl border border-base shadow-card px-4 py-3"
-                  style="transform: translateX({dx}px); transition: {dragKey === key ? 'none' : 'transform 0.22s var(--ease-ios)'}; touch-action: pan-y;"
-                  on:pointerdown={(e) => startDrag(e, key)}
-                  on:pointermove={(e) => moveDrag(e, key)}
-                  on:pointerup={(e) => endDrag(e, key, () => savedRoutes.remove(r.id))}
-                  on:pointercancel={(e) => endDrag(e, key, () => {})}
-                  on:click|capture={guardClick}
-                  on:click={() => { if (!pendingDelete.has(key)) onRunSavedRoute(r); }}>
-            <div class="flex items-center gap-2 mb-1">
-              <RouteIcon size={16} color="var(--accent)" />
-              <div class="t-title3 font-semibold flex-1 truncate">{r.label}</div>
-            </div>
-            <div class="flex items-center gap-1.5 t-footnote text-muted">
-              <span class="truncate">{r.from.name}</span>
-              <ArrowRight size={12} />
-              <span class="truncate">{r.to.name}</span>
-            </div>
-          </button>
+          <!-- role=group: pointer handlerji so swipe-to-delete gesta na kartici -->
+          <div class="pressable relative w-full surface rounded-2xl border border-base shadow-card flex items-stretch overflow-hidden"
+               role="group"
+               style="transform: translateX({dx}px); transition: {dragKey === key ? 'none' : 'transform 0.22s var(--ease-ios)'}; touch-action: pan-y;"
+               on:pointerdown={(e) => startDrag(e, key)}
+               on:pointermove={(e) => moveDrag(e, key)}
+               on:pointerup={(e) => endDrag(e, key, () => deleteRoute(r))}
+               on:pointercancel={(e) => endDrag(e, key, () => {})}>
+            <button class="flex-1 min-w-0 text-left px-4 py-3"
+                    on:click|capture={guardClick}
+                    on:click={() => { if (!pendingDelete.has(key)) onRunSavedRoute(r); }}>
+              <div class="flex items-center gap-2 mb-1">
+                <RouteIcon size={16} color="var(--accent)" />
+                <div class="t-title3 font-semibold flex-1 truncate">{r.label}</div>
+              </div>
+              <div class="flex items-center gap-1.5 t-footnote text-muted">
+                <span class="truncate">{r.from.name}</span>
+                <ArrowRight size={12} />
+                <span class="truncate">{r.to.name}</span>
+              </div>
+            </button>
+            <button type="button"
+                    class="pressable w-11 min-h-[44px] grid place-items-center border-l border-base shrink-0"
+                    on:pointerdown|stopPropagation
+                    on:click|stopPropagation={() => openRename(r)}
+                    aria-label="Preimenuj pot {r.label}">
+              <Pencil size={16} color="var(--text-muted)" />
+            </button>
+          </div>
         </div>
       {/each}
-      <div class="t-footnote text-muted uppercase tracking-wide pt-2">Postajališča</div>
+      <h2 class="t-footnote text-muted uppercase tracking-wide pt-2">Postajališča</h2>
     {/if}
 
     {#if favList.length === 0 && $savedRoutes.length === 0}
@@ -213,7 +278,7 @@
     {:else if favList.length > 0}
       <div class="flex items-center justify-between">
         <div class="t-footnote text-muted">{favList.length} {favList.length === 1 ? 'postaja' : favList.length < 5 ? 'postaje' : 'postaj'}</div>
-        <button class="pressable t-footnote text-muted flex items-center gap-1" on:click={clearAll}>
+        <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
           <Trash2 size={14} /> Počisti
         </button>
       </div>
@@ -233,33 +298,36 @@
                   style="transform: translateX({dx}px); transition: {dragKey === key ? 'none' : 'transform 0.22s var(--ease-ios)'}; touch-action: pan-y;"
                   on:pointerdown={(e) => startDrag(e, key)}
                   on:pointermove={(e) => moveDrag(e, key)}
-                  on:pointerup={(e) => endDrag(e, key, () => favStops.toggle(b.stop.id))}
+                  on:pointerup={(e) => endDrag(e, key, () => deleteStop(b.stop))}
                   on:pointercancel={(e) => endDrag(e, key, () => {})}>
-            <button class="w-full text-left"
+            <button class="w-full text-left px-4 pt-3 pb-2 flex items-center gap-2"
                     on:click|capture={guardClick}
                     on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}>
-              <div class="px-4 pt-3 pb-2 flex items-center gap-2">
-                <Star size={16} fill="var(--status-delay)" color="var(--status-delay)" />
-                <div class="t-title3 font-semibold flex-1 truncate">{b.stop.name}</div>
-              </div>
-              {#if b.deps.length === 0}
-                <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
-              {:else}
-                <ul>
-                  {#each b.deps as d}
-                    <li class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
+              <Star size={16} fill="var(--status-delay)" color="var(--status-delay)" />
+              <div class="t-title3 font-semibold flex-1 truncate">{b.stop.name}</div>
+            </button>
+            {#if b.deps.length === 0}
+              <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
+            {:else}
+              <ul>
+                {#each b.deps as d}
+                  <li class="border-t border-base">
+                    <button class="pressable w-full text-left px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3"
+                            on:click|capture={guardClick}
+                            on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}
+                            aria-label="{d.route.short} proti {d.trip.headsign}">
                       <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                       <div class="flex-1 min-w-0 {$compactLists ? 't-subhead' : 't-callout'} truncate">{d.trip.headsign}</div>
                       <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </button>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
             <div class="px-3 py-2 border-t border-base flex flex-col gap-1.5">
               {#each pinned as f}
                 <button type="button"
-                        class="pressable w-full inline-flex items-center gap-2 h-9 pl-1 pr-3 rounded-xl border border-base"
+                        class="pressable w-full inline-flex items-center gap-2 min-h-[44px] pl-1 pr-3 rounded-xl border border-base"
                         style="background: var(--surface-2);"
                         on:pointerdown|stopPropagation
                         on:click|stopPropagation={() => openTimetableFor(f)}
@@ -269,7 +337,7 @@
                 </button>
               {/each}
               <button type="button"
-                      class="pressable w-full inline-flex items-center justify-center gap-1 h-9 px-3 rounded-xl border border-base t-footnote text-muted"
+                      class="pressable w-full inline-flex items-center justify-center gap-1 min-h-[44px] px-3 rounded-xl border border-base t-footnote text-muted"
                       style="background: var(--surface-2);"
                       on:pointerdown|stopPropagation
                       on:click|stopPropagation={() => pickerStop = b.stop}
@@ -288,18 +356,17 @@
   <div class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={() => pickerStop = null}
-       on:keydown={(e) => { if (e.key === 'Escape') pickerStop = null; }}
-       role="dialog"
-       aria-modal="true"
-       tabindex="-1">
+       role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
-         style="max-height: calc(100dvh - 2rem);">
+         style="max-height: calc(100dvh - 2rem);"
+         role="dialog" aria-modal="true" aria-label="Pripni linijo" tabindex="-1"
+         use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0">
         <div class="min-w-0 flex-1">
           <div class="t-footnote text-muted uppercase tracking-wide">Pripni linijo</div>
           <div class="t-title2 truncate">{pickerStop.name}</div>
         </div>
-        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={() => pickerStop = null} aria-label="Zapri">
           <X size={18} />
         </button>
@@ -313,14 +380,14 @@
               {@const on = $favLines.some(f => f.stopId === pickerStop!.id && f.routeId === c.route.id && f.dir === c.dir)}
               <li>
                 <button class="pressable w-full px-4 py-3 flex items-center gap-3 text-left {i > 0 ? 'border-t border-base' : ''}"
-                        on:click={() => pinLine(pickerStop!, c)}>
+                        on:click={() => pinLine(pickerStop!, c)}
+                        aria-pressed={on}>
                   <LineBadge short={c.route.short} routeId={c.route.id} size="md" />
-                  <div class="flex-1 min-w-0">
-                    <div class="t-body font-medium truncate">{c.headsign}</div>
-                    <div class="t-footnote text-muted">Smer {c.dir === 0 ? 'A' : 'B'}</div>
-                  </div>
+                  <!-- Prej je bila pod headsignom še vrstica "Smer A/B" — interni GTFS
+                       dir, ki uporabniku ne pove ničesar; headsign nosi vso informacijo. -->
+                  <div class="flex-1 min-w-0 t-body font-medium truncate">{c.headsign}</div>
                   {#if on}
-                    <div class="w-5 h-5 rounded-full bg-accent grid place-items-center">
+                    <div class="w-5 h-5 rounded-full bg-accent grid place-items-center shrink-0">
                       <div class="w-2 h-2 rounded-full bg-white"></div>
                     </div>
                   {/if}
@@ -333,6 +400,40 @@
     </div>
   </div>
 {/if}
+
+{#if renameId}
+  <div class="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
+       style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
+       on:click|self={() => renameId = null}
+       role="presentation">
+    <div class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
+         role="dialog" aria-modal="true" aria-label="Preimenuj pot" tabindex="-1"
+         use:focusTrap>
+      <div class="t-headline font-semibold mb-1">Preimenuj pot</div>
+      <div class="t-footnote text-muted mb-3">Na primer »Dom → Služba«.</div>
+      <input bind:value={renameValue}
+             maxlength="40"
+             on:keydown={(e) => { if (e.key === 'Enter') commitRename(); }}
+             class="w-full h-12 surface-2 rounded-xl border border-base px-3 t-body mb-4"
+             aria-label="Ime poti" />
+      <div class="flex gap-2">
+        <button type="button" class="pressable flex-1 min-h-[44px] rounded-xl surface-2 border border-base t-callout font-semibold"
+                on:click={() => renameId = null}>Prekliči</button>
+        <button type="button" class="pressable flex-1 min-h-[44px] rounded-xl t-callout font-semibold disabled:opacity-50"
+                style="background: var(--accent); color: #ffffff;"
+                disabled={!renameValue.trim()}
+                on:click={commitRename}>Shrani</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<ConfirmDialog open={clearConfirmOpen}
+               title="Počisti vse priljubljene postaje?"
+               body="Shranjene poti ostanejo. Dejanje lahko takoj razveljaviš."
+               confirmLabel="Počisti" destructive
+               onConfirm={clearAll}
+               onCancel={() => clearConfirmOpen = false} />
 
 <StopTimetableModal open={ttOpen} {gtfs} stop={ttStop}
                     filterRouteId={ttRouteId} filterDir={ttDir} filterHeadsign={ttHeadsign}

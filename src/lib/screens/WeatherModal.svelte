@@ -38,7 +38,7 @@
          style="padding-bottom: env(safe-area-inset-bottom);">
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
         <div class="t-title2">Vreme danes</div>
-        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center"
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={close} aria-label="Zapri">
           <X size={18} />
         </button>

@@ -8,6 +8,8 @@
   import { favStops } from '../favorites';
   import { plannerShowFavs } from '../settings';
   import { savedRoutes } from '../savedRoutes';
+  import { focusTrap } from '../focusTrap';
+  import { toast } from '../toast';
 
   export let open: boolean = false;
   export let gtfs: GTFS | null;
@@ -113,6 +115,12 @@
     fromFocus = false;
     toFocus = false;
     run();
+  }
+
+  // Brisanje z možnostjo razveljavitve — prej je bil X nepovraten.
+  function removeSaved(r: { id: string; label: string; from: Place; to: Place }) {
+    savedRoutes.remove(r.id);
+    toast.showUndo('Pot odstranjena', () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
   }
 
   function pickFromAddr(p: Place) { fromPlace = p; fromQuery = p.name; fromFocus = false; fromAddrResults = []; }
@@ -328,10 +336,11 @@
   <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
        role="dialog" aria-modal="true" aria-label="Načrtuj pot">
     <div class="surface rounded-b-3xl shadow-float"
-         style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;">
+         style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;"
+         use:focusTrap>
       <div class="flex items-center justify-between px-4 pt-4 pb-2">
         <div class="t-title2">Načrtuj pot</div>
-        <button class="pressable w-9 h-9 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label="Zapri">
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label="Zapri">
           <X size={18} />
         </button>
       </div>
@@ -351,7 +360,9 @@
               placeholder="Od — postaja, naslov ali moja lokacija" />
           </div>
           {#if fromFocus && !fromPlace && (hasGeo || fromResults.length > 0 || fromAddrResults.length > 0 || showFromFavs)}
-            <ul class="absolute left-0 right-0 mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto z-20">
+            <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
+                 z overflow-y:auto in se je odrezal na robu lista (od 6 zadetkov vidnih 2,5). -->
+            <ul class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
               {#if hasGeo}
                 <li>
                   <button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={useMyLocationAsFrom}>
@@ -406,7 +417,9 @@
               placeholder="Do — postaja ali naslov" />
           </div>
           {#if toFocus && !toPlace && (toResults.length > 0 || toAddrResults.length > 0 || showToFavs)}
-            <ul class="absolute left-0 right-0 mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto z-20">
+            <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
+                 z overflow-y:auto in se je odrezal na robu lista (od 6 zadetkov vidnih 2,5). -->
+            <ul class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
               {#if showToFavs}
                 <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">Priljubljena</li>
                 {#each favList as s}
@@ -453,10 +466,10 @@
                       <span class="truncate">{r.to.name}</span>
                     </div>
                   </button>
-                  <button class="pressable w-10 grid place-items-center border-l border-base shrink-0"
-                          on:click={() => savedRoutes.remove(r.id)}
-                          aria-label="Odstrani shranjeno pot">
-                    <X size={14} />
+                  <button class="pressable w-11 min-h-[44px] grid place-items-center border-l border-base shrink-0"
+                          on:click={() => removeSaved(r)}
+                          aria-label="Odstrani shranjeno pot {r.label}">
+                    <X size={16} />
                   </button>
                 </li>
               {/each}

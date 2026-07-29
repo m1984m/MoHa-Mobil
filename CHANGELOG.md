@@ -5,6 +5,48 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.9.0 — 2026-07-30
+
+Revizija UX/UI po celovitem pregledu (koda + živ test v brskalniku). Poudarek: berljivost časov, dostopnost in povratna sporočila uporabniku.
+
+### Prikaz časov (enoten sistem, `src/lib/time.ts`)
+- **Čas do odhoda se pretvori v ure oz. uro odhoda.** Prej je seznam odhodov izpisoval surove minute — ponoči je pisalo »296 min« namesto »05:11«. Pravilo: < 60 min → minute, 60–180 min → »2 h 15«, ≥ 180 min → ura odhoda. Velja na Domu, v Priljubljenih in v postajnem pogledu na Karti.
+- **Odštevalnik »Kreni«** se skrije, ko je do odhoda več kot 30 minut (prej je pisalo »Kreni 277 min« v zeleni barvi, kar ni imelo vsebine).
+- **»Danes ni več odhodov« ni več slepa ulica** — poišče se prvi odhod naslednjega dne s prometom (do 7 dni naprej, pokrije praznike in nedelje) in se prikaže z uro, linijo in smerjo.
+- Vse pretvorbe časa so v enem modulu; prej so v isti kartici obstajali trije neodvisni formati.
+
+### Napake in nedoslednosti
+- **Privzeta tema je zdaj »Samodejno«** (prej trdo »Svetla«) — telefon v nočnem načinu je ponoči na postaji dobil bel zaslon.
+- **Escape zapre vozne rede.** Poslušalec je bil na `div`-u, ki ni nikoli dobil fokusa; prestavljen na `<svelte:window>` (postajni in linijski vozni red, izbirnik linij).
+- **Sistemski gumb »nazaj« na zavihku Vozni redi** zapre vozni red namesto aplikacije — ta zaslon je bil edini brez vezave na `backstack`.
+- Slovnica: »Velja od **julija** 2026« (prej imenovalnik »julij« iz `Intl`).
+- Popravljen manjkajoč presledek v »67 m stran · s227«.
+- **»Počisti vse podatke« zdaj ponastavi tudi temo** — ključ `mmob-theme` se ne drži predpone `mm.` in je bil spregledan.
+- Odstranjen diagnostični `console.log` ob vsakem pollu živih vozil.
+
+### Povratna sporočila in nadzor
+- **Razveljavitev brisanja** (skupen toast z gumbom »Razveljavi«): poteg v stran na priljubljeni postaji (vrne tudi pripete linije), brisanje shranjene poti, »Počisti« vse priljubljene.
+- **Domači `confirm()` zamenjan** z lastnim potrditvenim oknom (priljubljene, brisanje podatkov).
+- **Shranjene poti je mogoče preimenovati** (»Dom → Služba«) — funkcija je obstajala v shrambi, a je ni klical noben zaslon.
+- **Opozorilo, ko pešpoti niso na voljo** — ob izpadu/kvoti ORS so časi hoje ocenjeni po zračni razdalji; načrt poti to zdaj pove namesto tihega podcenjevanja.
+
+### Načrtovalec in karta
+- **Predlogi v načrtovalcu se ne odrežejo več** — spustni seznam je bil absolutno pozicioniran znotraj vsebnika z `overflow-y: auto`, zato je bilo od 6 zadetkov vidnih 2,5.
+- **Iskanje postaje po imenu na Karti** (lupa zgoraj desno) — prej je bil edini vstop tap po pikici na zemljevidu.
+- Postajališči z istim imenom (par čez cesto) sta na Domu ločeni z namigom o smeri.
+- Utripajoča zelena »živa« pika miruje in posivi, kadar podatki niso živi (prej je utripala tudi ob napisu »Po voznem redu«).
+
+### Dostopnost
+- Kartica postaje na Domu je razbita na naslovni gumb + gumbe po vrsticah; prej je bila en sam `<button>`, ki ga je bralnik zaslona prebral kot eno nerazumljivo oznako.
+- Ujetje fokusa v modalih (`use:focusTrap`) + vračanje fokusa na element, ki je modal odprl.
+- `aria-live` na kartici »Čakanje«, da bralnik javi osvežen čas.
+- Vse okrogle tarče dotika povečane na 44 px (prej 36–40 px); naslov postaje in akcije v svojih vrsticah, da se dolga imena ne obrezujejo.
+- Odseki dobili prave naslove (`<h2>`), pripis © Esri za satelitsko podlago, povezava na izvorno kodo.
+
+### Notranje
+- Nova skupna komponenta `StopBoard.svelte` — Dom je prej imel dva identična bloka za bližnje in priljubljene postaje (~35 vrstic podvojene predloge).
+- Nova modula `lib/time.ts`, `lib/toast.ts`, `lib/focusTrap.ts`; novi komponenti `ui/Toast.svelte`, `ui/ConfirmDialog.svelte`.
+
 ## 0.8.1 — 2026-07-23
 
 Posodobitev voznega reda + orodje za samodejni prevzem GTFS.

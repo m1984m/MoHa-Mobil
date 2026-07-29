@@ -8,9 +8,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = 'julij 2026';
+export const RELEASE_DATE = '30. 7. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Posodobljen vozni red Marprom — velja od 6. 7. 2026',
-  'Poletni vozni red: 457 postaj, 1.833 voženj',
+  'Časi odhodov v urah in urah odhoda namesto »296 min«',
+  'Ko danes ni več odhodov, pokažemo prvi jutrišnji',
+  'Iskanje postaje na karti + razveljavitev brisanja',
+  'Privzeto samodejna tema, boljša dostopnost',
 ];

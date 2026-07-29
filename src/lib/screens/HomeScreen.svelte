@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { MapPinned, Bus, CloudOff, Star } from 'lucide-svelte';
+  import { MapPinned, CloudOff } from 'lucide-svelte';
   import { nearestStops, upcomingDepartures, loadMeta, feedCoversDate, type GTFS, type Stop } from '../gtfs';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
-  import LineBadge from '../ui/LineBadge.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
-  import DepartureTime from '../ui/DepartureTime.svelte';
+  import StopBoard, { type BoardRow } from '../ui/StopBoard.svelte';
   import { favStops } from '../favorites';
-  import { homeShowNearby, homeShowFavs, nearbyRadiusM, compactLists } from '../settings';
+  import { homeShowNearby, homeShowFavs, nearbyRadiusM } from '../settings';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
+  import { fmtMonthYearGenitive } from '../time';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -21,14 +21,6 @@
   export let onOpenPlanner: () => void;
   export let onRequestLocation: () => Promise<void>;
   export let onOpenWeather: () => void = () => {};
-
-  type Row = {
-    routeId: number;
-    routeShort: string;
-    headsign: string;
-    minutesFromNow: number;
-    depSec: number;
-  };
 
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -48,9 +40,8 @@
     const m = await loadMeta();
     if (m?.built) {
       const d = new Date(m.built);
-      if (!isNaN(d.getTime())) {
-        feedLabel = `Velja od ${new Intl.DateTimeFormat('sl-SI', { month: 'long', year: 'numeric' }).format(d)}`;
-      }
+      // Rodilnik ("julija"), ne Intl imenovalnik ("julij") — glej lib/time.ts.
+      if (!isNaN(d.getTime())) feedLabel = `Velja od ${fmtMonthYearGenitive(d)}`;
     }
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
@@ -92,7 +83,7 @@
     liveByStop = next;
   }
 
-  function liveRows(arr: StopArrival[]): Row[] {
+  function liveRows(arr: StopArrival[]): BoardRow[] {
     return arr.slice(0, 3).map(a => {
       const [hh, mm] = (a.arrivalTime || '0:0').split(':').map(Number);
       return {
@@ -105,7 +96,7 @@
     });
   }
 
-  function gtfsRows(stopId: number): Row[] {
+  function gtfsRows(stopId: number): BoardRow[] {
     if (!gtfs) return [];
     return upcomingDepartures(gtfs, stopId, new Date(), 3).map(d => ({
       routeId: d.route.id,
@@ -116,7 +107,7 @@
     }));
   }
 
-  function rowsFor(stopId: number): Row[] {
+  function rowsFor(stopId: number): BoardRow[] {
     const live = liveByStop[stopId];
     // Zivi podatki veljajo 2 min od zadnjega uspesnega fetcha; starejsi
     // padejo nazaj na GTFS (etaMin iz starega fetcha je ze zlagan).
@@ -124,12 +115,32 @@
     return (live && live.length > 0 && fresh) ? liveRows(live) : gtfsRows(stopId);
   }
 
+  // Ali je za katero od prikazanih postaj na voljo živ podatek — od tega je odvisno,
+  // ali pika ob naslovu utripa zeleno ("V živo") ali miruje ("Po voznem redu").
+  function anyLive(list: { id: number }[], _live: typeof liveByStop, _tick: number): boolean {
+    return list.some(s => (liveByStop[s.id]?.length ?? 0) > 0 && Date.now() - (liveAt[s.id] ?? 0) < 120_000);
+  }
+
   // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnosti jasne.
   function makeBoards<T extends Stop>(g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number) {
-    return g ? list.map(s => ({ stop: s, rows: rowsFor(s.id) })) : [];
+    if (!g) return [];
+    // Postajališči z istim imenom sta par čez cesto — brez namiga o smeri ju
+    // uporabnik ne razlikuje (na Domu sta prej dvakrat pisala "UKC - Pobreška").
+    const nameCount = new Map<string, number>();
+    for (const s of list) nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
+    return list.map(s => {
+      const rows = rowsFor(s.id);
+      return {
+        stop: s as Stop,
+        rows,
+        directionHint: (nameCount.get(s.name) ?? 0) > 1 ? (rows[0]?.headsign ?? '') : '',
+      };
+    });
   }
   $: boards = makeBoards(gtfs, nearStops, liveByStop, tick);
   $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick);
+  $: nearLive = anyLive(nearStops, liveByStop, tick);
+  $: favLive = anyLive(favStopList, liveByStop, tick);
 
   async function refresh() {
     await onRequestLocation();
@@ -195,78 +206,25 @@
       <EmptyState icon={CloudOff} title="Ni postajališč v bližini" body="Premakni se bližje središču mesta." />
     {:else}
       <div class="flex items-center justify-between pt-1">
-        <div class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča</div>
-        <LiveDot />
+        <h2 class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča</h2>
+        <LiveDot live={nearLive} label={nearLive ? 'V živo' : 'Po voznem redu'} />
       </div>
 
-      {#each boards as b}
-        <button class="pressable w-full text-left surface rounded-2xl border border-base shadow-card overflow-hidden"
-                on:click={() => onStopSelect(b.stop)}>
-          <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="t-title3 font-semibold truncate">{b.stop.name}</div>
-              <div class="t-footnote text-muted">
-                {Math.round((b.stop as any).d)} m stran{#if b.stop.code} · {b.stop.code}{/if}
-              </div>
-            </div>
-            <Bus size={22} strokeWidth={1.75} color="var(--text-muted)" />
-          </div>
-          {#if b.rows.length === 0}
-            <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
-          {:else}
-            <!-- div namesto ul/li: seznam je znotraj button elementa, kjer je ul neveljaven HTML -->
-            <div>
-              {#each b.rows as r}
-                <div class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
-                  <LineBadge short={r.routeShort} routeId={r.routeId} size={$compactLists ? 'sm' : 'md'} />
-                  <div class="flex-1 min-w-0">
-                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{r.headsign}</div>
-                  </div>
-                  <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </button>
+      {#each boards as b (b.stop.id)}
+        <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.directionHint}
+                   distanceM={(b.stop as any).d} onSelect={onStopSelect} />
       {/each}
     {/if}
     {/if}
 
     {#if $homeShowFavs && favBoards.length > 0}
       <div class="flex items-center justify-between pt-2">
-        <div class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča</div>
-        <LiveDot />
+        <h2 class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča</h2>
+        <LiveDot live={favLive} label={favLive ? 'V živo' : 'Po voznem redu'} />
       </div>
-      {#each favBoards as b}
-        <button class="pressable w-full text-left surface rounded-2xl border border-base shadow-card overflow-hidden"
-                on:click={() => onStopSelect(b.stop)}>
-          <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-            <div class="min-w-0 flex items-center gap-2">
-              <Star size={16} fill="var(--status-delay)" color="var(--status-delay)" />
-              <div class="min-w-0">
-                <div class="t-title3 font-semibold truncate">{b.stop.name}</div>
-                {#if b.stop.code}<div class="t-footnote text-muted">{b.stop.code}</div>{/if}
-              </div>
-            </div>
-            <Bus size={22} strokeWidth={1.75} color="var(--text-muted)" />
-          </div>
-          {#if b.rows.length === 0}
-            <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
-          {:else}
-            <!-- div namesto ul/li: seznam je znotraj button elementa, kjer je ul neveljaven HTML -->
-            <div>
-              {#each b.rows as r}
-                <div class="px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3 border-t border-base">
-                  <LineBadge short={r.routeShort} routeId={r.routeId} size={$compactLists ? 'sm' : 'md'} />
-                  <div class="flex-1 min-w-0">
-                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{r.headsign}</div>
-                  </div>
-                  <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </button>
+      {#each favBoards as b (b.stop.id)}
+        <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.directionHint}
+                   starred onSelect={onStopSelect} />
       {/each}
     {/if}
   </div>
