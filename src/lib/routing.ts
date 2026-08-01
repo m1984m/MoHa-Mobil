@@ -11,8 +11,22 @@ import { getWalkMps } from './settings';
 type LL = { lat: number; lon: number };
 export type WalkRoute = { coords: [number, number][]; meters: number; sec: number };
 
+// Dva načina delovanja:
+//  - VITE_ORS_PROXY (priporočeno): klici gredo na lasten Cloudflare Worker, ki ključ
+//    doda šele na strežniku. Ključ ostane zunaj javnega paketa. Glej worker/README.md.
+//  - VITE_ORS_KEY (zasilno): ključ se ob gradnji vstavi kot besedilo v JS paket in je
+//    na javni strani berljiv za vsakogar. Uporabno le za lokalni razvoj.
+const ORS_PROXY = ((import.meta.env.VITE_ORS_PROXY as string | undefined) ?? '').replace(/\/$/, '');
 const ORS_KEY = (import.meta.env.VITE_ORS_KEY as string | undefined) ?? '';
-const ORS_BASE = 'https://api.openrouteservice.org/v2';
+const ORS_BASE = ORS_PROXY || 'https://api.openrouteservice.org/v2';
+const ORS_ENABLED = !!(ORS_PROXY || ORS_KEY);
+
+// Prek proxyja glave Authorization ne pošiljamo — ključ doda Worker.
+function orsHeaders(accept: string): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': accept };
+  if (!ORS_PROXY && ORS_KEY) h['Authorization'] = ORS_KEY;
+  return h;
+}
 
 // Ko ORS ni na voljo (ni ključa, potekla kvota, napaka), pešpoti tiho padejo na
 // zračno črto in časi hoje postanejo prekratki. Prej uporabnik o tem ni izvedel
@@ -40,7 +54,7 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
     return straight;
   }
 
-  if (!ORS_KEY) {
+  if (!ORS_ENABLED) {
     markDegraded();
     cache.set(k, straight);
     return straight;
@@ -55,11 +69,7 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
     const r = await fetch(url, {
       method: 'POST',
       signal: ctl.signal,
-      headers: {
-        'Authorization': ORS_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, application/geo+json',
-      },
+      headers: orsHeaders('application/json, application/geo+json'),
       body: JSON.stringify({
         coordinates: [[from.lon, from.lat], [to.lon, to.lat]],
       }),
@@ -132,7 +142,7 @@ export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Pro
   const missing: number[] = [];
   for (let i = 0; i < out.length; i++) if (!out[i]) missing.push(i);
   if (missing.length === 0) return out;
-  if (!ORS_KEY) { markDegraded(); return out; }
+  if (!ORS_ENABLED) { markDegraded(); return out; }
 
   // ORS matrix dovoli do ~50 lokacij naenkrat, a za zanesljivost sekamo po 25 destinacij.
   const CHUNK = 25;
@@ -151,11 +161,7 @@ export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Pro
       const r = await fetch(url, {
         method: 'POST',
         signal: ctl.signal,
-        headers: {
-          'Authorization': ORS_KEY,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: orsHeaders('application/json'),
         body: JSON.stringify({
           locations,
           sources: [0],

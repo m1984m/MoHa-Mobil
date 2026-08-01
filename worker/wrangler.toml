@@ -1,0 +1,15 @@
+name = "moha-mobil-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-07-01"
+
+# Kdo sme klicati Worker. Vse ostalo dobi 403 — brez tega bi bil to odprt proxy
+# na tvoj račun. Dev vnosa sta za `npm run dev` (Vite privzeto 9125).
+[vars]
+ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0.1:9125"
+
+# ORS_KEY NI tu — je skrivnost, nastavljena z:
+#   npx wrangler secret put ORS_KEY
+# Nikoli je ne piši v to datoteko (je v gitu).
+
+[observability]
+enabled = true
