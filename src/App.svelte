@@ -12,16 +12,43 @@
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
-  import MapScreen from './lib/screens/MapScreen.svelte';
   import FavScreen from './lib/screens/FavScreen.svelte';
   import SettingsScreen from './lib/screens/SettingsScreen.svelte';
   import TimetablesScreen from './lib/screens/TimetablesScreen.svelte';
-  import PlannerModal from './lib/screens/PlannerModal.svelte';
   import WeatherModal from './lib/screens/WeatherModal.svelte';
   import UpdateToast from './lib/ui/UpdateToast.svelte';
   import Toast from './lib/ui/Toast.svelte';
 
   type TabId = 'home' | 'timetables' | 'map' | 'fav' | 'settings';
+
+  // Code-split: MapScreen (vleče MapLibre, ~800 KB) in PlannerModal (planner+routing)
+  // se naložita šele ob prvi rabi. Brez tega je bil ves MapLibre v začetnem paketu,
+  // tudi če uporabnik nikoli ne odpre Karte. Po prvem izrisu ju prefetchamo v ozadju,
+  // da je preklop zavihka kljub temu takojšen.
+  let MapScreenComp: typeof import('./lib/screens/MapScreen.svelte').default | null = null;
+  let PlannerModalComp: typeof import('./lib/screens/PlannerModal.svelte').default | null = null;
+  let mapScreenLoading: Promise<void> | null = null;
+  let plannerLoading: Promise<void> | null = null;
+  function ensureMapScreen(): Promise<void> {
+    if (MapScreenComp) return Promise.resolve();
+    if (!mapScreenLoading) {
+      mapScreenLoading = import('./lib/screens/MapScreen.svelte')
+        .then(m => { MapScreenComp = m.default; })
+        .catch(() => { mapScreenLoading = null; }); // retry ob naslednjem klicu (npr. izpad mreže)
+    }
+    return mapScreenLoading;
+  }
+  function ensurePlanner(): Promise<void> {
+    if (PlannerModalComp) return Promise.resolve();
+    if (!plannerLoading) {
+      plannerLoading = import('./lib/screens/PlannerModal.svelte')
+        .then(m => { PlannerModalComp = m.default; })
+        .catch(() => { plannerLoading = null; });
+    }
+    return plannerLoading;
+  }
+  $: if (activeTab === 'map') ensureMapScreen();
+  $: if (plannerOpen) ensurePlanner();
 
   // Obnovi zadnji tab iz sessionStorage — iOS/Android lahko evict+reload PWA,
   // kar bi brez persistence vrglo uporabnika nazaj na Home sredi brskanja.
@@ -131,6 +158,13 @@
       await refreshWeather();
       weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
     })();
+    // Prefetch odloženih chunkov, ko je glavna nit prosta — preklop na Karto/planer
+    // je potem takojšen, začetni paket pa ostane majhen.
+    const idle = (cb: () => void) =>
+      'requestIdleCallback' in window
+        ? (window as any).requestIdleCallback(cb, { timeout: 5000 })
+        : setTimeout(cb, 2500);
+    idle(() => { ensureMapScreen(); ensurePlanner(); });
   });
 
   function parsePlace(s: string | null): { lat: number; lon: number; name: string } | null {
@@ -306,12 +340,22 @@
     </div>
   {:else if activeTab === 'map'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <MapScreen {gtfs} {origin} {hasGeo} {selectedStop} {activePlan} hasAlternatives={hasPlanAlternatives}
-        onStopChange={(s) => selectedStop = s}
-        onClearPlan={handleClearPlan}
-        onOpenPlanner={handleOpenPlanner}
-        onLongPressDest={handleLongPressDest}
-        onPlanToStop={handlePlanToStop} />
+      {#if MapScreenComp}
+        <svelte:component this={MapScreenComp} {gtfs} {origin} {hasGeo} {selectedStop} {activePlan} hasAlternatives={hasPlanAlternatives}
+          onStopChange={(s) => selectedStop = s}
+          onClearPlan={handleClearPlan}
+          onOpenPlanner={handleOpenPlanner}
+          onLongPressDest={handleLongPressDest}
+          onPlanToStop={handlePlanToStop} />
+      {:else}
+        <!-- Chunk s karto se še prenaša (samo ob prvem obisku brez idle prefetcha) -->
+        <div class="absolute inset-0 flex items-center justify-center surface">
+          <div class="flex items-center gap-2 t-footnote text-muted" aria-live="polite">
+            <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
+            Nalagam karto…
+          </div>
+        </div>
+      {/if}
     </div>
   {:else if activeTab === 'fav'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
@@ -325,11 +369,13 @@
 
   <TabBar {tabs} active={activeTab} onChange={changeTab} />
 
-  <PlannerModal open={plannerOpen} {gtfs} {origin} {hasGeo}
-    bind:candidates={plannerCandidates}
-    {pendingDest}
-    onClose={() => { plannerOpen = false; pendingDest = null; }}
-    onShowPlan={handleShowPlan} />
+  {#if PlannerModalComp}
+    <svelte:component this={PlannerModalComp} open={plannerOpen} {gtfs} {origin} {hasGeo}
+      bind:candidates={plannerCandidates}
+      {pendingDest}
+      onClose={() => { plannerOpen = false; pendingDest = null; }}
+      onShowPlan={handleShowPlan} />
+  {/if}
 
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}
     onClose={() => weatherOpen = false} />
