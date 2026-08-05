@@ -138,6 +138,26 @@ export async function fetchActiveVehicles(): Promise<LiveVehicle[]> {
   return out;
 }
 
+// Kratkoživ predpomnilnik vozil za korekcijo tabel prihodov — en GetActiveDeviceDetails
+// na cikel, ne glede na število postaj, ki se osvežujejo hkrati (HomeScreen jih vleče
+// več v Promise.allSettled). Če polling na Karti že teče, se predpomnilnik polni od tam.
+let vehCache: { at: number; list: LiveVehicle[] } | null = null;
+let vehInflight: Promise<LiveVehicle[]> | null = null;
+const VEH_CACHE_MS = 25_000;
+const VEHICLE_ETA_TAKEOVER_MAX_MIN = 2;
+
+async function getVehiclesCached(): Promise<LiveVehicle[]> {
+  if (vehCache && Date.now() - vehCache.at < VEH_CACHE_MS) return vehCache.list;
+  if (vehInflight) return vehInflight;
+  vehInflight = fetchActiveVehicles()
+    .then(list => {
+      vehCache = { at: Date.now(), list };
+      return list;
+    })
+    .finally(() => { vehInflight = null; });
+  return vehInflight;
+}
+
 export type StopArrival = {
   lineId: number;
   lineCode: string;
@@ -192,6 +212,23 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       predicted: !!a.Predicted,
       delayMin,
     });
+  }
+  // Tabla (ETAMin) je pri busu tik pred postajo sistematično ~45 s prepozna, ETA vozila
+  // iz GetActiveDeviceDetails pa je na tem horizontu brez biasa (izmerjeno 04.08. zvečer
+  // in 05.08. zjutraj — 4.491 sparjenih napovedi proti GPS prihodom; analiza v
+  // projekti/aplikacija_Mobilnost_Maas/meritve/). Na daljših horizontih ETA vozila
+  // razpade, zato prevzem SAMO za bus, ki ima to postajo kot naslednjo in je že blizu.
+  const near = out.filter(a => a.busCode && a.etaMin <= VEHICLE_ETA_TAKEOVER_MAX_MIN);
+  if (near.length) {
+    try {
+      const vehicles = await getVehiclesCached();
+      for (const a of near) {
+        const v = vehicles.find(v => v.busCode === a.busCode && v.nextStopPointId === stopPointId);
+        if (v && v.etaMin != null && v.etaMin >= 0 && v.etaMin <= 15) a.etaMin = v.etaMin;
+      }
+    } catch {
+      // vozil ni uspelo dobiti — tabla ostane nespremenjena
+    }
   }
   return out.sort((a, b) => a.etaMin - b.etaMin);
 }
@@ -278,6 +315,7 @@ async function poll() {
   liveVehicles.update(s => ({ ...s, loading: true }));
   try {
     const vs = await fetchActiveVehicles();
+    vehCache = { at: Date.now(), list: vs }; // korekcija tabel bere od tod, brez dodatnega klica
     snapshot(vs);
     liveVehicles.set({ vehicles: vs, updatedAt: Date.now(), error: null, loading: false });
     populateRaw(vs);
