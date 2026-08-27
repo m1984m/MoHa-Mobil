@@ -5,6 +5,20 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.9.4 — 2026-08-27
+
+Popravek uvoza voznega reda. Brez sprememb v vmesniku.
+
+### Sanacija okvarjenih časov v GTFS
+- **Vožnja `96328` (G5) je imela na postajališču Kamnica čas `00:00:00` sredi vožnje 09:50–10:08** — en zapis od 35.397 v Marpromovem feedu, a je pomenil odsek z negativnim časom vožnje −10,1 ure. Posledici: načrtovalnik poti je lahko sestavil pot, ki »prispe pred odhodom«, na Kamnici pa se je lahko pokazal odhod ob 00:00. Uvoz zdaj čas interpolira med sosednjima veljavnima postankoma (rezultat: **10:07**), postanek pa ohrani.
+- **`scripts/build-gtfs.mjs` preverja, da časi vzdolž `stop_sequence` ne nazadujejo.** Za resnico velja najdaljše nepadajoče podzaporedje časov v vožnji; kar pade ven, je napaka. Zamejen postanek se interpolira in zaokroži na minuto (feed je minutno kvantiziran), nezamejen (prvi ali zadnji v vožnji) se izpusti — časa si uvoz ne izmišlja.
+- **Vsak poseg se izpiše** skupaj s kontaktom za prijavo (`marprom.transit@gmail.com`), `public/gtfs/meta.json` pa nosi števec `anomalies` (0 = čist feed), da se napaka v prihodnjem feedu opazi tudi ob samodejnem prevzemu.
+- Preverjeno na sintetično pokvarjenem feedu (prvi postanek, zadnji postanek, dva zaporedna sredi vožnje): vseh 5 primerov ujetih, po popravku 0 nazadujočih razmikov. Na resničnem feedu spremenjena natanko 1 vožnja, izgubljenih postankov 0.
+
+> Opomba: različice 0.9.1–0.9.3 v tem zapisu niso dokumentirane — objavljene so bile brez vnosa v changelog.
+
+---
+
 ## 0.9.0 — 2026-07-30
 
 Revizija UX/UI po celovitem pregledu (koda + živ test v brskalniku). Poudarek: berljivost časov, dostopnost in povratna sporočila uporabniku.
