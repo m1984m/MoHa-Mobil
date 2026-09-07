@@ -5,6 +5,21 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.9.5 — 2026-09-07
+
+Šolski vozni red in popravek skritega opozorila. Aplikacija je bila od 01.09. brez delavniških odhodov.
+
+### Šolski vozni red iz vmesnika OBA (`scripts/fetch-gtfs-oba.mjs`, `npm run gtfs:oba`)
+- **Uradni `gtfs.zip` je 07.09. še vedno nosil poletni feed** (delavniška služba potekla 31.08.), Marpromov vmesnik OBA pa je šolsko obdobje 04.09.–31.12.2026 že stregel. Nova skripta iz OBA (`GetLines`, `GetRoutes`, `GetStopPointSheduleForLine`, `GetTrips`) sestavi GTFS v enaki obliki kot uradni feed: isti `stop_id`, `route_id` in `direction_id` po smeri, zato priljubljene postaje in linije preživijo.
+- **Vožnje se verižijo po postajah** — OBA odhode pozna samo po postaji in smeri, ne po vožnji. Na začetni postaji mora biti odhod točno ob času vožnje (loči različice z istim začetkom in koncem, npr. G4 z Lesarsko šolo ali brez), naprej se vzame najzgodnejši še neporabljen odhod. Končna postaja v OBA nima odhoda: čas je mediana zadnjega odseka iz uradnega feeda po vrsti dneva, liniji in smeri; OBA-jeva končna »Avtobusna postaja« 457 se preslika na uradno 192.
+- **Preverjeno proti uradnemu feedu na soboti in nedelji, ki se nista spremenili:** brez končne postaje se ujema 565/565 sobotnih in 322/322 nedeljskih voženj (razlike so samo tam, kjer se je vozni red res spremenil — G5 in P10 ter tri nove pozne vožnje G1/G3), s končno postajo 564/565 in 322/322 (ena sobotna vožnja P11 ima v uradnem feedu zadnji odsek 4 min namesto 3). 0 neporabljenih odhodov, 0 nazadujočih časov.
+- Pregled vseh dni v obdobju (prazniki, počitnice) zapiše izjeme v `calendar_dates.txt`; dneve z neznanim redom izpiše.
+
+### Opozorilo o zastarelem voznem redu
+- **`feedCoversDate` je štel, da je feed veljaven, če ga pokriva katerakoli služba.** Sobotna in nedeljska sta veljali do 31.12., zato je bilo opozorilo ob ponedeljkih skrito, seznam pa prazen. Zdaj šteje samo služba, ki ta dan res vozi (dan v tednu + izjeme), besedilo pove »Za danes ni voznega reda«.
+
+---
+
 ## 0.9.4 — 2026-08-27
 
 Popravek uvoza voznega reda. Brez sprememb v vmesniku.

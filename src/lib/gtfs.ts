@@ -203,9 +203,12 @@ export function todayServiceIds(gtfs: GTFS, when: Date = new Date()): Set<number
 
 // Ali feed sploh še pokriva dani datum (service obdobja se iztečejo!).
 // Uporaba: opozorilo "vozni redi so zastareli" namesto tihega praznega seznama.
+// Zakaj prek todayServiceIds: prej je zadoščalo, da KATERAKOLI služba pokriva datum.
+// Septembra 2026 je delavniška služba potekla 31.08., sobotna in nedeljska pa sta veljali
+// do 31.12. — ob ponedeljkih je bil seznam prazen, opozorilo pa skrito. Šteje samo
+// služba, ki ta dan res vozi (dan v tednu + izjeme).
 export function feedCoversDate(gtfs: GTFS, when: Date = new Date()): boolean {
-  const ymd = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
-  return gtfs.services.some(s => s.start <= ymd && ymd <= s.end);
+  return todayServiceIds(gtfs, when).size > 0;
 }
 
 // Vse odhode za dano postajo in dan (služba). Uporabljeno za klasičen vozni red.

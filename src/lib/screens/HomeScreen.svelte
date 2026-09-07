@@ -158,7 +158,7 @@
           {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
         </div>
         {#if feedExpired}
-          <div class="t-footnote mt-0.5" style="color: var(--status-delay)">Vozni redi so zastareli — preveri posodobitev</div>
+          <div class="t-footnote mt-0.5" style="color: var(--status-delay)">Za danes ni voznega reda — vozni redi so zastareli</div>
         {:else if feedLabel}
           <div class="t-footnote text-muted mt-0.5">{feedLabel}</div>
         {/if}

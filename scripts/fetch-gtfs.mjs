@@ -219,5 +219,5 @@ if (identical && !FORCE) {
   console.log(`\n  → naslednji korak: node scripts/build-gtfs.mjs`);
 }
 
-if (level === 2) console.log(`\n[fetch-gtfs] ✗ tudi nov feed ima potekle dneve — Marprom še ni objavil naslednjega voznega reda.`);
+if (level === 2) console.log(`\n[fetch-gtfs] ✗ tudi nov feed ima potekle dneve — Marprom še ni objavil naslednjega voznega reda.\n  → rezerva: \`npm run gtfs:oba\` zgradi feed iz vmesnika OBA, ki nov vozni red običajno streže prej.`);
 else if (level === 1) console.log(`\n[fetch-gtfs] ! del voznega reda poteče v ${WARN_DAYS} dneh — spremljaj objavo novega feeda.`);
