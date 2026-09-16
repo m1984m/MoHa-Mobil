@@ -1,36 +1,36 @@
-name = "moha-mobil-proxy"
+﻿name = "moha-mobil-proxy"
 main = "src/worker.js"
 compatibility_date = "2026-07-01"
 
-# Kdo sme klicati Worker. Vse ostalo dobi 403 — brez tega bi bil to odprt proxy
-# na tvoj račun. Dev vnosa sta za `npm run dev` (Vite privzeto 9125).
+# Kdo sme klicati Worker. Vse ostalo dobi 403 â€” brez tega bi bil to odprt proxy
+# na tvoj raÄŤun. Dev vnosa sta za `npm run dev` (Vite privzeto 9125).
 [vars]
 ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0.1:9125"
 
-# Javni ključ VAPID. Ta SME biti v repozitoriju — brskalnik ga tako ali tako
-# dobi ob naročanju (`applicationServerKey`), Worker pa ga vrne na
+# Javni kljuÄŤ VAPID. Ta SME biti v repozitoriju â€” brskalnik ga tako ali tako
+# dobi ob naroÄŤanju (`applicationServerKey`), Worker pa ga vrne na
 # GET /alarms/status, da ga odjemalcu ni treba imeti vgrajenega v paketu.
 VAPID_PUBLIC = "BC-oaCOK8TZKJN5ckRuZkrhHmkJMb8J034-BuyrcJq7oKfi5QLQWhYpyDPupJqDHM1SBLfTrJI0N99vIbyYo0Y8"
 
-# Kontakt, ki ga potisne storitve zahtevajo v žetonu VAPID (RFC 8292 `sub`).
-# Ob težavi (npr. zloraba) te po tem naslovu obvestijo namesto da te blokirajo.
+# Kontakt, ki ga potisne storitve zahtevajo v Ĺľetonu VAPID (RFC 8292 `sub`).
+# Ob teĹľavi (npr. zloraba) te po tem naslovu obvestijo namesto da te blokirajo.
 VAPID_SUBJECT = "mailto:matej.moharic@gmail.com"
 
-# ORS_KEY in VAPID_PRIVATE NISTA tu — sta skrivnosti, nastavljeni z:
+# ORS_KEY in VAPID_PRIVATE NISTA tu â€” sta skrivnosti, nastavljeni z:
 #   npx wrangler secret put ORS_KEY
 #   npx wrangler secret put VAPID_PRIVATE
-# (zasebni ključ je polje "privateKey" v worker/secrets/vapid.json — ta mapa je
-# v .gitignore). Nikoli ju ne piši v to datoteko (je v gitu).
+# (zasebni kljuÄŤ je polje "privateKey" v worker/secrets/vapid.json â€” ta mapa je
+# v .gitignore). Nikoli ju ne piĹˇi v to datoteko (je v gitu).
 
-# Shramba naročnin in časov zvonjenja za alarme ob odhodu avtobusa.
-# Imenski prostor ustvariš enkrat, nato spodaj prilepiš izpisani id:
+# Shramba naroÄŤnin in ÄŤasov zvonjenja za alarme ob odhodu avtobusa.
+# Imenski prostor ustvariĹˇ enkrat, nato spodaj prilepiĹˇ izpisani id:
 #   npx wrangler kv namespace create ALARMS_KV
 [[kv_namespaces]]
 binding = "ALARMS_KV"
-id = "<VPISI_PO_wrangler_kv_namespace_create>"
+id = "e911212a8da84372b3feed1002153230"
 
-# Cron vsako minuto: pošlje zapadla obvestila. Cloudflare zagona ne jamči na
-# sekundo natančno (zamik nekaj deset sekund je običajen) — zato Worker pobere
+# Cron vsako minuto: poĹˇlje zapadla obvestila. Cloudflare zagona ne jamÄŤi na
+# sekundo natanÄŤno (zamik nekaj deset sekund je obiÄŤajen) â€” zato Worker pobere
 # tudi zvonjenja, ki zapadejo v naslednjih 30 s.
 [triggers]
 crons = ["* * * * *"]

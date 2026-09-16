@@ -11,6 +11,15 @@ $ErrorActionPreference = 'Stop'
 $web = Split-Path -Parent $MyInvocation.MyCommand.Path
 $worker = Join-Path $web 'worker'
 
+# Skripta potrebuje tipkovnico (Read-Host). Ce tece brez nje (v ozadju, prek cevi,
+# iz agenta), Read-Host ne vrne vnosa in korak 7 zapise prazen id v wrangler.toml -
+# to se je 16.09.2026 tudi zgodilo, wrangler pa je nato zavrnil objavo Workerja.
+if ([Console]::IsInputRedirected) {
+  Write-Host "Ta skripta rabi tipkovnico, tece pa brez nje (vhod je preusmerjen)." -ForegroundColor Red
+  Write-Host "Odpri navadno okno PowerShell in jo pozeni tam." -ForegroundColor Red
+  exit 1
+}
+
 function Korak($n, $besedilo) {
   Write-Host ""
   Write-Host "=== Korak $n : $besedilo ===" -ForegroundColor Cyan
@@ -42,10 +51,12 @@ npx wrangler kv namespace create ALARMS_KV
 
 Write-Host ""
 Write-Host "Iz izpisa zgoraj prepisi vrednost id (32 hex znakov)." -ForegroundColor Yellow
-$kvId = Read-Host "Prilepi id prostora ALARMS_KV"
+$kvId = (Read-Host "Prilepi id prostora ALARMS_KV")
+if ($null -ne $kvId) { $kvId = $kvId.Trim() }
 
-if ($kvId -notmatch '^[0-9a-f]{32}$') {
-  Write-Host "To ni videti kot veljaven id. Prekinjam, da ne pokvarim wrangler.toml." -ForegroundColor Red
+if ([string]::IsNullOrWhiteSpace($kvId) -or $kvId -notmatch '^[0-9a-f]{32}$') {
+  Write-Host "To ni videti kot veljaven id (pricakujem 32 hex znakov). Prekinjam," -ForegroundColor Red
+  Write-Host "da v wrangler.toml ne zapisem prazne vrednosti." -ForegroundColor Red
   exit 1
 }
 
