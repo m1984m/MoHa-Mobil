@@ -9,7 +9,13 @@
     <meta name="theme-color" content="#D32027" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- NE uporabljaj black-translucent: na iPhonu (iOS 26, iPhone 15) je okno
+         aplikacije zato visoko 852-59 = 793 točk, vsebina pa se začne na vrhu
+         zaslona. Spodnjih 59 točk (= safe-area-inset-top) ostane zunaj okna in
+         jih aplikacija ne more porisati — pod menijem se vidi bel pas.
+         Izmerjeno 16.09.2026: spodnji rob menija je bil točno 59,3 točke nad
+         dnom zaslona, diagnostika je javila zgoraj 59px / spodaj 34px. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="MoHa Mobil" />
     <title>MoHa Mobil</title>
     <script>
