@@ -1,15 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
   import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
+  import { disablePush } from '../push';
 
   export let theme: Theme;
   export let onThemeChange: (t: Theme) => void;
+  export let onOpenAlarms: () => void = () => {};
 
   let gtfsMeta: GtfsMeta | null = null;
   onMount(async () => { gtfsMeta = await loadMeta(); });
@@ -69,8 +71,15 @@
   }
 
   let clearConfirmOpen = false;
+  let clearing = false;
 
-  function clearAllData() {
+  async function clearAllData() {
+    if (clearing) return;
+    clearing = true;
+    // Naročnina na obvestila in vrsta zvonjenj na strežniku preživita brisanje
+    // localStorage — brez odjave bi telefon še tedne zvonil za opomnike, ki jih
+    // v aplikaciji ni več nikjer videti.
+    try { await disablePush(); } catch {}
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -303,6 +312,24 @@
     </section>
 
     <section>
+      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Obvestila</div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li>
+          <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left"
+                  on:click={onOpenAlarms}
+                  aria-label="Odpri opomnike za odhod">
+            <AlarmClock size={20} color="var(--text-muted)" />
+            <div class="flex-1">
+              <div class="t-body">Opomniki za odhod</div>
+              <div class="t-footnote text-muted">Opozorilo nekaj minut pred odhodom pripete linije</div>
+            </div>
+            <ChevronRight size={16} color="var(--text-muted)" />
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <section>
       <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Podatki</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[56px] px-4">
@@ -311,7 +338,7 @@
             <Trash2 size={20} color="var(--status-disrupt)" />
             <div class="flex-1">
               <div class="t-body" style="color: var(--status-disrupt)">Počisti vse podatke</div>
-              <div class="t-footnote text-muted">Odstrani priljubljene, shranjene poti in ponastavi nastavitve</div>
+              <div class="t-footnote text-muted">Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve</div>
             </div>
           </button>
         </li>
@@ -372,7 +399,7 @@
 
 <ConfirmDialog open={clearConfirmOpen}
                title="Počisti vse shranjene podatke?"
-               body="Odstrani priljubljena postajališča, shranjene poti in vse nastavitve, vključno s temo. Aplikacija se bo nato osvežila. Tega dejanja ni mogoče razveljaviti."
+               body="Odstrani priljubljena postajališča, opomnike za odhod (in odjavi obvestila zanje), shranjene poti in vse nastavitve, vključno s temo. Aplikacija se bo nato osvežila. Tega dejanja ni mogoče razveljaviti."
                confirmLabel="Počisti vse" destructive
                onConfirm={clearAllData}
                onCancel={() => clearConfirmOpen = false} />

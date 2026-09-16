@@ -14,6 +14,7 @@ dist-ssr
 
 # Environment (API keys)
 .env
+worker/secrets/
 .env.local
 .env.*.local
 

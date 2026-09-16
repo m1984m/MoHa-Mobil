@@ -9,6 +9,11 @@
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
 const VERSION = '__SW_VERSION__';
+// Alarmi: SW nima dostopa do import.meta.env, zato vrednosti vstavi build-sw.mjs
+// (iz process.env ob gradnji). Če nista nastavljeni, ostaneta prazna niza in
+// obnovitev naročnine spodaj se tiho preskoči.
+const VAPID_PUBLIC = '__VAPID_PUBLIC__';
+const ALARM_API = '__ALARM_API__';
 const APP_CACHE = `mm-app-${VERSION}`;
 const GTFS_CACHE = `mm-gtfs-${VERSION}`;
 const TILES_CACHE = `mm-tiles-${VERSION}`;
@@ -121,4 +126,114 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(staleWhileRevalidate(req, APP_CACHE));
     return;
   }
+});
+
+// ── Alarmi za odhod (potisna obvestila) ──────────────────────────────────────
+
+// Vse poti so relativne na scope registracije — v produkciji je to
+// https://…/MoHa-Mobil/, zato absolutna '/pot' ne sme nikoli mimo.
+function scopedUrl(path) {
+  try {
+    return new URL(String(path || './').replace(/^\/+/, '') || './', self.registration.scope).href;
+  } catch {
+    return self.registration.scope;
+  }
+}
+
+function urlB64ToUint8Array(base64) {
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// KV na Cloudflaru ni močno konsistenten: cron lahko do približno minute bere zastarel
+// seznam in isto zvonjenje pošlje dvakrat. Na strežniku se tega brez Durable Objecta
+// ne da odpraviti, zato ublažimo tu.
+const STALE_MS = 2 * 60 * 1000;
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  if (!data || typeof data !== 'object') data = {};
+  const tag = data.tag || 'mm-alarm';
+  const url = data.url || './';
+  // Zasilno besedilo: obvestilo brez vsebine je za uporabnika brez pomena,
+  // brskalnik pa ob userVisibleOnly naročnini tako ali tako zahteva prikaz.
+  let title = data.title || 'Čas za odhod';
+  let body = data.body || 'Avtobus kmalu odpelje s tvoje postaje.';
+  let vibrate = [200, 100, 200];
+
+  // Brez fireAt (staro obvestilo v vrsti potisne storitve) se obnašamo kot doslej.
+  const fireAt = Number(data.fireAt);
+  const stale = isFinite(fireAt) && fireAt > 0 && Date.now() - fireAt > STALE_MS;
+  if (stale) {
+    // showNotification ni neobvezen — ob izpuščenem klicu brskalnik pokaže svoje
+    // splošno obvestilo. Zato pokažemo kratko in pošteno: naslov pove, da je
+    // opozorilo zamujeno, telo pa ohrani podatek o odhodu. Oznake linije ni kot
+    // ločenega polja (Worker prepušča le id/fireAt/title/body/tag/url), izluščiti
+    // je iz naslova pa ne gre zanesljivo — zato raje izvirno telo kot ugibanje.
+    title = 'Zamujeno opozorilo';
+    body = data.body || 'Opozorilo je prišlo prepozno.';
+    vibrate = [];
+  }
+
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    tag,
+    // tag je unikaten na ponovitev, zato podvojeno zvonjenje samo tiho posodobi
+    // obstoječe obvestilo namesto da bi zazvonilo še enkrat.
+    renotify: false,
+    icon: scopedUrl('./icon-192.svg'),
+    badge: scopedUrl('./icon-maskable.svg'),
+    vibrate,
+    data: { url, fireAt: isFinite(fireAt) ? fireAt : null, stale },
+    requireInteraction: false,
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = scopedUrl((event.notification.data && event.notification.data.url) || './');
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      if (!c.url.startsWith(self.registration.scope)) continue;
+      await c.focus();
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
+});
+
+// Brskalnik zna naročnino zavreči in jo zamenjati (rotacija endpointa). Takrat se
+// naročimo znova in javimo strežniku; če to ne uspe, popravek ujame ensureSubscribed
+// ob naslednjem zagonu aplikacije.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    if (!VAPID_PUBLIC) return;
+    const oldEndpoint = (event.oldSubscription && event.oldSubscription.endpoint)
+      || (event.newSubscription && event.newSubscription.endpoint)
+      || null;
+    try {
+      let sub = await self.registration.pushManager.getSubscription();
+      if (!sub) {
+        sub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC),
+        });
+      }
+      if (!ALARM_API || !sub) return;
+      const j = sub.toJSON();
+      await fetch(`${ALARM_API}/resubscribe`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          oldEndpoint,
+          subscription: { endpoint: j.endpoint, keys: j.keys },
+        }),
+      });
+    } catch {}
+  })());
 });

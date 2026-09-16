@@ -7,9 +7,33 @@ compatibility_date = "2026-07-01"
 [vars]
 ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0.1:9125"
 
-# ORS_KEY NI tu — je skrivnost, nastavljena z:
+# Javni ključ VAPID. Ta SME biti v repozitoriju — brskalnik ga tako ali tako
+# dobi ob naročanju (`applicationServerKey`), Worker pa ga vrne na
+# GET /alarms/status, da ga odjemalcu ni treba imeti vgrajenega v paketu.
+VAPID_PUBLIC = "BC-oaCOK8TZKJN5ckRuZkrhHmkJMb8J034-BuyrcJq7oKfi5QLQWhYpyDPupJqDHM1SBLfTrJI0N99vIbyYo0Y8"
+
+# Kontakt, ki ga potisne storitve zahtevajo v žetonu VAPID (RFC 8292 `sub`).
+# Ob težavi (npr. zloraba) te po tem naslovu obvestijo namesto da te blokirajo.
+VAPID_SUBJECT = "mailto:matej.moharic@gmail.com"
+
+# ORS_KEY in VAPID_PRIVATE NISTA tu — sta skrivnosti, nastavljeni z:
 #   npx wrangler secret put ORS_KEY
-# Nikoli je ne piši v to datoteko (je v gitu).
+#   npx wrangler secret put VAPID_PRIVATE
+# (zasebni ključ je polje "privateKey" v worker/secrets/vapid.json — ta mapa je
+# v .gitignore). Nikoli ju ne piši v to datoteko (je v gitu).
+
+# Shramba naročnin in časov zvonjenja za alarme ob odhodu avtobusa.
+# Imenski prostor ustvariš enkrat, nato spodaj prilepiš izpisani id:
+#   npx wrangler kv namespace create ALARMS_KV
+[[kv_namespaces]]
+binding = "ALARMS_KV"
+id = "<VPISI_PO_wrangler_kv_namespace_create>"
+
+# Cron vsako minuto: pošlje zapadla obvestila. Cloudflare zagona ne jamči na
+# sekundo natančno (zamik nekaj deset sekund je običajen) — zato Worker pobere
+# tudi zvonjenja, ki zapadejo v naslednjih 30 s.
+[triggers]
+crons = ["* * * * *"]
 
 [observability]
 enabled = true

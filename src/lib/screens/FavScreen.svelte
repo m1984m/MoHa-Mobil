@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil } from 'lucide-svelte';
+  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
   import { upcomingDepartures } from '../gtfs';
   import Screen from '../ui/Screen.svelte';
@@ -10,6 +10,7 @@
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
   import { favLines, type FavLine } from '../favLines';
+  import { alarms, alarmsCoverageWarning } from '../alarms';
   import { savedRoutes, type SavedRoute } from '../savedRoutes';
   import { compactLists } from '../settings';
   import { pushBack } from '../backstack';
@@ -20,6 +21,17 @@
   export let gtfs: GTFS | null;
   export let onStopSelect: (s: Stop) => void;
   export let onRunSavedRoute: (r: SavedRoute) => void = () => {};
+  // Alarmi izhajajo iz pripetih linij, zato je vstop tukaj (in v Nastavitvah),
+  // ne kot šesti zavihek — TabBar je s petimi na 390 px že zapolnjen.
+  export let onOpenAlarms: () => void = () => {};
+
+  $: alarmSummary = $alarms.length === 0
+    ? 'Opozori me, preden mi avtobus uide'
+    : `${$alarms.filter(a => a.enabled).length} od ${$alarms.length} vklopljenih`;
+  // Opozorilo mora biti vidno že tu — opomnik, ki zaradi izteka voznega reda ne bo
+  // zazvonil, se sicer opazi šele zjutraj, ko avtobus uide. Odvisno samo od gtfs in
+  // seznama opomnikov, zato se ne preračunava ob vsakem 30-sekundnem tiku.
+  $: alarmWarn = gtfs && $alarms.length > 0 ? alarmsCoverageWarning(gtfs, $alarms) : null;
 
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -228,6 +240,27 @@
 
 <Screen title="Priljubljene" onRefresh={refresh}>
   <div class="px-4 max-w-screen-sm mx-auto space-y-3">
+    <button class="pressable w-full surface rounded-2xl border shadow-card min-h-[56px] px-4 py-3 flex items-center gap-3 text-left"
+            style={alarmWarn ? 'border-color: var(--status-delay)' : ''}
+            class:border-base={!alarmWarn}
+            on:click={onOpenAlarms}
+            aria-label="Odpri opomnike za odhod">
+      {#if alarmWarn}
+        <AlertTriangle size={20} color="var(--status-delay)" />
+      {:else}
+        <AlarmClock size={20} color="var(--accent)" />
+      {/if}
+      <div class="flex-1 min-w-0">
+        <div class="t-body font-medium">Opomniki za odhod</div>
+        {#if alarmWarn}
+          <div class="t-footnote" style="color: var(--status-delay)">{alarmWarn.text}</div>
+        {:else}
+          <div class="t-footnote text-muted truncate">{alarmSummary}</div>
+        {/if}
+      </div>
+      <ChevronRight size={18} color="var(--text-muted)" />
+    </button>
+
     {#if $savedRoutes.length > 0}
       <h2 class="t-footnote text-muted uppercase tracking-wide mt-1">Shranjene poti</h2>
       {#each $savedRoutes as r (r.id)}

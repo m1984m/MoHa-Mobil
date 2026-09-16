@@ -8,6 +8,8 @@
   import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
   import { defaultTab, liveLocationWatch } from './lib/settings';
+  import { alarms } from './lib/alarms';
+  import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack } from './lib/backstack';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
@@ -16,6 +18,7 @@
   import SettingsScreen from './lib/screens/SettingsScreen.svelte';
   import TimetablesScreen from './lib/screens/TimetablesScreen.svelte';
   import WeatherModal from './lib/screens/WeatherModal.svelte';
+  import AlarmsScreen from './lib/screens/AlarmsScreen.svelte';
   import UpdateToast from './lib/ui/UpdateToast.svelte';
   import Toast from './lib/ui/Toast.svelte';
 
@@ -81,6 +84,9 @@
   } | null = null;
   let plannerOpen = false;
   let weatherOpen = false;
+  // Alarmi so poln prekrivni sloj, ne šesti zavihek — TabBar je s petimi zavihki
+  // na 390 px že zapolnjen. Vstop je iz Priljubljenih in iz Nastavitev.
+  let alarmsOpen = false;
   // Predizpolnjen cilj za PlannerModal — bodisi iz long-pressa na karti (brez imena, reverse-geocode
    // naknadno), bodisi iz gumba "pot do te postaje" (z imenom).
   let pendingDest: { lat: number; lon: number; name?: string } | null = null;
@@ -102,6 +108,12 @@
     backWeather = pushBack(() => weatherOpen = false);
   } else if (!weatherOpen && backWeather) {
     const r = backWeather; backWeather = null; r();
+  }
+  let backAlarms: (() => void) | null = null;
+  $: if (alarmsOpen && !backAlarms) {
+    backAlarms = pushBack(() => alarmsOpen = false);
+  } else if (!alarmsOpen && backAlarms) {
+    const r = backAlarms; backAlarms = null; r();
   }
   let backStop: (() => void) | null = null;
   $: if (selectedStop && !backStop) {
@@ -165,6 +177,9 @@
         ? (window as any).requestIdleCallback(cb, { timeout: 5000 })
         : setTimeout(cb, 2500);
     idle(() => { ensureMapScreen(); ensurePlanner(); });
+    // Naročnina na obvestila se lahko tiho zavrže (brskalnik zarotira endpoint) —
+    // preveri jo ob vsakem zagonu. Razpored alarmov nato osveži reaktivni blok nižje.
+    void ensureSubscribed();
   });
 
   function parsePlace(s: string | null): { lat: number; lon: number; name: string } | null {
@@ -278,6 +293,10 @@
     if ($liveLocationWatch && hasGeo && !stopWatch) startWatch();
     if (!$liveLocationWatch && stopWatch) { stopWatch(); stopWatch = null; }
   }
+  // Vsaka sprememba alarmov — in zagon, ko se GTFS naloži — osveži razpored zvonjenja
+  // na strežniku. scheduleSync sam združi rafal sprememb v eno zahtevo.
+  $: scheduleSync(gtfs, $alarms);
+
   async function refreshWeather() {
     weather = await fetchWeather(origin.lat, origin.lon);
   }
@@ -359,11 +378,13 @@
     </div>
   {:else if activeTab === 'fav'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <FavScreen {gtfs} onStopSelect={handleStopSelect} onRunSavedRoute={runSavedRoute} />
+      <FavScreen {gtfs} onStopSelect={handleStopSelect} onRunSavedRoute={runSavedRoute}
+        onOpenAlarms={() => alarmsOpen = true} />
     </div>
   {:else if activeTab === 'settings'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <SettingsScreen {theme} onThemeChange={(t) => theme = t} />
+      <SettingsScreen {theme} onThemeChange={(t) => theme = t}
+        onOpenAlarms={() => alarmsOpen = true} />
     </div>
   {/if}
 
@@ -379,6 +400,8 @@
 
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}
     onClose={() => weatherOpen = false} />
+
+  <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false} />
 
   <UpdateToast />
   <Toast />

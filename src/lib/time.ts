@@ -60,6 +60,17 @@ export function fmtWaitSentence(m: number | null): string {
   return `Naslednji avtobus čez ${fmtDuration(m)}`;
 }
 
+// Slovenska sklanjatev ob števniku: 1 hiša, 2 hiši, 3 hiše, 5 hiš — odloča ostanek
+// pri 100 (11 in 12 gresta v množino, 101 in 102 ne). Vzorec je isti kot pri
+// fmtWaitSentence, le da je oblika parameter, ne vgrajena v stavek.
+export function fmtPlural(n: number, one: string, two: string, few: string, many: string): string {
+  const r = Math.abs(Math.round(n)) % 100;
+  if (r === 1) return one;
+  if (r === 2) return two;
+  if (r === 3 || r === 4) return few;
+  return many;
+}
+
 // Intl vrne mesec v imenovalniku ("julij"), zaradi česar je nastal zapis
 // "Velja od julij 2026". Rodilnik potrebuje lasten seznam — Intl ga za sl-SI ne pozna.
 const MONTHS_GENITIVE = [

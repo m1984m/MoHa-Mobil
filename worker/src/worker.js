@@ -19,9 +19,20 @@
  *   POST /ors/matrix/foot-walking
  *   GET  /health
  *
+ * Tretja naloga (dodano kasneje): alarm za odhod avtobusa. Telefon sme obvestilo
+ * prikazati tudi, ko je aplikacija zaprta, samo prek potisne storitve brskalnika
+ * — to pa zahteva strežnik, ki ob pravi minuti pošlje potisk. Zato:
+ *   POST   /alarms/sync           shrani naročnino + čase zvonjenja
+ *   DELETE /alarms/sync           pobriše naročnino
+ *   GET    /alarms/status         stanje naročnine + javni ključ VAPID
+ * in cron, ki se sproži vsako minuto (glej `scheduled` na dnu).
+ *
  * Vse drugo vrne 404. Namerno: Worker ni splošen odprt proxy — brez tega bi ga
  * lahko kdorkoli uporabil za poljubne zahteve na tvoj račun.
  */
+
+import { sendPush } from './push.js';
+import { processDue } from './due.js';
 
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const ORS_BASE = 'https://api.openrouteservice.org/v2';
@@ -60,7 +71,7 @@ function corsHeaders(request, env) {
   const h = { 'Vary': 'Origin' };
   if (origin && list.includes(origin)) {
     h['Access-Control-Allow-Origin'] = origin;
-    h['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+    h['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
     h['Access-Control-Allow-Headers'] = 'Content-Type';
     h['Access-Control-Max-Age'] = '86400';
   }
@@ -221,6 +232,426 @@ async function handleOrs(request, env, ctx, path, cors) {
   return out;
 }
 
+// ── Alarmi za odhod avtobusa ──────────────────────────────────────────────────
+//
+// Zakaj sploh strežnik: telefon sme obvestilo prikazati z zaprto aplikacijo samo
+// prek potisne storitve brskalnika, `setTimeout` v zavihku pa umre takoj, ko
+// uporabnik zavihek zapre. Odjemalec zato Workerju pove, KDAJ naj zazvoni, in
+// Worker to enkrat na minuto preveri.
+
+// Meje za POST /alarms/sync. Brez njih bi lahko kdo z eno zahtevo napolnil KV.
+const ALARM_MAX_BODY = 256 * 1024;                  // 256 kB celotnega telesa
+const ALARM_MAX_OCCURRENCES = 500;
+const ALARM_MAX_AHEAD_MS = 120 * 24 * 3600 * 1000;  // 120 dni naprej
+const ALARM_MAX_TEXT = 200;                         // znakov za title in body
+const ALARM_MAX_ID = 100;
+const ALARM_MAX_URL = 500;
+const ALARM_MAX_ENDPOINT = 1000;
+
+// Koliko zahtev na /alarms/* sme en naslov IP na uro. Odjemalec sinhronizira
+// ob odprtju in ob spremembi alarma — 60 je zanj ogromno, za zlorabo pa nič.
+const ALARM_RATE_LIMIT = 60;
+const ALARM_RATE_WINDOW_S = 3600;
+
+// Naročnina, ki je nihče ne osveži, po tem času sama izgine iz KV — sicer bi se
+// zapisi odjavljenih naprav nabirali za vedno. 130 dni je okno zvonjenj (120)
+// plus rezerva.
+const ALARM_SUB_TTL_S = 130 * 24 * 3600;
+
+// Meji enega zagona crona. Worker ima omejen čas izvajanja; raje pustimo ostanek
+// naslednji minuti, kot da nas okolje prekine sredi pisanja v KV.
+const CRON_MAX_SENDS = 200;
+const CRON_MAX_MS = 25_000;
+
+// Endpoint naročnine sme kazati samo na znano potisno storitev. Brez tega bi bil
+// /alarms/sync orodje, s katerim bi kdorkoli pošiljal poljubne zahteve z naslova
+// Cloudflara (in v tvojem imenu).
+const PUSH_HOSTS = [
+  'push.services.mozilla.com',    // Firefox
+  'fcm.googleapis.com',           // Chrome, Brave, Opera, novi Edge
+  'android.googleapis.com',       // starejši Chrome
+  'notify.windows.com',           // Windows / stari Edge (WNS)
+  'push.services.microsoft.com',
+  'push.apple.com',               // Safari — web.push.apple.com in regijske različice
+];
+
+function isKnownPushHost(host) {
+  return PUSH_HOSTS.some(h => host === h || host.endsWith('.' + h));
+}
+
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Ključ v KV je izpeljan iz endpointa, ne naključen: odjemalec lahko isto
+// naročnino pove večkrat, pa ne nastane podvojen zapis. Endpoint sam v ključu ne
+// leži (vsebuje žeton naprave), 32 šestnajstiških znakov = 128 bitov je proti
+// trkom več kot dovolj.
+async function subIdFor(endpoint) {
+  return (await sha256Hex(endpoint)).slice(0, 32);
+}
+
+const B64URL = /^[A-Za-z0-9_-]+$/;
+
+/** Vrne besedilo napake ali null, če je naročnina v redu. */
+function validateSubscription(sub) {
+  if (!sub || typeof sub !== 'object') return 'manjka subscription';
+  if (typeof sub.endpoint !== 'string' || !sub.endpoint || sub.endpoint.length > ALARM_MAX_ENDPOINT) {
+    return 'neveljaven endpoint';
+  }
+  let u;
+  try { u = new URL(sub.endpoint); } catch { return 'endpoint ni veljaven URL'; }
+  if (u.protocol !== 'https:') return 'endpoint mora biti https';
+  if (!isKnownPushHost(u.hostname)) return 'endpoint ni znana potisna storitev';
+
+  const k = sub.keys;
+  if (!k || typeof k !== 'object') return 'manjkajo keys';
+  // p256dh je 65 B nestisnjene točke P-256 → 87–88 znakov base64url,
+  // auth je 16 B skrivnosti → 22–24 znakov.
+  if (typeof k.p256dh !== 'string' || k.p256dh.length < 87 || k.p256dh.length > 88 || !B64URL.test(k.p256dh)) {
+    return 'neveljaven p256dh';
+  }
+  if (typeof k.auth !== 'string' || k.auth.length < 22 || k.auth.length > 24 || !B64URL.test(k.auth)) {
+    return 'neveljaven auth';
+  }
+  return null;
+}
+
+/** Vrne `{ list }` ali `{ error }`. Prepiše samo znana polja — nič drugega v KV ne gre. */
+function validateOccurrences(arr, now) {
+  if (!Array.isArray(arr)) return { error: 'occurrences mora biti polje' };
+  if (arr.length > ALARM_MAX_OCCURRENCES) {
+    return { error: 'preveč vnosov (največ ' + ALARM_MAX_OCCURRENCES + ')' };
+  }
+  const out = [];
+  let skipped = 0;
+  for (const o of arr) {
+    if (!o || typeof o !== 'object') return { error: 'vnos ni objekt' };
+    const fireAt = Number(o.fireAt);
+    if (!Number.isFinite(fireAt)) return { error: 'fireAt ni število' };
+    if (fireAt > now + ALARM_MAX_AHEAD_MS) return { error: 'fireAt je več kot 120 dni naprej' };
+    // Pretekel vnos tiho preskočimo in ga ne štejemo. Odjemalec te tekme ne more
+    // dobiti — vnos lahko poteče med letom zahteve — zavrnitev celotne
+    // sinhronizacije pa bi pomenila, da naprava zaradi enega poteklega alarma
+    // izgubi tudi vse veljavne.
+    if (fireAt <= now) { skipped++; continue; }
+    if (typeof o.id !== 'string' || !o.id || o.id.length > ALARM_MAX_ID) return { error: 'neveljaven id' };
+    if (typeof o.title !== 'string' || o.title.length > ALARM_MAX_TEXT) return { error: 'neveljaven title' };
+    if (typeof o.body !== 'string' || o.body.length > ALARM_MAX_TEXT) return { error: 'neveljaven body' };
+    if (o.tag !== undefined && (typeof o.tag !== 'string' || o.tag.length > ALARM_MAX_ID)) {
+      return { error: 'neveljaven tag' };
+    }
+    if (o.url !== undefined && (typeof o.url !== 'string' || o.url.length > ALARM_MAX_URL)) {
+      return { error: 'neveljaven url' };
+    }
+    out.push({ id: o.id, fireAt, title: o.title, body: o.body, tag: o.tag || o.id, url: o.url || '' });
+  }
+  out.sort((a, b) => a.fireAt - b.fireAt);
+  return { list: out, skipped };
+}
+
+// Seznama naročnin NE vzdržujemo sami. Prejšnja različica je imela polje id-jev
+// pod ključem `index`, a KV nima transakcij: cron je indeks prebral na začetku
+// in na koncu zapisal svojo različico, s čimer je vsako napravo, ki se je
+// sinhronizirala med tekom, izbrisal iz seznama. Njen `sub:<id>` je ostal v KV,
+// cron je ni pogledal nikoli več, `/alarms/status` pa je še vedno javljal
+// `subscribed: true` — alarm je tiho obmolknil in se ni popravil sam.
+// Delovni seznam zato dobimo iz `ALARMS_KV.list({ prefix: 'sub:' })`, ki je
+// vedno popoln in ga ni treba vzdrževati.
+
+// Števec na hashiran IP z eno urno okno. Shranjen je samo števec in samo uro —
+// nič, kar bi napravo prepoznalo, ne preživi okna. Napaka KV nikoli ne zavrne
+// zahteve: omejevalnik je varovalo, ne funkcija, na katero se odjemalec zanaša.
+async function alarmRateLimited(request, env) {
+  try {
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const hour = Math.floor(Date.now() / (ALARM_RATE_WINDOW_S * 1000));
+    const key = 'rl:' + (await sha256Hex(ip + ':' + hour)).slice(0, 16);
+    const current = Number(await env.ALARMS_KV.get(key)) || 0;
+    if (current >= ALARM_RATE_LIMIT) return true;
+    await env.ALARMS_KV.put(key, String(current + 1), { expirationTtl: ALARM_RATE_WINDOW_S });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function alarmsSync(request, env, cors) {
+  const raw = await request.text();
+  if (raw.length > ALARM_MAX_BODY) return json({ error: 'body too large' }, 413, cors);
+
+  let payload;
+  try { payload = JSON.parse(raw); } catch { return json({ error: 'bad json' }, 400, cors); }
+
+  const subErr = validateSubscription(payload && payload.subscription);
+  if (subErr) return json({ error: subErr }, 400, cors);
+
+  const now = Date.now();
+  const occ = validateOccurrences(payload.occurrences, now);
+  if (occ.error) return json({ error: occ.error }, 400, cors);
+
+  const sub = payload.subscription;
+  const id = await subIdFor(sub.endpoint);
+  await env.ALARMS_KV.put('sub:' + id, JSON.stringify({
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+    occurrences: occ.list,
+    updatedAt: now,
+  }), { expirationTtl: ALARM_SUB_TTL_S });
+
+  return json({
+    ok: true,
+    count: occ.list.length,
+    until: occ.list.length ? occ.list[occ.list.length - 1].fireAt : null,
+  }, 200, cors);
+}
+
+async function alarmsUnsync(request, env, cors) {
+  const raw = await request.text();
+  if (raw.length > 4096) return json({ error: 'body too large' }, 413, cors);
+
+  let payload;
+  try { payload = JSON.parse(raw || '{}'); } catch { return json({ error: 'bad json' }, 400, cors); }
+
+  const endpoint = payload && payload.endpoint;
+  if (typeof endpoint !== 'string' || !endpoint || endpoint.length > ALARM_MAX_ENDPOINT) {
+    return json({ error: 'manjka endpoint' }, 400, cors);
+  }
+
+  const id = await subIdFor(endpoint);
+  await env.ALARMS_KV.delete('sub:' + id);
+
+  // Odjava je idempotentna: da naročnine ni bilo, ni napaka — odjemalec, ki
+  // odjavo ponovi po izpadu omrežja, ne sme dobiti napake.
+  return json({ ok: true }, 200, cors);
+}
+
+/** Prebere zapis naročnine iz KV; vrne null, če ga ni ali je pokvarjen. */
+async function readSub(env, id) {
+  try {
+    const doc = JSON.parse(await env.ALARMS_KV.get('sub:' + id) || 'null');
+    return (doc && doc.endpoint && doc.keys) ? doc : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Združi zvonjenja dveh zapisov brez podvajanja po `id`.
+ * Ob istem `id` obvelja vnos iz zapisa z novejšim `updatedAt` — brskalnik je
+ * med zamenjavo naročnine morda oba zapisa pustil za sabo, novejši pa nosi
+ * tisto, kar je uporabnik nazadnje res nastavil.
+ */
+function mergeOccurrences(...docs) {
+  const ordered = docs.filter(Boolean)
+    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0)); // novejši prvi
+  const byId = new Map();
+  for (const doc of ordered) {
+    const occ = Array.isArray(doc.occurrences) ? doc.occurrences : [];
+    for (const o of occ) {
+      if (!o || typeof o.id !== 'string') continue;
+      if (!byId.has(o.id)) byId.set(o.id, o);   // prvi videni (iz novejšega zapisa) obvelja
+    }
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => (Number(a.fireAt) || 0) - (Number(b.fireAt) || 0))
+    .slice(0, ALARM_MAX_OCCURRENCES);
+}
+
+/**
+ * Brskalnik sme naročnino zamenjati sam (dogodek `pushsubscriptionchange` v
+ * service workerju) — takrat je stari endpoint mrtev, uporabnik pa o tem ne ve
+ * nič. Brez te poti bi mu alarmi tiho nehali zvoniti.
+ */
+async function alarmsResubscribe(request, env, cors) {
+  const raw = await request.text();
+  if (raw.length > ALARM_MAX_BODY) return json({ error: 'body too large' }, 413, cors);
+
+  let payload;
+  try { payload = JSON.parse(raw); } catch { return json({ error: 'bad json' }, 400, cors); }
+
+  const subErr = validateSubscription(payload && payload.subscription);
+  if (subErr) return json({ error: subErr }, 400, cors);
+
+  // Manjkajoč ali neveljaven `oldEndpoint` NI napaka: service worker ga ob
+  // `pushsubscriptionchange` pogosto ne more prebrati, ker je stara naročnina
+  // že izginila. Takrat to obravnavamo kot navaden vpis nove naročnine —
+  // zavrnitev bi pomenila, da naprava po rotaciji endpointa tiho obmolkne.
+  const oldEndpoint = payload.oldEndpoint;
+  const hasOld = typeof oldEndpoint === 'string' && oldEndpoint !== ''
+    && oldEndpoint.length <= ALARM_MAX_ENDPOINT;
+
+  const sub = payload.subscription;
+  const newId = await subIdFor(sub.endpoint);
+  const oldId = hasOld ? await subIdFor(oldEndpoint) : null;
+
+  const newDoc = await readSub(env, newId);
+  // Če je stari endpoint enak novemu, zapisa NE smemo izbrisati — brskalnik je
+  // javil zamenjavo, ki naslova ni zares spremenila. Brisanje bi tu pomenilo
+  // izgubo vseh alarmov.
+  const oldDoc = (oldId && oldId !== newId) ? await readSub(env, oldId) : null;
+
+  const occurrences = mergeOccurrences(newDoc, oldDoc);
+  await env.ALARMS_KV.put('sub:' + newId, JSON.stringify({
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+    occurrences,
+    updatedAt: Date.now(),
+  }), { expirationTtl: ALARM_SUB_TTL_S });
+
+  if (oldDoc) await env.ALARMS_KV.delete('sub:' + oldId);
+
+  // `moved` je true samo, kadar so zvonjenja res prišla z DRUGEGA, zdaj
+  // izbrisanega zapisa — ne ob navadni posodobitvi istega endpointa.
+  return json({ ok: true, moved: !!oldDoc, count: occurrences.length }, 200, cors);
+}
+
+async function alarmsStatus(request, env, cors) {
+  const endpoint = new URL(request.url).searchParams.get('endpoint');
+
+  // Brez parametra: odjemalec samo sprašuje po javnem ključu, ki ga potrebuje
+  // za `pushManager.subscribe({ applicationServerKey })`.
+  if (!endpoint) return json({ vapidPublic: env.VAPID_PUBLIC }, 200, cors);
+  if (endpoint.length > ALARM_MAX_ENDPOINT) return json({ error: 'endpoint too long' }, 400, cors);
+
+  const id = await subIdFor(endpoint);
+  let doc = null;
+  try { doc = JSON.parse(await env.ALARMS_KV.get('sub:' + id) || 'null'); } catch { doc = null; }
+  const list = (doc && Array.isArray(doc.occurrences)) ? doc.occurrences : [];
+
+  return json({
+    subscribed: !!doc,
+    count: list.length,
+    until: list.length ? Math.max(...list.map(o => Number(o.fireAt) || 0)) : null,
+    vapidPublic: env.VAPID_PUBLIC,
+  }, 200, cors);
+}
+
+async function handleAlarms(request, env, ctx, path, cors) {
+  if (!env.ALARMS_KV) return json({ error: 'ALARMS_KV ni vezan' }, 503, cors);
+  // Zavrnemo tudi, kadar manjka SAMO zasebni ključ. Brez njega bi odjemalec
+  // dobil `ok: true` in mislil, da so alarmi nastavljeni, cron pa ne bi mogel
+  // poslati ničesar — med namestitvijo po README (javni ključ je v gitu,
+  // skrivnost se nastavi posebej) je to povsem verjetno vmesno stanje.
+  if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE) {
+    return json({ error: 'VAPID ključa nista nastavljena' }, 503, cors);
+  }
+
+  // Branje stanja ne piše v KV in gre mimo omejevalnika.
+  if (path === '/alarms/status' && request.method === 'GET') return alarmsStatus(request, env, cors);
+
+  const mutating =
+    (path === '/alarms/sync' && (request.method === 'POST' || request.method === 'DELETE')) ||
+    (path === '/alarms/resubscribe' && request.method === 'POST');
+  // Neznano pot zavrnemo PRED omejevalnikom — sicer bi vsaka smetna zahteva
+  // pod /alarms stala eno pisanje v KV.
+  if (!mutating) return json({ error: 'not found' }, 404, cors);
+
+  // Omejevalnik teče samo pred spreminjajočimi zahtevami. Vsak njegov klic je
+  // pisanje v KV, brezplačna meja pa je 1.000 pisanj na dan; če bi štel še
+  // branja stanja in neznane poti, bi protizlorabni števec pojedel kvoto,
+  // ki jo potrebujejo naročnine same.
+  if (await alarmRateLimited(request, env)) return json({ error: 'preveč zahtev' }, 429, cors);
+
+  if (path === '/alarms/sync' && request.method === 'POST') return alarmsSync(request, env, cors);
+  if (path === '/alarms/sync' && request.method === 'DELETE') return alarmsUnsync(request, env, cors);
+  return alarmsResubscribe(request, env, cors);
+}
+
+// ── Cron: pošlji, kar je zapadlo ──────────────────────────────────────────────
+
+// Kaj dobi service worker kot JSON v dogodku `push`.
+function alarmPayload(occ) {
+  return {
+    id: occ.id,
+    title: occ.title || 'MoHa Mobil',
+    body: occ.body || '',
+    tag: occ.tag || occ.id,
+    url: occ.url || '',
+    fireAt: occ.fireAt,
+  };
+}
+
+async function runDueAlarms(env) {
+  if (!env.ALARMS_KV) { console.log('alarms cron: ALARMS_KV ni vezan — preskočeno'); return; }
+  if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE) {
+    console.log('alarms cron: manjka ključ VAPID — preskočeno');
+    return;
+  }
+
+  const started = Date.now();
+  const budget = { left: CRON_MAX_SENDS };
+  let subs = 0, sent = 0, failed = 0, dropped = 0, expired = 0, removed = 0, errors = 0;
+  let stopped = false;
+  let cursor;
+
+  // Delovni seznam beremo iz KV samega. `list` vrne strani po največ 1.000
+  // ključev, zato se vrtimo, dokler je kaj naprej.
+  strani:
+  for (;;) {
+    let page;
+    try {
+      page = await env.ALARMS_KV.list({ prefix: 'sub:', cursor });
+    } catch (e) {
+      errors++;
+      break;
+    }
+
+    for (const entry of page.keys) {
+      if (Date.now() - started > CRON_MAX_MS || budget.left <= 0) { stopped = true; break strani; }
+      const key = entry.name;
+
+      // Napaka KV pri eni naročnini ne sme ustaviti vseh preostalih. Vrstni red
+      // ključev je stalen, zato bi sicer vsakič odpadli isti uporabniki.
+      try {
+        let doc = null;
+        try { doc = JSON.parse(await env.ALARMS_KV.get(key) || 'null'); } catch { doc = null; }
+
+        // Zapis je medtem potekel (TTL) — ni ga treba brisati, ga ni več.
+        if (!doc) continue;
+        // Zapis je pokvarjen: brez endpointa ali ključev z njim ni kaj početi.
+        if (!doc.endpoint || !doc.keys) { await env.ALARMS_KV.delete(key); removed++; continue; }
+        subs++;
+
+        const res = await processDue(doc, Date.now(), (d, occ) =>
+          sendPush({ endpoint: d.endpoint, keys: d.keys }, alarmPayload(occ), env), budget);
+
+        sent += res.sent;
+        failed += res.failed;
+        dropped += res.dropped;
+        expired += res.expired;
+
+        if (res.dead) {
+          // 404/410: naprava je odjavljena ali je naročnina potekla.
+          await env.ALARMS_KV.delete(key);
+          removed++;
+          continue;
+        }
+        // Zapišemo nazaj samo ob dejanski spremembi — vsak put v KV nekaj stane.
+        if (res.changed) {
+          await env.ALARMS_KV.put(key, JSON.stringify({
+            ...doc,
+            occurrences: res.occurrences,
+            updatedAt: Date.now(),
+          }), { expirationTtl: ALARM_SUB_TTL_S });
+        }
+      } catch (e) {
+        errors++;
+        continue;
+      }
+    }
+
+    if (page.list_complete || !page.cursor) break;
+    cursor = page.cursor;
+  }
+
+  console.log(
+    `alarms cron: naročnin=${subs} poslano=${sent} spodletelo=${failed} ` +
+    `odpadlo=${dropped} zamujeno=${expired} odjavljenih=${removed} napakKV=${errors}` +
+    `${stopped ? ' PREKINJENO(kvota/čas)' : ''} ${Date.now() - started}ms`);
+}
+
 // ── Vstopna točka ─────────────────────────────────────────────────────────────
 export default {
   async fetch(request, env, ctx) {
@@ -244,7 +675,19 @@ export default {
 
     if (path.startsWith('/oba/')) return handleOba(request, env, ctx, path, cors);
     if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
+    if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);
 
     return json({ error: 'not found' }, 404, cors);
+  },
+
+  // Cron (glej [triggers] v wrangler.toml): enkrat na minuto pošlje zapadla
+  // obvestila. Delo gre v `waitUntil`, ker sme izvajanje teči tudi po vrnitvi
+  // iz `scheduled`; `await` istega obljubka poskrbi, da napaka ne izgine tiho.
+  async scheduled(event, env, ctx) {
+    const work = runDueAlarms(env).catch(e => {
+      console.log('alarms cron: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
+    });
+    ctx.waitUntil(work);
+    await work;
   },
 };
