@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Ruler } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
@@ -8,29 +8,6 @@
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
   import { disablePush } from '../push';
-
-  // ZAČASNO (16.09.2026): meni je na iPhonu lebdel ~90 točk nad dnom, čeprav je
-  // območje domačega indikatorja 34 točk. Brez pravih številk z naprave bi vzrok
-  // le ugibali. Vrstica se odstrani, ko bo vzrok znan.
-  let diag = '';
-  onMount(() => {
-    const probe = document.createElement('div');
-    probe.style.cssText =
-      'position:fixed;left:-9999px;top:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);';
-    document.body.appendChild(probe);
-    const cs = getComputedStyle(probe);
-    const sat = cs.paddingTop;
-    const sab = cs.paddingBottom;
-    probe.remove();
-    const vv = window.visualViewport;
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-    diag =
-      `okno ${window.innerHeight} · viden ${vv ? Math.round(vv.height) : '—'} · zaslon ${screen.height}` +
-      ` · dpr ${window.devicePixelRatio} · varno zgoraj ${sat} · spodaj ${sab}` +
-      ` · ${standalone ? 'z začetnega zaslona' : 'v brskalniku'}`;
-  });
 
   export let theme: Theme;
   export let onThemeChange: (t: Theme) => void;
@@ -375,14 +352,6 @@
           <Info size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Različica</div>
           <div class="t-footnote text-muted">{APP_VERSION}</div>
-        </li>
-        <!-- ZAČASNA diagnostika postavitve (glej komentar v script bloku). -->
-        <li class="min-h-[56px] px-4 py-3 flex items-start gap-3 border-b border-base">
-          <Ruler size={20} color="var(--text-muted)" />
-          <div class="flex-1 min-w-0">
-            <div class="t-body">Diagnostika zaslona</div>
-            <div class="t-footnote text-muted break-words">{diag || 'merim…'}</div>
-          </div>
         </li>
         <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
           <Database size={20} color="var(--text-muted)" />
