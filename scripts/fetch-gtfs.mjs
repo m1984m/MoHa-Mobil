@@ -4,7 +4,11 @@
 // Uporaba:
 //   node scripts/fetch-gtfs.mjs           prenesi + namesti (če je feed drugačen) + preveri poteke
 //   node scripts/fetch-gtfs.mjs --check   samo preveri lokalni feed, brez prenosa
-//   node scripts/fetch-gtfs.mjs --force   prepiši tudi, če je feed identičen
+//   node scripts/fetch-gtfs.mjs --force   prepiši tudi, če je feed identičen ali slabši
+//
+// Feed se NE namesti (exit 1, zato `npm run gtfs` ne požene build-gtfs.mjs), če bi kateri
+// dan v tednu, ki ga lokalni feed še pokriva, v prenešenem feedu potekel prej. Tako
+// zastarel uradni zip ne prepiše rezervnega feeda iz OBA (`npm run gtfs:oba`).
 //
 // Po namestitvi je treba pognati `node scripts/build-gtfs.mjs`, da se regenerira
 // web/public/gtfs/*.json (ta skripta surovih .txt namenoma ne prevaja sama).
@@ -192,10 +196,27 @@ const infoNew = analyze(fresh);
 const identical = local && Object.keys(fresh).every(f => local[f] === fresh[f])
   && Object.keys(local).length === Object.keys(fresh).length;
 
-if (local) report(`obstoječi feed`, analyze(local));
+const infoLocal = local ? analyze(local) : null;
+if (infoLocal) report(`obstoječi feed`, infoLocal);
 const level = report(`prenešeni feed`, infoNew);
 
-if (identical && !FORCE) {
+// Dnevi, ki jih lokalni feed še pokriva, prenešeni pa ne ali krajše.
+const regressions = infoLocal
+  ? infoLocal.perDay.filter((d, i) => d.days !== null && d.days >= 0
+      && (infoNew.perDay[i].end === null || infoNew.perDay[i].end < d.end))
+  : [];
+
+if (regressions.length && !identical && !FORCE) {
+  console.error(`\n[fetch-gtfs] ✗ prenešeni feed je SLABŠI od obstoječega — ne nameščam:`);
+  for (const d of regressions) {
+    const n = infoNew.perDay[DAYS.indexOf(d.day)];
+    console.error(`  ${d.day}:  obstoječi do ${fmt(d.end)}, prenešeni ${n.end ? `do ${fmt(n.end)}` : 'brez servisa'}`);
+  }
+  console.error(`  → obstoječi feed ostane nespremenjen; --force za vsiljen zapis.`);
+  // exitCode namesto process.exit(): na Windowsu exit ob odprtem fetch handle sesuje Node
+  // (Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)).
+  process.exitCode = 1;
+} else if (identical && !FORCE) {
   console.log(`\n[fetch-gtfs] feed je identičen obstoječemu — nič za posodobiti (--force za vsiljen zapis).`);
 } else {
   // gtfs_raw ni pod gitom, zato pred prepisom naredimo varnostno kopijo starega feeda.
@@ -219,5 +240,6 @@ if (identical && !FORCE) {
   console.log(`\n  → naslednji korak: node scripts/build-gtfs.mjs`);
 }
 
-if (level === 2) console.log(`\n[fetch-gtfs] ✗ tudi nov feed ima potekle dneve — Marprom še ni objavil naslednjega voznega reda.\n  → rezerva: \`npm run gtfs:oba\` zgradi feed iz vmesnika OBA, ki nov vozni red običajno streže prej.`);
+if (process.exitCode) { /* zavrnjeno zgoraj */ }
+else if (level === 2) console.log(`\n[fetch-gtfs] ✗ tudi nov feed ima potekle dneve — Marprom še ni objavil naslednjega voznega reda.\n  → rezerva: \`npm run gtfs:oba\` zgradi feed iz vmesnika OBA, ki nov vozni red običajno streže prej.`);
 else if (level === 1) console.log(`\n[fetch-gtfs] ! del voznega reda poteče v ${WARN_DAYS} dneh — spremljaj objavo novega feeda.`);
