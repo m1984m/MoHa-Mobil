@@ -5,6 +5,22 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.11.1 — 2026-09-20
+
+Predelane Nastavitve: več prostora med skupinami in vrsticami, razločnejši naslovi.
+Brez sprememb v delovanju.
+
+### Razmiki in berljivost
+- Razmik med skupinami nastavitev 24 → 32 px, vrstice 56 → 60 px z navpičnim robom, razmik med ikono in besedilom 12 → 14 px, podnaslov dobi zrak pod naslovom.
+- Naslovi skupin (IZGLED, DOM, KARTA …) so polkrepki in imajo večji razmik med črkami, da se ločijo od vsebine kartice.
+- Segmentirani izbirniki (privzeti zavihek, prikaz odhoda, vrsta karte) imajo več notranjega prostora in večji razmik med gumbi.
+
+### Stikala so bila premajhna tarča
+- **Vseh pet stikal meri 48 × 28 px, kar je pod mejo 44 px za zanesljiv dotik.** Tarča je razširjena na 66 × 45 px z nevidnim `::after` (razred `mm-tap44`), ne z odmikom — odmik bi premaknil gumbek, ki je postavljen absolutno glede na gumb. Videz stikala ostane enak.
+- Preverjeno z merjenjem dejanske tarče prek `elementFromPoint`, ne iz slogov: vseh pet vrne 45 px, vsa še vedno preklopijo stanje.
+
+---
+
 ## 0.11.0 — 2026-09-20
 
 Dve novosti v Nastavitvah, v novem razdelku **Deli in predlagaj**. Brez sprememb v podatkih ali voznih redih.

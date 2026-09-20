@@ -31,3 +31,5 @@ public/sw.js
 *.njsproj
 *.sln
 *.sw?
+relay/.env
+worker/.wrangler/

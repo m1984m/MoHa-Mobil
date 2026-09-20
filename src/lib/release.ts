@@ -14,4 +14,5 @@ export const RELEASE_NOTES: readonly string[] = [
   'Deli aplikacijo: povezavo pošlješ prijateljem iz Nastavitev',
   'Predlagaj izboljšavo: predlog gre razvijalcu po elektronski pošti',
   'Sporočilu se samodejno pripne različica, vozni red in naprava',
+  'Nastavitve so zračnejše, stikala pa lažje zadeneš s prstom',
 ];

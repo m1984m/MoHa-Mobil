@@ -143,14 +143,14 @@
 </script>
 
 <Screen title="Nastavitve">
-  <div class="px-4 max-w-screen-sm mx-auto space-y-6">
+  <div class="px-4 max-w-screen-sm mx-auto space-y-8 pt-1">
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Izgled</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Izgled</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         {#each options as o, i}
           {@const active = theme === o.id}
-          <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left {i < options.length - 1 ? 'border-b border-base' : ''}"
+          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left {i < options.length - 1 ? 'border-b border-base' : ''}"
                   on:click={() => pick(o.id)}>
             <svelte:component this={o.icon} size={20} color={active ? 'var(--accent)' : 'var(--text-muted)'} strokeWidth={active ? 2.2 : 1.75} />
             <div class="flex-1 t-body {active ? 'font-semibold' : ''}">{o.label}</div>
@@ -165,10 +165,10 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Zagon</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-1.5">
-        <div class="t-footnote text-muted px-2 py-1">Privzeti zavihek ob zagonu</div>
-        <div class="flex gap-1.5">
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Zagon</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2">
+        <div class="t-footnote text-muted px-2 pt-1 pb-2">Privzeti zavihek ob zagonu</div>
+        <div class="flex gap-2">
           {#each defaultTabOptions as o}
             {@const active = $defaultTab === o.id}
             <button class="pressable flex-1 min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors"
@@ -183,15 +183,15 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Dom</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Dom</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li class="min-h-[56px] px-4 flex items-center gap-3">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
           <MapPinned size={20} color="var(--text-muted)" />
           <div class="flex-1">
             <div class="t-body">Najbližja postajališča</div>
-            <div class="t-footnote text-muted">Prikaži postaje v bližini tvoje lokacije</div>
+            <div class="t-footnote text-muted mt-0.5">Prikaži postaje v bližini tvoje lokacije</div>
           </div>
-          <button class="pressable relative w-12 h-7 rounded-full transition-colors"
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$homeShowNearby ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => homeShowNearby.update(v => !v)}
                   aria-label="Preklopi bližnja postajališča">
@@ -200,15 +200,15 @@
           </button>
         </li>
         {#if $homeShowNearby}
-          <li class="px-4 py-3 border-t border-base">
-            <div class="flex items-center gap-3 mb-2">
+          <li class="px-4 py-4 border-t border-base">
+            <div class="flex items-center gap-3.5 mb-3">
               <Compass size={20} color="var(--text-muted)" />
               <div class="flex-1">
                 <div class="t-body">Radij iskanja</div>
-                <div class="t-footnote text-muted">Oddaljenost iskanja bližnjih postaj</div>
+                <div class="t-footnote text-muted mt-0.5">Oddaljenost iskanja bližnjih postaj</div>
               </div>
             </div>
-            <div class="flex gap-1.5">
+            <div class="flex gap-2">
               {#each radiusOptions as r}
                 {@const a = $nearbyRadiusM === r.v}
                 <button class="pressable flex-1 min-h-[44px] rounded-xl flex flex-col items-center justify-center gap-0.5"
@@ -221,13 +221,13 @@
             </div>
           </li>
         {/if}
-        <li class="min-h-[56px] px-4 flex items-center gap-3 border-t border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-t border-base">
           <Star size={20} color="var(--status-delay)" fill="var(--status-delay)" />
           <div class="flex-1">
             <div class="t-body">Priljubljena postajališča</div>
-            <div class="t-footnote text-muted">Prikaži shranjene postaje s tvojega seznama</div>
+            <div class="t-footnote text-muted mt-0.5">Prikaži shranjene postaje s tvojega seznama</div>
           </div>
-          <button class="pressable relative w-12 h-7 rounded-full transition-colors"
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$homeShowFavs ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => homeShowFavs.update(v => !v)}
                   aria-label="Preklopi priljubljena postajališča">
@@ -239,10 +239,10 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Odhodi</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-1.5">
-        <div class="t-footnote text-muted px-2 py-1">Prikaz časa odhoda</div>
-        <div class="flex gap-1.5">
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Odhodi</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2">
+        <div class="t-footnote text-muted px-2 pt-1 pb-2">Prikaz časa odhoda</div>
+        <div class="flex gap-2">
           {#each departureOptions as o}
             {@const active = $departureDisplay === o.id}
             <button class="pressable flex-1 min-h-[56px] rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors"
@@ -255,14 +255,14 @@
           {/each}
         </div>
       </div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-3">
-        <li class="min-h-[56px] px-4 flex items-center gap-3">
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-4">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
           <Rows3 size={20} color="var(--text-muted)" />
           <div class="flex-1">
             <div class="t-body">Kompaktni seznami</div>
-            <div class="t-footnote text-muted">Manjše vrstice, več vsebine na ekran</div>
+            <div class="t-footnote text-muted mt-0.5">Manjše vrstice, več vsebine na ekran</div>
           </div>
-          <button class="pressable relative w-12 h-7 rounded-full transition-colors"
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$compactLists ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => compactLists.update(v => !v)}
                   aria-label="Preklopi kompakten prikaz">
@@ -274,8 +274,8 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Karta</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-1.5 flex gap-1.5">
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Karta</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2 flex gap-1.5">
         {#each mapOptions as o}
           {@const active = $mapStyleKind === o.id}
           <button class="pressable flex-1 min-h-[48px] rounded-xl flex items-center justify-center gap-2 t-body transition-colors"
@@ -286,16 +286,16 @@
           </button>
         {/each}
       </div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-3">
-        <li class="px-4 py-3">
-          <div class="flex items-center gap-3 mb-2">
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-4">
+        <li class="px-4 py-4">
+          <div class="flex items-center gap-3.5 mb-3">
             <Type size={20} color="var(--text-muted)" />
             <div class="flex-1">
               <div class="t-body">Velikost napisov</div>
-              <div class="t-footnote text-muted">Imena cest in naselij na karti</div>
+              <div class="t-footnote text-muted mt-0.5">Imena cest in naselij na karti</div>
             </div>
           </div>
-          <div class="flex gap-1.5">
+          <div class="flex gap-2">
             {#each labelSizeOptions as o}
               {@const active = $mapLabelSize === o.id}
               <button class="pressable flex-1 min-h-[44px] rounded-xl flex items-center justify-center"
@@ -306,13 +306,13 @@
             {/each}
           </div>
         </li>
-        <li class="min-h-[56px] px-4 flex items-center gap-3 border-t border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-t border-base">
           <Navigation size={20} color="var(--text-muted)" />
           <div class="flex-1">
             <div class="t-body">Sledi moji lokaciji v živo</div>
-            <div class="t-footnote text-muted">Porabi več baterije. Ob izklopu se pozicija osveži le ob zagonu aplikacije.</div>
+            <div class="t-footnote text-muted mt-0.5">Porabi več baterije. Ob izklopu se pozicija osveži le ob zagonu aplikacije.</div>
           </div>
-          <button class="pressable relative w-12 h-7 rounded-full transition-colors shrink-0"
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
                   style="background: {$liveLocationWatch ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => liveLocationWatch.update(v => !v)}
                   aria-label="Preklopi sledenje lokaciji v živo">
@@ -324,15 +324,15 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Načrtovanje poti</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Načrtovanje poti</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li class="min-h-[56px] px-4 flex items-center gap-3">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
           <Star size={20} color="var(--status-delay)" fill="var(--status-delay)" />
           <div class="flex-1">
             <div class="t-body">Predlagaj priljubljena</div>
-            <div class="t-footnote text-muted">V Od/Do seznamu prikaži priljubljena postajališča</div>
+            <div class="t-footnote text-muted mt-0.5">V Od/Do seznamu prikaži priljubljena postajališča</div>
           </div>
-          <button class="pressable relative w-12 h-7 rounded-full transition-colors"
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$plannerShowFavs ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => plannerShowFavs.update(v => !v)}
                   aria-label="Preklopi predlog priljubljenih">
@@ -340,10 +340,10 @@
                   style="left: {$plannerShowFavs ? '1.375rem' : '0.125rem'}"></span>
           </button>
         </li>
-        <li class="px-4 py-3 border-t border-base">
-          <div class="t-body mb-1">Hitrost hoje</div>
-          <div class="t-footnote text-muted mb-2">Uporabi se za izračun pešpoti v načrtovalcu</div>
-          <div class="flex gap-1.5">
+        <li class="px-4 py-4 border-t border-base">
+          <div class="t-body">Hitrost hoje</div>
+          <div class="t-footnote text-muted mt-0.5 mb-3">Uporabi se za izračun pešpoti v načrtovalcu</div>
+          <div class="flex gap-2">
             {#each speedOptions as s}
               {@const a = $walkSpeedKmh === s.v}
               <button class="pressable flex-1 min-h-[44px] rounded-xl flex flex-col items-center justify-center gap-0.5"
@@ -359,16 +359,16 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Obvestila</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Obvestila</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li>
-          <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left"
+          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
                   on:click={onOpenAlarms}
                   aria-label="Odpri opomnike za odhod">
             <AlarmClock size={20} color="var(--text-muted)" />
             <div class="flex-1">
               <div class="t-body">Opomniki za odhod</div>
-              <div class="t-footnote text-muted">Opozorilo nekaj minut pred odhodom pripete linije</div>
+              <div class="t-footnote text-muted mt-0.5">Opozorilo nekaj minut pred odhodom pripete linije</div>
             </div>
             <ChevronRight size={16} color="var(--text-muted)" />
           </button>
@@ -377,15 +377,15 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Podatki</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Podatki</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li class="min-h-[56px] px-4">
-          <button class="pressable w-full min-h-[56px] flex items-center gap-3 text-left"
+        <li class="px-4">
+          <button class="pressable w-full min-h-[60px] py-3 flex items-center gap-3.5 text-left"
                   on:click={() => clearConfirmOpen = true}>
             <Trash2 size={20} color="var(--status-disrupt)" />
             <div class="flex-1">
               <div class="t-body" style="color: var(--status-disrupt)">Počisti vse podatke</div>
-              <div class="t-footnote text-muted">Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve</div>
+              <div class="t-footnote text-muted mt-0.5">Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve</div>
             </div>
           </button>
         </li>
@@ -393,27 +393,27 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Deli in predlagaj</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Deli in predlagaj</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="border-b border-base">
-          <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left"
+          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
                   on:click={shareApp}
                   aria-label="Deli povezavo do aplikacije">
             <Share2 size={20} color="var(--text-muted)" />
             <div class="flex-1">
               <div class="t-body">Deli aplikacijo</div>
-              <div class="t-footnote text-muted">Pošlji povezavo prijateljem — aplikacija je brezplačna in brez prijave</div>
+              <div class="t-footnote text-muted mt-0.5">Pošlji povezavo prijateljem — aplikacija je brezplačna in brez prijave</div>
             </div>
             <ChevronRight size={16} color="var(--text-muted)" />
           </button>
         </li>
         <li>
-          <a class="pressable min-h-[56px] px-4 flex items-center gap-3"
+          <a class="pressable min-h-[60px] px-4 py-3 flex items-center gap-3.5"
              href={feedbackHref}>
             <MessageSquarePlus size={20} color="var(--text-muted)" />
             <div class="flex-1">
               <div class="t-body">Predlagaj izboljšavo</div>
-              <div class="t-footnote text-muted">Odpre sporočilo razvijalcu — napiši, kaj manjka ali ne dela</div>
+              <div class="t-footnote text-muted mt-0.5">Odpre sporočilo razvijalcu — napiši, kaj manjka ali ne dela</div>
             </div>
             <ExternalLink size={16} color="var(--text-muted)" />
           </a>
@@ -422,32 +422,32 @@
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">O aplikaciji</div>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">O aplikaciji</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
           <Info size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Različica</div>
           <div class="t-footnote text-muted">{APP_VERSION}</div>
         </li>
-        <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
           <Database size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Podatki</div>
           <div class="t-footnote text-muted">GTFS Marprom</div>
         </li>
         {#if gtfsMeta}
-          <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
+          <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
             <CalendarClock size={20} color={gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'} />
             <div class="flex-1 t-body">Vozni redi</div>
             <div class="t-footnote" style="color: {gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'}">{gtfsBuiltLabel}</div>
           </li>
         {/if}
-        <li class="min-h-[56px] px-4 flex items-center gap-3 border-b border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
           <Building2 size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Razvijalec</div>
           <div class="t-footnote text-muted">Matej</div>
         </li>
         <li>
-          <a class="pressable min-h-[56px] px-4 flex items-center gap-3"
+          <a class="pressable min-h-[60px] px-4 py-3 flex items-center gap-3.5"
              href="https://github.com/m1984m/MoHa-Mobil" target="_blank" rel="noopener noreferrer">
             <Code2 size={20} color="var(--text-muted)" />
             <div class="flex-1 t-body">Izvorna koda</div>
@@ -455,12 +455,12 @@
           </a>
         </li>
       </ul>
-      <p class="mt-3 px-1 t-footnote text-muted">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>
+      <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>
     </section>
 
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Novosti</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-4 space-y-2">
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Novosti</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-4 space-y-2.5">
         <div class="t-subhead font-semibold">{APP_VERSION} · {RELEASE_DATE}</div>
         <ul class="t-footnote text-muted list-disc pl-5 space-y-1">
           {#each RELEASE_NOTES as n}

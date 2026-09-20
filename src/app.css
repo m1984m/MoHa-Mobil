@@ -214,6 +214,15 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
    Predpona mm- namenoma — razred živi v skupnem CSS-u. */
 .mm-tap button, .mm-tap input, .mm-tap [role="switch"] { touch-action: manipulation; }
 
+/* Stikala v Nastavitvah so namenoma majhna (48 × 28 px), ker vecje bi v vrstici
+   izpadlo okorno. Tarca za dotik pa mora biti vsaj 44 px, zato jo razsirimo z
+   nevidnim ::after namesto z odmikom — odmik bi premaknil gumbek, ki je
+   postavljen absolutno glede na gumb. Predpona mm- zaradi skupnega CSS-a. */
+.mm-tap44 { position: relative; }
+.mm-tap44 { z-index: 1; }
+.mm-tap44::after { content: ""; position: absolute; inset: -9px; }
+
+
 /* Uporabnik je v sistemu izbral manj gibanja (vrtoglavica, slabost, migrena):
    prehodi in pomanjšanje ob pritisku odpadejo, vsebina ostane nespremenjena.
    0.01ms namesto 0 — nekateri brskalniki ob 0 ne sprožijo transitionend. */
