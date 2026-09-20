@@ -33,3 +33,4 @@ public/sw.js
 *.sw?
 relay/.env
 worker/.wrangler/
+relay/.deno-token

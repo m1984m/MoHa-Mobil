@@ -1,0 +1,8 @@
+{
+  "name": "moha-oba-relay",
+  "deploy": {
+    "org": "m1984m",
+    "app": "moha-oba",
+    "entrypoint": "oba-relay.ts"
+  }
+}

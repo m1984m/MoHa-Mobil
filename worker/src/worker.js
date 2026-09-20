@@ -34,6 +34,13 @@
 import { sendPush } from './push.js';
 import { processDue } from './due.js';
 
+// Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
+// Od 16.09.2026 pozna Cloudflare do tega gostitelja samo tiho zavržene pakete
+// (izmerjeno 20.09.2026: z domačega omrežja 200 v 0,11 s, s Cloudflarovega roba 522
+// po 19,5 s, enako na vratih 80; gov.si in nap.si s Cloudflara delujeta, Google Cloud
+// pa do Marproma pride). Zato gre OBA skozi posrednik na Deno Deploy, glej relay/.
+// Ko Marprom odblokira Cloudflare, odstrani spremenljivko OBA_RELAY in vse teče spet
+// neposredno — druge spremembe niso potrebne.
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const ORS_BASE = 'https://api.openrouteservice.org/v2';
 
@@ -155,15 +162,28 @@ async function handleOba(request, env, ctx, path, cors) {
     return r;
   }
 
+  // Kljub posredniku ostane ključ predpomnilnika Marpromov naslov: ob menjavi ali
+  // odstranitvi posrednika shranjeni odgovori ostanejo veljavni.
+  const relay = String(env.OBA_RELAY ?? '').replace(/\/$/, '');
+  let fetchUrl = upstream.toString();
+  const fetchHeaders = {
+    'Accept': 'application/json',
+    'User-Agent': 'MoHaMobil/1.0 (+github.com/m1984m/MoHa-Mobil)',
+  };
+  if (relay) {
+    const viaRelay = new URL(relay + '/oba/' + method);
+    for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
+    fetchUrl = viaRelay.toString();
+    fetchHeaders['x-relay-key'] = String(env.RELAY_KEY ?? '');
+  }
+
   let res;
   try {
-    res = await fetchUpstream(upstream.toString(), {
-      headers: { 'Accept': 'application/json', 'User-Agent': 'MoHaMobil/1.0 (+github.com/m1984m/MoHa-Mobil)' },
-    });
+    res = await fetchUpstream(fetchUrl, { headers: fetchHeaders });
   } catch (e) {
-    return json({ error: 'upstream unreachable', detail: String(e?.name ?? e) }, 502, cors);
+    return json({ error: 'upstream unreachable', detail: String(e?.name ?? e), via: relay ? 'relay' : 'direct' }, 502, cors);
   }
-  if (!res.ok) return json({ error: 'upstream ' + res.status }, 502, cors);
+  if (!res.ok) return json({ error: 'upstream ' + res.status, via: relay ? 'relay' : 'direct' }, 502, cors);
 
   const body = await res.text();
   const out = new Response(body, {
@@ -668,6 +688,8 @@ export default {
         ok: true,
         orsConfigured: !!env.ORS_KEY,
         allowedOrigins: allowedOrigins(env).length,
+        obaVia: env.OBA_RELAY ? 'relay' : 'direct',
+        relayKeyConfigured: !!env.RELAY_KEY,
       }, 200, cors);
     }
 

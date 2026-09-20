@@ -7,6 +7,14 @@ compatibility_date = "2026-07-01"
 [vars]
 ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0.1:9125"
 
+# Posrednik za OBA. Cloudflare od 16.09.2026 ne pride do vozniredi.marprom.si
+# (tiho zavrzeni paketi, izmerjeno 20.09.2026 — glej relay/README.md), zato gredo
+# zive pozicije in prihodi skozi Deno Deploy na Googlovem oblaku. Naslov ni
+# skrivnost; skupni kljuc RELAY_KEY je skrivnost (wrangler secret put RELAY_KEY).
+# Ko Marprom odblokira Cloudflare, to vrstico odstrani in Worker spet klice
+# Marproma neposredno.
+OBA_RELAY = "https://moha-oba.m1984m.deno.net"
+
 # Javni kljuÄŤ VAPID. Ta SME biti v repozitoriju â€” brskalnik ga tako ali tako
 # dobi ob naroÄŤanju (`applicationServerKey`), Worker pa ga vrne na
 # GET /alarms/status, da ga odjemalcu ni treba imeti vgrajenega v paketu.
