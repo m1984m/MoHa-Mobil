@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
@@ -8,6 +8,7 @@
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
   import { disablePush } from '../push';
+  import { toast } from '../toast';
 
   export let theme: Theme;
   export let onThemeChange: (t: Theme) => void;
@@ -93,6 +94,52 @@
     } catch {}
     location.reload();
   }
+
+  // Deljenje in predlogi ------------------------------------------------------
+  // Povezava je namenoma trdo zapisana na produkcijski naslov: v razvoju ali z
+  // lokalnega strežnika bi location.href dal naslov, ki ga prejemnik ne more odpreti.
+  const APP_URL = 'https://m1984m.github.io/MoHa-Mobil/';
+  const FEEDBACK_EMAIL = 'matej.moharic@gmail.com';
+
+  let sharing = false;
+
+  async function shareApp() {
+    if (sharing) return;
+    sharing = true;
+    const data = { title: 'MoHa Mobil', text: 'Vozni redi in živi prihodi mariborskih avtobusov.', url: APP_URL };
+    try {
+      // Web Share API ponudi sistemski list (WhatsApp, SMS, pošta). Na namizju ga
+      // večina brskalnikov nima, zato je kopiranje povezave enakovredna pot, ne napaka.
+      if (navigator.share && (!navigator.canShare || navigator.canShare(data))) {
+        await navigator.share(data);
+        return;
+      }
+    } catch (e: any) {
+      // Uporabnik je list zaprl — to ni napaka in ne sme sprožiti nadomestnega kopiranja.
+      if (e?.name === 'AbortError') return;
+    } finally {
+      sharing = false;
+    }
+    try {
+      await navigator.clipboard.writeText(APP_URL);
+      toast.show('Povezava kopirana');
+    } catch {
+      // clipboard zahteva varen kontekst; če ga ni, naj uporabnik povezavo vsaj vidi.
+      toast.show(APP_URL);
+    }
+  }
+
+  // Podatki o različici in napravi so v telesu sporočila, ker brez njih predlog
+  // pogosto ni razumljiv (npr. »gumba ni« na stari različici v predpomnilniku).
+  $: feedbackHref = 'mailto:' + FEEDBACK_EMAIL
+    + '?subject=' + encodeURIComponent('MoHa Mobil — predlog izboljšave')
+    + '&body=' + encodeURIComponent(
+        'Kaj bi rad izboljšal?\n\n\n'
+        + '-- podatki za razvijalca --\n'
+        + 'Različica: ' + APP_VERSION + '\n'
+        + 'Vozni redi: ' + (gtfsBuiltLabel || 'neznano') + '\n'
+        + 'Naprava: ' + (typeof navigator !== 'undefined' ? navigator.userAgent : 'neznano') + '\n'
+      );
 </script>
 
 <Screen title="Nastavitve">
@@ -341,6 +388,35 @@
               <div class="t-footnote text-muted">Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve</div>
             </div>
           </button>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Deli in predlagaj</div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="border-b border-base">
+          <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left"
+                  on:click={shareApp}
+                  aria-label="Deli povezavo do aplikacije">
+            <Share2 size={20} color="var(--text-muted)" />
+            <div class="flex-1">
+              <div class="t-body">Deli aplikacijo</div>
+              <div class="t-footnote text-muted">Pošlji povezavo prijateljem — aplikacija je brezplačna in brez prijave</div>
+            </div>
+            <ChevronRight size={16} color="var(--text-muted)" />
+          </button>
+        </li>
+        <li>
+          <a class="pressable min-h-[56px] px-4 flex items-center gap-3"
+             href={feedbackHref}>
+            <MessageSquarePlus size={20} color="var(--text-muted)" />
+            <div class="flex-1">
+              <div class="t-body">Predlagaj izboljšavo</div>
+              <div class="t-footnote text-muted">Odpre sporočilo razvijalcu — napiši, kaj manjka ali ne dela</div>
+            </div>
+            <ExternalLink size={16} color="var(--text-muted)" />
+          </a>
         </li>
       </ul>
     </section>

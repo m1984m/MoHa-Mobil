@@ -5,6 +5,23 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.11.0 — 2026-09-20
+
+Dve novosti v Nastavitvah, v novem razdelku **Deli in predlagaj**. Brez sprememb v podatkih ali voznih redih.
+
+### Deli aplikacijo
+- Nova vrstica v Nastavitvah pošlje povezavo do aplikacije (`https://m1984m.github.io/MoHa-Mobil/`) prek sistemskega lista za deljenje — WhatsApp, SMS, pošta, kar ima uporabnik na napravi.
+- **Naslov je trdo zapisan na produkcijski URL, ne na `location.href`.** Iz razvojnega strežnika ali z lokalnega naslova bi prejemnik dobil povezavo, ki je ne more odpreti.
+- Kjer Web Share API ne obstaja (večina namiznih brskalnikov), se povezava kopira v odložišče in pokaže se obvestilo »Povezava kopirana«. Če odložišče ni na voljo (nevaren kontekst), se povezava izpiše v obvestilu, da jo uporabnik vsaj vidi.
+- Zaprtje sistemskega lista (`AbortError`) se ne šteje za napako in ne sproži nadomestnega kopiranja — sicer bi preklic deljenja tiho kopiral povezavo.
+
+### Predlagaj izboljšavo
+- Nova vrstica odpre pripravljeno elektronsko sporočilo razvijalcu (`matej.moharic@gmail.com`) z zadevo »MoHa Mobil — predlog izboljšave«.
+- **Telo sporočila samodejno nosi različico aplikacije, datum voznega reda in oznako naprave.** Brez teh podatkov predlog pogosto ni razumljiv — npr. prijava »gumba ni« z različice, ki jo naprava še drži v predpomnilniku.
+- Izvedeno kot navadna povezava `mailto:`, ne kot obrazec: deluje tudi iz PWA na začetnem zaslonu in ne potrebuje strežnika.
+
+---
+
 ## 0.9.5 — 2026-09-07
 
 Šolski vozni red in popravek skritega opozorila. Aplikacija je bila od 01.09. brez delavniških odhodov.
