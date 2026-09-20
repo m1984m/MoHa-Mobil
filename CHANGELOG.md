@@ -5,6 +5,25 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.12.0 — 2026-09-20
+
+Pot nazaj s karte. Izbereš postajo, vidiš prihode, odpreš avtobus — in se vrneš na isto postajo.
+Ob tem sta odkriti dve napaki, ki sta ta korak doslej onemogočali.
+
+### Vrnitev na postajo
+- V podrobnostih avtobusa je nov gumb **»Nazaj na postajo«** z imenom postaje, s katere je uporabnik skočil. Isto naredi sistemski gumb nazaj. Gumb X zapre vse, kot prej.
+- Postaja se zapomni pri obeh poteh do avtobusa: iz seznama prihodov in ob dotiku vozila na karti. Ko se uporabnik iz avtobusa premakne na njegovo naslednjo postajo, se spomin počisti.
+
+### Podrobnosti avtobusa se sploh niso odprle
+- **Dotik avtobusa v seznamu prihodov je list takoj zaprl.** Izbira avtobusa počisti izbrano postajo, reaktivni blok ob prazni postaji pa list zapre — in se izvede po tem, ko ga je izbira avtobusa ravnokar odprla. Uporabnik je videl avtobus na karti brez vsakršnih podatkov. Zdaj se list zapre samo, kadar hkrati ni izbran avtobus. Izmerjeno: list je bil zamaknjen za celotno višino (776 px).
+
+### Sistemski nazaj je vrgel iz aplikacije
+- **`backstack.ts` je ob zapiranju vmesnega vnosa preklical napačen korak v zgodovini.** `history.back()` prekliče zadnji vnos, ne tistega, ki se zapira. Ko se je iskanje postaje zaprlo šele po tem, ko je izbrana postaja že potisnila svoj vnos, je odstranilo tujega. Brskalnik je ostal korak pred aplikacijo in naslednji »nazaj« je zapustil stran (prazen zaslon).
+- Popravek: sentinel se odstrani samo, kadar je vnos na vrhu sklada. Odvečni vnos, ki ostane, požre en pritisk nazaj, kar je neopazno — modul to možnost že navaja kot sprejemljivo.
+- Napaka je bila v produkciji že prej; odkrita je bila ob merjenju te spremembe.
+
+---
+
 ## 0.11.1 — 2026-09-20
 
 Predelane Nastavitve: več prostora med skupinami in vrsticami, razločnejši naslovi.

@@ -42,6 +42,9 @@
   let vehicleTimer: ReturnType<typeof setInterval> | null = null;
   let selectedVehicle: Vehicle | null = null;
   let selectedLive: LiveVehicle | null = null;
+  // Postaja, s katere je uporabnik skocil na avtobus. Brez tega se je izbira izgubila
+  // in postajo je bilo treba znova poiskati na karti.
+  let stopBeforeVehicle: Stop | null = null;
   let liveArrivals: StopArrival[] = [];
   let liveArrivalsLoading = false;
   let liveArrivalsTimer: ReturnType<typeof setInterval> | null = null;
@@ -70,7 +73,7 @@
   // zaprtju release(); če je zaprl back gumb, je release no-op.
   let backVehicle: (() => void) | null = null;
   $: if (selectedVehicle && !backVehicle) {
-    backVehicle = pushBack(() => closeVehicle());
+    backVehicle = pushBack(() => backToStop());
   } else if (!selectedVehicle && backVehicle) {
     const r = backVehicle; backVehicle = null; r();
   }
@@ -261,7 +264,10 @@
       }
     } else {
       activeShapes = [];
-      sheetRef?.setSnap(0);
+      // Ce je hkrati izbran avtobus, je postajo pocistil skok nanj (tapArrivalBus /
+      // onVehicleTap) in list je bil ravnokar odprt na snap 1. Brez tega pogoja ga ta
+      // reaktivni blok takoj zapre in podrobnosti avtobusa se sploh ne prikazejo.
+      if (!selectedVehicle) sheetRef?.setSnap(0);
       // Vrni na prejšnji pogled, razen če je zdaj aktiven plan ali izbrano vozilo —
       // oba imata lastni flyTo/fitBounds, ki bi se sicer sprl s tem restore-om.
       if (prevView && !activePlan && !selectedVehicle) {
@@ -286,6 +292,7 @@
   function onVehicleTap(idx: number) {
     const v = shownVehicles[idx];
     if (!v) return;
+    stopBeforeVehicle = selectedStop;
     selectedVehicle = v;
     selectedLive = isLive ? (live.vehicles.find(lv => lv.deviceId === v.tripId) ?? null) : null;
     onStopChange(null);
@@ -301,6 +308,7 @@
     if (!lv) { flashToast('Avtobusa trenutno ni v živo'); return; }
     const dv = liveDisplay.find(d => d.tripId === lv.deviceId);
     if (!dv) return;
+    stopBeforeVehicle = selectedStop;
     selectedVehicle = dv;
     selectedLive = lv;
     onStopChange(null);
@@ -308,12 +316,31 @@
     mapRef?.flyTo(sm?.displayLat ?? lv.lat, sm?.displayLon ?? lv.lon, 16);
     sheetRef?.setSnap(1);
   }
-  function closeVehicle() { selectedVehicle = null; selectedLive = null; followBus = false; sheetRef?.setSnap(0); }
+  function closeVehicle() {
+    stopBeforeVehicle = null;
+    selectedVehicle = null;
+    selectedLive = null;
+    followBus = false;
+    sheetRef?.setSnap(0);
+  }
+
+  // Vrnitev na postajo, s katere smo prisli. Uporablja jo gumb v listu in sistemski
+  // "nazaj"; ce postaje ni (avtobus izbran neposredno na karti), se list samo zapre.
+  // handleStopChange ob izbiri postaje sam pocisti selectedVehicle.
+  function backToStop() {
+    const s = stopBeforeVehicle;
+    if (!s) { closeVehicle(); return; }
+    stopBeforeVehicle = null;
+    selectedLive = null;
+    followBus = false;
+    onStopChange(s);
+  }
 
   // Krožno navigacijo: iz bus detail v postajni pogled. handleStopChange poskrbi za
   // vse ostalo (clear selectedVehicle, flyTo, arrivals polling, shapes fitBounds).
   // selectedLive clearamo ročno, da ustavi vehicleArrival poll v reactive bloku.
   function jumpToStopFromBus(s: Stop) {
+    stopBeforeVehicle = null;
     selectedLive = null;
     followBus = false;
     onStopChange(s);
@@ -1045,6 +1072,17 @@
         {/if}
 
       {:else if selectedVehicle}
+        {#if stopBeforeVehicle}
+          <button class="pressable w-full min-h-[48px] mb-3 px-3 py-2 rounded-xl surface-2 flex items-center gap-2.5 text-left"
+                  on:click={backToStop}
+                  aria-label="Nazaj na postajo {stopBeforeVehicle.name}">
+            <ArrowLeft size={18} color="var(--text-muted)" />
+            <span class="min-w-0">
+              <span class="block t-footnote text-muted">Nazaj na postajo</span>
+              <span class="block t-subhead font-semibold truncate">{stopBeforeVehicle.name}</span>
+            </span>
+          </button>
+        {/if}
         <div class="flex items-start justify-between gap-3 mb-3">
           <div class="flex items-center gap-3 min-w-0">
             <LineBadge short={selectedVehicle.routeShort} routeId={selectedVehicle.routeId} size="lg" />

@@ -11,8 +11,8 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '20. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Deli aplikacijo: povezavo pošlješ prijateljem iz Nastavitev',
-  'Predlagaj izboljšavo: predlog gre razvijalcu po elektronski pošti',
-  'Sporočilu se samodejno pripne različica, vozni red in naprava',
+  'Iz avtobusa se z enim dotikom vrneš na postajo, s katere si prišel',
+  'Podrobnosti avtobusa se spet odprejo — prej se je list takoj zaprl',
+  'Sistemski gumb nazaj te ne vrže več iz aplikacije',
   'Nastavitve so zračnejše, stikala pa lažje zadeneš s prstom',
 ];
