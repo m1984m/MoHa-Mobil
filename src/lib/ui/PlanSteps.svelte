@@ -97,18 +97,27 @@
   }
 
   const min = (sec: number) => Math.max(1, Math.round(sec / 60));
+
+  // Vmesne postaje v opisu linije brez tistih, ki sta že izpisani kot vstop in
+  // izstop — "prek Kamnica" pri vstopu na Kamnici ne pove nicesar.
+  function vmesne(via: string, vstop: string, izstop: string): string {
+    const n = (x: string) => x.trim().toLowerCase().replace(/\s+/g, ' ');
+    return via.split(',').map(x => x.trim()).filter(Boolean)
+      .filter(x => n(x) !== n(vstop) && n(x) !== n(izstop))
+      .join(', ');
+  }
 </script>
 
 <div class="mm-koraki">
   <!-- Vodilo: kdaj oditi. To je edini podatek, ki ga potnik pogleda prvi. -->
   {#if krenitiSec != null}
     <div class="mm-kreni"
-         class:mm-kreni-zdaj={minutDoOdhoda !== null && minutDoOdhoda <= 2 && minutDoOdhoda >= 0}
-         class:mm-kreni-mimo={minutDoOdhoda !== null && minutDoOdhoda < 0}>
-      {#if minutDoOdhoda !== null && minutDoOdhoda < 0}
+         class:mm-kreni-zdaj={sekundDoOdhoda !== null && sekundDoOdhoda <= 120 && sekundDoOdhoda >= -90}
+         class:mm-kreni-mimo={sekundDoOdhoda !== null && sekundDoOdhoda < -90}>
+      {#if sekundDoOdhoda !== null && sekundDoOdhoda < -90}
         <TriangleAlert size={16} class="shrink-0" />
         <span><b>Ta odhod je mimo.</b> Poišči novega.</span>
-      {:else if minutDoOdhoda !== null && minutDoOdhoda <= 0}
+      {:else if sekundDoOdhoda !== null && sekundDoOdhoda <= 60}
         <Footprints size={16} class="shrink-0" />
         <span><b>Kreni zdaj</b> · bus ob {fmtClock(prviOdhod ?? 0)}</span>
       {:else}
@@ -132,6 +141,9 @@
         </li>
       {/if}
 
+      <!-- Hoja pod 30 m ni korak: potnik je že na postaji. Vrstica "Hoja 1 min -
+           0 m" je samo šum. Čas se kljub temu upošteva, ker se racuna iz odhoda. -->
+      {#if !(leg.kind === 'walk' && leg.meters < 30)}
       <li class="mm-korak">
         <span class="mm-ura t-footnote tabular-nums">{casi[i] != null ? fmtClock(casi[i]) : ''}</span>
 
@@ -156,6 +168,7 @@
           </div>
         {:else}
           {@const cilj = splitHeadsign(leg.headsign)}
+          {@const prek = vmesne(cilj.via, leg.from.name, leg.to.name)}
           <span class="mm-vozlisce mm-vozlisce-bus"><LineBadge short={leg.route.short} routeId={leg.route.id} size="sm" /></span>
           <div class="mm-vsebina">
             <div class="t-callout font-medium">
@@ -163,7 +176,7 @@
             </div>
             <div class="t-footnote text-muted">
               Linija {leg.route.short} proti {cilj.dest}
-              {#if cilj.via}<span class="mm-prek">· prek {cilj.via}</span>{/if}
+              {#if prek}<span class="mm-prek">· prek {prek}</span>{/if}
             </div>
             <div class="mm-izstop t-footnote">
               <span class="mm-izstop-ura tabular-nums">{fmtClock(leg.arrSec)}</span>
@@ -176,6 +189,7 @@
           </div>
         {/if}
       </li>
+      {/if}
     {/each}
 
     {#if prihodSec != null}
