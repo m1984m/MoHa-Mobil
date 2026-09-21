@@ -8,11 +8,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '21. 9. 2026';
+export const RELEASE_DATE = '22. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Nov »Način za starejše« v Nastavitvah pod Izgledom: besedilo in gumbi so večji',
-  'V tem načinu je pri odhodih v ospredju končna postaja, vmesne so pod njo',
-  'Močnejši kontrast in manj vsebine na zaslon, da ni treba toliko drsati',
-  'Zelena barva za »na voznem redu« je potemnjena — prej je bila premalo berljiva',
+  'Aplikacija anonimno šteje uporabo: brez piškotkov, brez lokacije, brez podatka, ki bi te prepoznal',
+  'Štetje lahko kadarkoli izklopiš v Nastavitvah pod »Podatki«',
+  'Zaledje zdaj beleži napake pri živih prihodih, da se izpad opazi takoj',
+  'Povezava do izvorne kode je odstranjena iz Nastavitev',
 ];

@@ -75,3 +75,9 @@ export function mapLabelFactor(v: MapLabelSize, kind: 'map' | 'satellite'): numb
   if (v === 'large')  return base * 1.8;
   return base;
 }
+
+// Anonimno stetje uporabe (glej lib/analytics.ts). Brez piskotka, brez
+// identifikatorja naprave in brez lokacije; stikalo je tu zato, ker je
+// odlocitev uporabnikova, ne nasa.
+export const analyticsEnabled = persisted<boolean>('mm.analytics.v1', true);
+

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility, ChartNoAxesColumn } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
-  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, seniorMode, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
+  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, seniorMode, analyticsEnabled, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
   import { disablePush } from '../push';
@@ -400,6 +400,24 @@
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">Podatki</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
+          <ChartNoAxesColumn size={20} color="var(--text-muted)" />
+          <div class="flex-1">
+            <div class="t-body">Anonimno štetje uporabe</div>
+            <div class="t-footnote text-muted mt-0.5">
+              Koliko ljudi aplikacijo uporablja in kateri zasloni. Brez piškotkov,
+              brez lokacije in brez podatka, ki bi te prepoznal.
+            </div>
+          </div>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$analyticsEnabled ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => analyticsEnabled.update(v => !v)}
+                  aria-label="Preklopi anonimno štetje uporabe"
+                  aria-pressed={$analyticsEnabled}>
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$analyticsEnabled ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
         <li class="px-4">
           <button class="pressable w-full min-h-[60px] py-3 flex items-center gap-3.5 text-left"
                   on:click={() => clearConfirmOpen = true}>
@@ -462,18 +480,10 @@
             <div class="t-footnote" style="color: {gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'}">{gtfsBuiltLabel}</div>
           </li>
         {/if}
-        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
           <Building2 size={20} color="var(--text-muted)" />
           <div class="flex-1 t-body">Razvijalec</div>
           <div class="t-footnote text-muted">Matej</div>
-        </li>
-        <li>
-          <a class="pressable min-h-[60px] px-4 py-3 flex items-center gap-3.5"
-             href="https://github.com/m1984m/MoHa-Mobil" target="_blank" rel="noopener noreferrer">
-            <Code2 size={20} color="var(--text-muted)" />
-            <div class="flex-1 t-body">Izvorna koda</div>
-            <ExternalLink size={16} color="var(--text-muted)" />
-          </a>
         </li>
       </ul>
       <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>

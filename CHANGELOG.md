@@ -5,6 +5,45 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.15.0 — 2026-09-22
+
+Anonimno štetje uporabe. Dva vira, oba na lastnem Cloudflare Workerju — tretje osebe ni.
+
+### Štetje na strežniku
+- Worker si ob vsakem klicu OBA in ORS zabeleži metodo, izid, odzivni čas, ali je šlo iz predpomnilnika in ali je teklo prek posrednika. Za to ni potrebna nobena vrstica v aplikaciji in ni nobenega podatka o uporabniku.
+- Namen je operativni: napaka 502 na živih prihodih je septembra ostala neopažena več dni, ker je ni nihče meril. Zdaj je vidna v prvi poizvedbi.
+
+### Dogodki iz aplikacije (`POST /ev`)
+- Zabeležijo se: zagon (nameščena ali v brskalniku, različica gradnje, tema, način za starejše, jezik naprave), preklop zavihka, uporaba filtra smeri, izid namestitvenega poziva in prehod offline/online.
+- Kadar povezave ni, gre dogodek v `localStorage` in se pošlje, ko se povezava vrne. Brez tega bi manjkal ravno tisti del uporabe, ki se dogaja na postaji.
+- Namestitveni dogodki na iPhonu ne obstajajo (Apple jih ne podpira); tam je edini signal zagon v načinu »nameščena«.
+
+### Kaj se ne zapisuje
+- Koordinate — nikoli, tudi zaokrožene ne. V mestu velikosti Maribora bi zaokrožene še vedno zadoščale za sled.
+- Identifikator naprave, naslov IP, imena iskanih postaj.
+- Zato ni piškotka in ni privolitvenega okna. Zapiše se dvočrkovna oznaka države, ki jo Cloudflare tako ali tako pozna.
+
+### Kako je zavarovana javna končna točka
+- Zahteva mora priti z znanega izvora (isti seznam kot za OBA), biti manjša od 4 kB in vsebovati največ 20 dogodkov.
+- Sprejmejo se **samo znana imena dogodkov in samo znane vrednosti razsežnosti** — prosto besedilo se zavrže. S tem ne more uiti noben osebni podatek niti po pomoti, zloraba pa je omejena na izbiro med peščico oznak.
+- Zavora 600 dogodkov na minuto na izolat.
+- Brez vezave na Analytics Engine štetje tiho ne naredi nič. Analitika ne sme nikoli podreti poti, po kateri tečejo vozni redi.
+
+### Nastavitev in orodje
+- V Nastavitvah pod **Podatki** je stikalo »Anonimno štetje uporabe«. Spoštuje se tudi »Do Not Track« v brskalniku.
+- `worker/scripts/statistika.mjs` izpiše zagone, zavihke, uporabo filtra, namestitve in stanje zaledja po dnevih. Potrebuje žeton Cloudflare z eno samo pravico (Account Analytics: Read).
+- Poraba: brezplačni paket Cloudflare vključuje 100.000 zapisov in 10.000 poizvedb na dan, hramba je tri mesece.
+
+### Drugo
+- Iz Nastavitev je odstranjena vrstica »Izvorna koda«.
+
+### Preverjeno
+- 24 preverb Workerja v Node (veljavni in zavrnjeni dogodki, prevelik svežnjev, pokvarjen JSON, napačna metoda, manjkajoča vezava, zavora pogostosti) in 26 preverb odjemalca (vrsta brez povezave, 4xx proti 5xx, meja vrste, izklop, Do Not Track, oblika zagona v vseh štirih temah).
+- Najpomembnejša preverba: telo, ki ga odjemalec res pošlje, gre skozi Workerjev validator — če se seznama dogodkov kdaj razideta, pade test in ne produkcija.
+- V živo po objavi Workerja: `/health` javi `analytics: true`, veljaven dogodek 204, neznan 202, zahteva brez znanega izvora 403, klic OBA še vedno 200 v 0,10 s.
+
+---
+
 ## 0.14.0 — 2026-09-21
 
 Način za starejše. Vklopi se v Nastavitvah pod **Izgled** in se kombinira s katerokoli temo.

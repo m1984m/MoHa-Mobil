@@ -32,6 +32,7 @@
  */
 
 import { sendPush } from './push.js';
+import { recordUpstream, handleEvent } from './analytics.js';
 import { processDue } from './due.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
@@ -130,6 +131,13 @@ async function handleOba(request, env, ctx, path, cors) {
   const ttl = OBA_METHODS[method];
   if (ttl === undefined) return json({ error: 'unknown method' }, 404, cors);
 
+  // Stetje gre skozi isto pot kot odgovor; `stej` se poklice pri vsakem izhodu.
+  const zacetek = Date.now();
+  const drzava = (request.cf && request.cf.country) || '';
+  const stej = (izid, status, preko) => recordUpstream(env, {
+    storitev: 'oba', metoda: method, izid, status, preko, drzava, ms: Date.now() - zacetek,
+  });
+
   const inUrl = new URL(request.url);
   const upstream = new URL(`${OBA_BASE}/${method}`);
 
@@ -146,6 +154,7 @@ async function handleOba(request, env, ctx, path, cors) {
 
   const mem = memGet(cacheKeyUrl);
   if (mem !== null) {
+    stej('cache', 200, 'mem');
     return new Response(mem, {
       status: 200,
       headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Proxy-Cache': 'HIT-MEM', ...cors },
@@ -156,6 +165,7 @@ async function handleOba(request, env, ctx, path, cors) {
   const cache = caches.default;
   const hit = await cache.match(cacheKey);
   if (hit) {
+    stej('cache', 200, 'edge');
     const r = new Response(hit.body, hit);
     r.headers.set('X-Proxy-Cache', 'HIT');
     for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
@@ -181,9 +191,13 @@ async function handleOba(request, env, ctx, path, cors) {
   try {
     res = await fetchUpstream(fetchUrl, { headers: fetchHeaders });
   } catch (e) {
+    stej('nedosegljiv', 502, relay ? 'relay' : 'direct');
     return json({ error: 'upstream unreachable', detail: String(e?.name ?? e), via: relay ? 'relay' : 'direct' }, 502, cors);
   }
-  if (!res.ok) return json({ error: 'upstream ' + res.status, via: relay ? 'relay' : 'direct' }, 502, cors);
+  if (!res.ok) {
+    stej('napaka', res.status, relay ? 'relay' : 'direct');
+    return json({ error: 'upstream ' + res.status, via: relay ? 'relay' : 'direct' }, 502, cors);
+  }
 
   const body = await res.text();
   const out = new Response(body, {
@@ -194,6 +208,7 @@ async function handleOba(request, env, ctx, path, cors) {
       'X-Proxy-Cache': 'MISS',
     },
   });
+  stej('ok', 200, relay ? 'relay' : 'direct');
   memPut(cacheKeyUrl, body, ttl);
   // Shrani v predpomnilnik brez blokiranja odgovora uporabniku. Na *.workers.dev
   // je to tiho brez učinka (glej opombo pri memCache) — zato zgornji memPut.
@@ -228,6 +243,13 @@ async function handleOrs(request, env, ctx, path, cors) {
     }
   }
 
+  const zacetekOrs = Date.now();
+  const drzavaOrs = (request.cf && request.cf.country) || '';
+  const stejOrs = (izid, status) => recordUpstream(env, {
+    storitev: 'ors', metoda: sub.replace(/^\//, ''), izid, status, preko: 'direct',
+    drzava: drzavaOrs, ms: Date.now() - zacetekOrs,
+  });
+
   let res;
   try {
     res = await fetchUpstream(`${ORS_BASE}${sub}`, {
@@ -240,8 +262,10 @@ async function handleOrs(request, env, ctx, path, cors) {
       body: JSON.stringify(payload),
     });
   } catch (e) {
+    stejOrs('nedosegljiv', 502);
     return json({ error: 'upstream unreachable', detail: String(e?.name ?? e) }, 502, cors);
   }
+  stejOrs(res.ok ? 'ok' : 'napaka', res.status);
 
   const body = await res.text();
   const out = new Response(body, {
@@ -690,11 +714,13 @@ export default {
         allowedOrigins: allowedOrigins(env).length,
         obaVia: env.OBA_RELAY ? 'relay' : 'direct',
         relayKeyConfigured: !!env.RELAY_KEY,
+        analytics: !!env.ANALYTICS,
       }, 200, cors);
     }
 
     if (!isAllowedOrigin(request, env)) return json({ error: 'origin not allowed' }, 403, cors);
 
+    if (path === '/ev') return handleEvent(request, env, cors);
     if (path.startsWith('/oba/')) return handleOba(request, env, ctx, path, cors);
     if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
     if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);

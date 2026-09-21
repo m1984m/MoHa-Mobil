@@ -45,3 +45,11 @@ crons = ["* * * * *"]
 
 [observability]
 enabled = true
+
+# Analitika: dogodki iz Workerja (klici OBA/ORS) in iz aplikacije (POST /ev).
+# Na brezplacnem paketu je vkljucenih 100.000 zapisov in 10.000 poizvedb na dan
+# (hramba tri mesece) -- pri nasi kolicini je to nedosegljivo dalec. Brez te
+# vezave analitika tiho ne dela nicesar; nic drugega se ne spremeni.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "moha_mobil"

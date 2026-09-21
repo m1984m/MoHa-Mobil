@@ -8,6 +8,7 @@
   import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
   import { defaultTab, liveLocationWatch, seniorMode } from './lib/settings';
+  import { initAnalytics, track } from './lib/analytics';
   import { alarms } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack } from './lib/backstack';
@@ -165,6 +166,8 @@
 
   onMount(() => {
     theme = initTheme();
+    // Za analitiko šteje tema, kot je videti ob zagonu, zato po initTheme.
+    initAnalytics();
     // GTFS in geolokacija tečeta PARALELNO — prej je čakanje na geolocation
     // prompt/timeout (do 8 s) blokiralo nalaganje voznih redov in deep link.
     (async () => {
@@ -335,6 +338,7 @@
 
   function changeTab(id: string) {
     activeTab = id as TabId;
+    track({ e: 'zavihek', d: [id] });
   }
 
   async function runSavedRoute(r: { from: { lat: number; lon: number; name: string }; to: { lat: number; lon: number; name: string } }) {

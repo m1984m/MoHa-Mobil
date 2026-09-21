@@ -16,6 +16,7 @@
   import { homeShowNearby, homeShowFavs, nearbyRadiusM, seniorMode } from '../settings';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { fmtMonthYearGenitive } from '../time';
+  import { track } from '../analytics';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -217,6 +218,7 @@
   ];
   function toggleCenter(dir: CenterDir) {
     centerFilter = centerFilter === dir ? null : dir;
+    track({ e: 'filter', d: [centerFilter === 'to' ? 'v-center' : centerFilter === 'from' ? 'iz-centra' : 'izklop'] });
   }
   $: centerSuffix = centerFilter === 'to' ? ' · v center' : centerFilter === 'from' ? ' · iz centra' : '';
 
