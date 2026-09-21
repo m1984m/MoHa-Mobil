@@ -11,8 +11,6 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '22. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Aplikacija anonimno šteje uporabo: brez piškotkov, brez lokacije, brez podatka, ki bi te prepoznal',
-  'Štetje lahko kadarkoli izklopiš v Nastavitvah pod »Podatki«',
-  'Zaledje zdaj beleži napake pri živih prihodih, da se izpad opazi takoj',
-  'Povezava do izvorne kode je odstranjena iz Nastavitev',
+  'Za uporabnika se ne spremeni nič — ta različica doda orodje za razvijalca',
+  'Anonimno štetje uporabe lahko še vedno izklopiš v Nastavitvah pod »Podatki«',
 ];

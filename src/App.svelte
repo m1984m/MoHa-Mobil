@@ -88,6 +88,19 @@
   // Alarmi so poln prekrivni sloj, ne šesti zavihek — TabBar je s petimi zavihki
   // na 390 px že zapolnjen. Vstop je iz Priljubljenih in iz Nastavitev.
   let alarmsOpen = false;
+  // Skriti zaslon s statistiko (deset dotikov na ime v Nastavitvah). Naloži se
+  // šele ob prvem odprtju — v paketu za navadnega uporabnika nima kaj iskati.
+  let statsOpen = false;
+  let StatsScreenComp: typeof import('./lib/screens/StatsScreen.svelte').default | null = null;
+  let statsLoading: Promise<void> | null = null;
+  function openStats() {
+    if (!StatsScreenComp && !statsLoading) {
+      statsLoading = import('./lib/screens/StatsScreen.svelte')
+        .then(m => { StatsScreenComp = m.default; })
+        .catch(() => { statsLoading = null; });
+    }
+    statsOpen = true;
+  }
   // Predizpolnjen cilj za PlannerModal — bodisi iz long-pressa na karti (brez imena, reverse-geocode
    // naknadno), bodisi iz gumba "pot do te postaje" (z imenom).
   let pendingDest: { lat: number; lon: number; name?: string } | null = null;
@@ -109,6 +122,12 @@
     backWeather = pushBack(() => weatherOpen = false);
   } else if (!weatherOpen && backWeather) {
     const r = backWeather; backWeather = null; r();
+  }
+  let backStats: (() => void) | null = null;
+  $: if (statsOpen && !backStats) {
+    backStats = pushBack(() => statsOpen = false);
+  } else if (!statsOpen && backStats) {
+    const r = backStats; backStats = null; r();
   }
   let backAlarms: (() => void) | null = null;
   $: if (alarmsOpen && !backAlarms) {
@@ -394,7 +413,7 @@
   {:else if activeTab === 'settings'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
       <SettingsScreen {theme} onThemeChange={(t) => theme = t}
-        onOpenAlarms={() => alarmsOpen = true} />
+        onOpenAlarms={() => alarmsOpen = true} onOpenStats={openStats} />
     </div>
   {/if}
 
@@ -412,6 +431,10 @@
     onClose={() => weatherOpen = false} />
 
   <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false} />
+
+  {#if StatsScreenComp}
+    <svelte:component this={StatsScreenComp} open={statsOpen} onClose={() => statsOpen = false} />
+  {/if}
 
   <UpdateToast />
   <Toast />

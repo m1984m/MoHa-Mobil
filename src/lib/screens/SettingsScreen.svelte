@@ -11,6 +11,7 @@
   import { toast } from '../toast';
 
   export let theme: Theme;
+  export let onOpenStats: () => void = () => {};
   export let onThemeChange: (t: Theme) => void;
   export let onOpenAlarms: () => void = () => {};
 
@@ -72,6 +73,25 @@
   }
 
   let clearConfirmOpen = false;
+
+  // Skriti vhod v statistiko: deset dotikov na ime razvijalca. Števec se
+  // ponastavi, če je med dotikoma več kot sekunda in pol — tako ga naključno
+  // drsanje po seznamu ne sproži.
+  const DOTIKOV = 10;
+  let dotiki = 0;
+  let zadnjiDotik = 0;
+  function dotikImena() {
+    const zdaj = Date.now();
+    dotiki = (zdaj - zadnjiDotik > 1500) ? 1 : dotiki + 1;
+    zadnjiDotik = zdaj;
+    const ostane = DOTIKOV - dotiki;
+    if (ostane === 0) {
+      dotiki = 0;
+      onOpenStats();
+    } else if (ostane <= 3) {
+      toast.show('Še ' + ostane + ' …');
+    }
+  }
   let clearing = false;
 
   async function clearAllData() {
@@ -480,10 +500,17 @@
             <div class="t-footnote" style="color: {gtfsStale ? 'var(--status-delay)' : 'var(--text-muted)'}">{gtfsBuiltLabel}</div>
           </li>
         {/if}
-        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
-          <Building2 size={20} color="var(--text-muted)" />
-          <div class="flex-1 t-body">Razvijalec</div>
-          <div class="t-footnote text-muted">Matej</div>
+        <li>
+          <!-- Deset dotikov na ime odpre skriti zaslon s statistiko. Vhod je
+               skrit samo zato, da ni na poti; varuje ga ključ, ne skrivanje. -->
+          <button type="button"
+                  class="w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
+                  style="touch-action: manipulation;"
+                  on:click={dotikImena}>
+            <Building2 size={20} color="var(--text-muted)" />
+            <div class="flex-1 t-body">Razvijalec</div>
+            <div class="t-footnote text-muted">Matej</div>
+          </button>
         </li>
       </ul>
       <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.</p>

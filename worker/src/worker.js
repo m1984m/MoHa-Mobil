@@ -33,6 +33,7 @@
 
 import { sendPush } from './push.js';
 import { recordUpstream, handleEvent } from './analytics.js';
+import { handleStat } from './stat.js';
 import { processDue } from './due.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
@@ -80,7 +81,7 @@ function corsHeaders(request, env) {
   if (origin && list.includes(origin)) {
     h['Access-Control-Allow-Origin'] = origin;
     h['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
-    h['Access-Control-Allow-Headers'] = 'Content-Type';
+    h['Access-Control-Allow-Headers'] = 'Content-Type, x-stat-key';
     h['Access-Control-Max-Age'] = '86400';
   }
   return h;
@@ -715,12 +716,14 @@ export default {
         obaVia: env.OBA_RELAY ? 'relay' : 'direct',
         relayKeyConfigured: !!env.RELAY_KEY,
         analytics: !!env.ANALYTICS,
+        statConfigured: !!(env.STAT_KEY && env.CF_API_TOKEN && env.CF_ACCOUNT_ID),
       }, 200, cors);
     }
 
     if (!isAllowedOrigin(request, env)) return json({ error: 'origin not allowed' }, 403, cors);
 
     if (path === '/ev') return handleEvent(request, env, cors);
+    if (path === '/stat') return handleStat(request, env, cors);
     if (path.startsWith('/oba/')) return handleOba(request, env, ctx, path, cors);
     if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
     if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);

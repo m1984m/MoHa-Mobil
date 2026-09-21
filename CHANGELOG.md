@@ -5,6 +5,31 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.16.0 — 2026-09-22
+
+Skriti zaslon s statistiko v aplikaciji. Za uporabnika se ne spremeni nič.
+
+### Kje je
+Deset dotikov na ime razvijalca v **Nastavitve → O aplikaciji**. Števec se ponastavi, če je med dotikoma več kot sekunda in pol, zato ga drsanje po seznamu ne sproži; pri zadnjih treh dotikih se pokaže odštevanje.
+
+Skrivanje vhoda ni varovalo. Varuje ga ključ: zaslon ob prvem odprtju zahteva geslo, ki se shrani lokalno in pošlje v glavi `x-stat-key`. Napačen ključ pomeni 401 in shranjeni ključ se pobriše.
+
+### Kaj pokaže
+Zagoni (nameščena proti brskalniku, različica gradnje, tema, način za starejše), zavihki, uporaba filtra smeri, namestitve, prehodi offline/online in zaledje po dnevih z mediano odzivnega časa. Obdobje se preklaplja med danes, 7 in 30 dni. Zgoraj sta dve številki na prvi pogled: število zagonov z deležem nameščenih ter število klicev zaledja z opozorilom, če je med njimi kakšna napaka.
+
+### Nova pot `GET /stat` na Workerju
+- Poizvedbe SQL živijo samo tu, zato se ne morejo razdvojiti med aplikacijo in ukazno vrstico.
+- Zaščita: znan `Origin` (isti seznam kot OBA) in ujemanje `x-stat-key` s skrivnostjo `STAT_KEY`, primerjano v času, ki ne izda dolžine ujemanja.
+- Žeton za Cloudflarov SQL API in ID računa sta skrivnosti Workerja, zato v aplikacijo nikoli ne prideta — odjemalec vidi samo seštevke.
+- Odgovor se minuto hrani v izolatu, ker so branja omejena na 10.000 na dan.
+- `GET /health` javi `statConfigured`.
+
+### Preverjeno
+- V živo na Workerju: brez ključa 401, napačen ključ 401, pravi ključ vrne vseh šest skupin (zagoni, zavihki, filter, namestitev, omrežje, zaledje); prvi izmerek zaledja 138 klicev OBA z mediano 415 ms in nič napak.
+- `npm run check` 0/0, gradnja zelena; zaslon je ločen kos (12 kB), ki se naloži šele ob prvem odprtju.
+
+---
+
 ## 0.15.0 — 2026-09-22
 
 Anonimno štetje uporabe. Dva vira, oba na lastnem Cloudflare Workerju — tretje osebe ni.
