@@ -858,7 +858,7 @@
   {#if !activePlan && !selectedStop && !selectedVehicle}
     {#if pinMode}
       <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
-              style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
+              style="bottom: calc(var(--tabbar-space) + 1.5rem); background: var(--accent); color: #ffffff;"
               on:click={() => { mapRef?.dropPinAtCenter(); pinMode = false; }}
               aria-label="Potrdi lokacijo cilja">
         <Check size={18} color="#ffffff" />
@@ -866,7 +866,7 @@
       </button>
     {:else}
       <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
-              style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem); background: var(--accent); color: #ffffff;"
+              style="bottom: calc(var(--tabbar-space) + 1.5rem); background: var(--accent); color: #ffffff;"
               on:click={onOpenPlanner}>
         <Navigation size={18} color="#ffffff" />
         Načrtuj
@@ -877,7 +877,7 @@
   <!-- Recenter -->
   {#if hasGeo && !activePlan}
     <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
-            style="bottom: calc(env(safe-area-inset-bottom) + 5.5rem)"
+            style="bottom: calc(var(--tabbar-space) + 1.5rem)"
             on:click={() => mapRef?.flyTo(origin.lat, origin.lon, 15)}
             aria-label="Moja lokacija">
       <Navigation size={18} color="var(--accent)" />
@@ -888,14 +888,14 @@
   {#if !activePlan && !selectedStop && !selectedVehicle}
     {#if pinMode}
       <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
-              style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'})"
+              style="bottom: calc(var(--tabbar-space) + {hasGeo ? '5.5rem' : '1.5rem'})"
               on:click={() => pinMode = false}
               aria-label="Prekliči izbiro cilja">
         <X size={18} color="var(--text)" />
       </button>
     {:else}
       <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full shadow-card grid place-items-center"
-              style="bottom: calc(env(safe-area-inset-bottom) + {hasGeo ? '9.5rem' : '5.5rem'}); background: var(--accent); color: #ffffff"
+              style="bottom: calc(var(--tabbar-space) + {hasGeo ? '5.5rem' : '1.5rem'}); background: var(--accent); color: #ffffff"
               on:click={() => pinMode = true}
               aria-label="Izberi cilj na karti">
         <MapPin size={18} color="#ffffff" />

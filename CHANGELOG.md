@@ -5,6 +5,43 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.13.0 — 2026-09-21
+
+Videz po iOS 27 in nov način iskanja odhodov proti središču mesta.
+
+### Spodnji meni po iOS 27
+- Meni **lebdi nad vsebino** kot zaobljena kapsula (10 px od roba, višina 60 px, radij 28 px) namesto neprosojne ploskve od roba do roba. Vsebina teče pod njim; na karti se spodnji del mesta ne izgubi več.
+- Površina je steklena: `backdrop-filter: blur(28px) saturate(180%)` z nizko prosojnostjo (0,80 v svetli, 0,78 v temni temi), temnejšim robom in tankim odsevom na zgornjem robu. Nizka prosojnost je namerna — Apple jo je pri iOS 27 glede na iOS 26 zmanjšal prav zaradi berljivosti.
+- Pod aktivnim zavihkom je obarvana kapsula.
+- **Brez nove odvisnosti.** Knjižnice, ki posnemajo lom svetlobe prek SVG filtrov v `backdrop-filter`, na iPhonu ne delujejo — WebKit tega ne podpira in učinek se sesede na navaden blur.
+
+### Varovala za dostopnost
+- `@supports`: kjer brskalnik `backdrop-filter` ne pozna, ostane polna ploskev.
+- `prefers-reduced-transparency: reduce`: kdor ima v sistemu vklopljeno zmanjšano prosojnost, dobi meni brez stekla.
+- Temi **kontrast** in **črno-belo** ostaneta neprosojni — steklo je proti njunemu namenu.
+
+### Mere menija na enem mestu
+- Nove spremenljivke `--tabbar-h`, `--tabbar-gap` in `--tabbar-space` v `app.css`. Vse, kar stoji nad menijem (vsebina zaslonov, gumbi na karti, obvestila, poziv za posodobitev), računa razdaljo iz njih. Prej so bile razdalje raztresene po petih datotekah kot 5rem, 5,5rem, 9,5rem, 6,5rem in 84 px.
+
+### V center / Iz centra
+- Na Domu sta pod »Kam greš?« dva nova gumba. **»V center«** pokaže samo postajališča, s katerih avtobus pelje proti središču — Glavni trg ali Avtobusna postaja kot ena od **naslednjih** postaj. **»Iz centra«** je zrcalno: center je na tej vožnji že mimo. Ponoven klik filter izklopi.
+- Filtrirajo se tudi posamezne vrstice odhodov, ne le postajališča; kartica brez odhoda v izbrano smer odpade. Če v bližini ni ničesar, prazno stanje ponudi »Pokaži vse odhode«.
+- Krog kandidatov za bližnja postajališča je razširjen z 20 na 40 najbližjih — filter jih veliko odreže in seznam bi se sicer skrčil na dve kartici.
+- Odhodi se presejejo **pred** rezom na tri, sicer bi bila kartica prazna vedno, kadar prvi trije odhodi peljejo v napačno smer.
+
+### Kako se prepozna smer
+- Središče je določeno po **imenu** postajališča (`Glavni trg`, `Avtobusna postaja`), ne po id-ju — id-ji se ob novem feedu lahko premaknejo, imeni pa sta stabilni.
+- Pri krožnih linijah, ki center obiščejo večkrat, štejeta prvi in zadnji obisk: pred zadnjim center še pride, po prvem je že mimo. Zato je tak odhod lahko upravičeno v obeh načinih.
+- Odhod iz voznega reda se odloči po **točnem ključu** (linija + opis smeri). Živ prihod iz OBA nosi svoj `LineDescription`, ki se z opisom iz voznega reda ne ujame vedno, zato zanj velja rezerva po liniji. Brez te ločnice je na Dogošah, kjer P16 z istim id-jem vozi v obe smeri, isti odhod padel v oba načina.
+
+### Preverjeno
+- Indeks smeri proti surovemu prehodu vseh 456 postajališč: 0 razhajanj (244 v center, 241 iz centra, 78 oboje, 49 nobeno).
+- 36 vrstic, ki jih je aplikacija pokazala pri torkovih 08:00 (ura ponarejena v brskalniku, ker ob 23h vozni red nima odhodov), neodvisno potrjenih 36/36.
+- Geometrija 10/10/10 px, tarča za dotik 74 × 60 px pri 390 px in 60 × 60 px pri 320 px, brez preliva napisov in brez vodoravnega drsenja pri 320, 390 in 1024 px.
+- `npm run check` 0/0, gradnja zelena, 0 napak v konzoli.
+
+---
+
 ## 0.12.0 — 2026-09-20
 
 Pot nazaj s karte. Izbereš postajo, vidiš prihode, odpreš avtobus — in se vrneš na isto postajo.

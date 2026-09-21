@@ -408,7 +408,7 @@
 
   {#if routeRunning}
     <div class="fixed left-1/2 -translate-x-1/2 z-[60] pointer-events-none"
-         style="bottom: calc(env(safe-area-inset-bottom) + 6.5rem)">
+         style="bottom: calc(var(--tabbar-space) + 2.5rem)">
       <div class="surface rounded-full border border-base shadow-elev px-4 h-10 flex items-center gap-2 t-footnote font-medium">
         <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
         Iščem pot…

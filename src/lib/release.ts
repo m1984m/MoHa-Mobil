@@ -8,11 +8,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '20. 9. 2026';
+export const RELEASE_DATE = '21. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Iz avtobusa se z enim dotikom vrneš na postajo, s katere si prišel',
-  'Podrobnosti avtobusa se spet odprejo — prej se je list takoj zaprl',
-  'Sistemski gumb nazaj te ne vrže več iz aplikacije',
-  'Nastavitve so zračnejše, stikala pa lažje zadeneš s prstom',
+  'Na Domu nova gumba »V center« in »Iz centra« — pokažeta samo postajališča v izbrano smer',
+  'Spodnji meni lebdi nad vsebino in je prosojen, tako da se karta pod njim vidi',
+  'Kdor ima v telefonu vklopljeno zmanjšano prosojnost, dobi meni brez učinka',
+  'Kontrastna in črno-bela tema ostaneta neprosojni',
 ];

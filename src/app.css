@@ -47,6 +47,25 @@
   --dur-fast: 180ms;
   --dur-base: 260ms;
   --dur-slow: 380ms;
+
+  /* Steklo (iOS 27, Liquid Glass po prenovi z WWDC 2026).
+     Prosojnost je namenoma nizka — Apple jo je glede na iOS 26 zmanjšal prav
+     zaradi berljivosti; robovi so temnejši, na zgornjem robu je tanek odsev. */
+  --glass-bg: rgba(252, 252, 253, 0.80);
+  --glass-blur: 28px;
+  --glass-sat: 180%;
+  --glass-edge: rgba(0, 0, 0, 0.14);
+  --glass-sheen: rgba(255, 255, 255, 0.72);
+  --glass-tint: rgba(211, 32, 39, 0.09);      /* kapsula pod aktivnim zavihkom */
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+
+  /* Mere lebdeče spodnje vrstice. Vse, kar mora stati nad njo (vsebina zaslonov,
+     gumbi na karti, obvestila), računa iz --tabbar-space — prej so bile te
+     razdalje raztresene kot 5rem / 5.5rem / 6.5rem / 84px in jih je bilo treba
+     ob vsaki spremembi višine popravljati posamič. */
+  --tabbar-h: 60px;
+  --tabbar-gap: 10px;
+  --tabbar-space: calc(env(safe-area-inset-bottom) + var(--tabbar-h) + var(--tabbar-gap));
 }
 
 :root.dark {
@@ -68,6 +87,12 @@
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  --glass-bg: rgba(28, 28, 30, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+  --glass-sheen: rgba(255, 255, 255, 0.10);
+  --glass-tint: rgba(239, 79, 84, 0.18);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 
 /* Baseline — slightly darker "grouped" bg in dark to separate surfaces */
@@ -95,6 +120,14 @@
   --shadow-1: 0 0 0 1px #000000;
   --shadow-2: 0 0 0 2px #000000;
   --shadow-3: 0 0 0 2px #000000;
+  /* Steklo je tu proti namenu teme — vrstica ostane neprosojna, rob poln. */
+  --glass-bg: #ffffff;
+  --glass-blur: 0px;
+  --glass-sat: 100%;
+  --glass-edge: #000000;
+  --glass-sheen: transparent;
+  --glass-tint: #d9d9d9;
+  --glass-shadow: 0 0 0 2px #000000;
 }
 
 /* Monochrome (črno-belo) — za uporabnike, ki ne razlikujejo barv.
@@ -118,6 +151,13 @@
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.25);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --glass-bg: #ffffff;
+  --glass-blur: 0px;
+  --glass-sat: 100%;
+  --glass-edge: #555555;
+  --glass-sheen: transparent;
+  --glass-tint: #e0e0e0;
+  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 :root.mono #app { filter: grayscale(1); }
 
@@ -195,6 +235,33 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
 @utility shadow-card { box-shadow: var(--shadow-1); }
 @utility shadow-elev { box-shadow: var(--shadow-2); }
 @utility shadow-float { box-shadow: var(--shadow-3); }
+
+/* ---------- Steklena površina (iOS 27) ----------
+   Predpona mm- namenoma: razred živi v skupnem CSS-u in bi brez nje lahko
+   podedoval tuja pravila. Osnova deluje povsod (barva + rob + senca); zameglitev
+   se doda samo tam, kjer jo brskalnik res zna. Safari NE podpira SVG filtrov v
+   backdrop-filter, zato je tu le blur+saturate — vse drugo bi na iPhonu, ki je
+   naša ciljna naprava, tiho padlo nazaj na navaden blur. */
+.mm-glass {
+  background: var(--glass-bg);
+  border: 0.5px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow), inset 0 0.5px 0 var(--glass-sheen);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .mm-glass {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+/* Uporabnik je v sistemu zmanjšal prosojnost (iOS: Nastavitve → Dostopnost →
+   Zaslon → Zmanjšaj prosojnost). Takrat steklo odpade in ostane polna ploskev. */
+@media (prefers-reduced-transparency: reduce) {
+  .mm-glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 
 /* Press feedback — iOS-like */
 @utility pressable {

@@ -1,7 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { MapPinned, CloudOff } from 'lucide-svelte';
-  import { nearestStops, upcomingDepartures, loadMeta, feedCoversDate, type GTFS, type Stop } from '../gtfs';
+  import { onMount, onDestroy, type ComponentType } from 'svelte';
+  import { MapPinned, CloudOff, ArrowDownToDot, ArrowUpFromDot } from 'lucide-svelte';
+  import {
+    nearestStops, upcomingDepartures, loadMeta, feedCoversDate,
+    buildCenterIndex, stopServesCenter, matchesCenter,
+    type GTFS, type Stop, type CenterDir, type CenterIndex,
+  } from '../gtfs';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
@@ -46,10 +50,38 @@
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
-  $: nearStops = gtfs
-    ? nearestStops(gtfs.stops, origin, 20).filter(s => s.d <= $nearbyRadiusM).slice(0, 8)
+  // Filter smeri: 'to' = samo odhodi, ki še pridejo v center (Glavni trg ali
+  // Avtobusna postaja kot ena od naslednjih postaj), 'from' = tisti, ki so center
+  // že pustili za sabo. null = brez filtra.
+  let centerFilter: CenterDir | null = null;
+
+  // Indeks se zgradi enkrat na dan (vozni red se čez dan ne spreminja); dayKey
+  // ga prek tick-a osveži čez polnoč.
+  function dayKeyOf(_tick: number): number {
+    const d = new Date();
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }
+  function makeCenterIndex(g: GTFS | null, _dayKey: number): CenterIndex | null {
+    return g ? buildCenterIndex(g, new Date()) : null;
+  }
+  $: dayKey = dayKeyOf(tick);
+  $: centerIndex = makeCenterIndex(gtfs, dayKey);
+
+  // Kandidati so namenoma širši od prikazanih osmih: ko je filter vklopljen,
+  // marsikatero najbližje postajališče odpade in seznam bi se brez rezerve
+  // skrčil na dve kartici.
+  $: nearCandidates = gtfs
+    ? nearestStops(gtfs.stops, origin, 40).filter(s => s.d <= $nearbyRadiusM)
     : [];
-  $: favStopList = gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [];
+  function pickStops<T extends Stop>(list: T[], idx: CenterIndex | null, dir: CenterDir | null, k: number): T[] {
+    const ok = dir && idx ? list.filter(s => stopServesCenter(idx.get(s.id), dir)) : list;
+    return ok.slice(0, k);
+  }
+  $: nearStops = pickStops(nearCandidates, centerIndex, centerFilter, 8);
+  $: favStopList = pickStops(
+    gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [],
+    centerIndex, centerFilter, 50,
+  );
 
   // Set stopId-jev, ki so trenutno na zaslonu. Ob spremembi (premik uporabnika, nova
   // priljubljena postaja) sproži svež fetch — poleg rednega 30 s poll-a.
@@ -83,28 +115,47 @@
     liveByStop = next;
   }
 
-  function liveRows(arr: StopArrival[]): BoardRow[] {
-    return arr.slice(0, 3).map(a => {
+  const ROWS = 3;
+
+  // Ob vklopljenem filtru se odhodi najprej presejejo in šele nato odreže prve
+  // tri — sicer bi bila kartica prazna vedno, ko prvi trije odhodi peljejo v
+  // napačno smer.
+  function liveRows(stopId: number, arr: StopArrival[]): BoardRow[] {
+    const e = centerIndex?.get(stopId);
+    const out: BoardRow[] = [];
+    for (const a of arr) {
+      // lineFallback: živ prihod nosi opis smeri iz OBA, ki se z opisom iz
+      // voznega reda ne ujame vedno (glej matchesCenter).
+      if (centerFilter && !matchesCenter(e, centerFilter, a.lineCode, a.headsign, { lineFallback: true })) continue;
       const [hh, mm] = (a.arrivalTime || '0:0').split(':').map(Number);
-      return {
+      out.push({
         routeId: routeIdByShort.get(a.lineCode.toLowerCase()) ?? a.lineId,
         routeShort: a.lineCode,
         headsign: a.headsign,
         minutesFromNow: a.etaMin,
         depSec: (hh || 0) * 3600 + (mm || 0) * 60,
-      };
-    });
+      });
+      if (out.length === ROWS) break;
+    }
+    return out;
   }
 
   function gtfsRows(stopId: number): BoardRow[] {
     if (!gtfs) return [];
-    return upcomingDepartures(gtfs, stopId, new Date(), 3).map(d => ({
-      routeId: d.route.id,
-      routeShort: d.route.short,
-      headsign: d.trip.headsign,
-      minutesFromNow: d.minutesFromNow,
-      depSec: d.depSec,
-    }));
+    const e = centerIndex?.get(stopId);
+    const out: BoardRow[] = [];
+    for (const d of upcomingDepartures(gtfs, stopId, new Date(), centerFilter ? 24 : ROWS)) {
+      if (centerFilter && !matchesCenter(e, centerFilter, d.route.short, d.trip.headsign)) continue;
+      out.push({
+        routeId: d.route.id,
+        routeShort: d.route.short,
+        headsign: d.trip.headsign,
+        minutesFromNow: d.minutesFromNow,
+        depSec: d.depSec,
+      });
+      if (out.length === ROWS) break;
+    }
+    return out;
   }
 
   function rowsFor(stopId: number): BoardRow[] {
@@ -112,7 +163,13 @@
     // Zivi podatki veljajo 2 min od zadnjega uspesnega fetcha; starejsi
     // padejo nazaj na GTFS (etaMin iz starega fetcha je ze zlagan).
     const fresh = Date.now() - (liveAt[stopId] ?? 0) < 120_000;
-    return (live && live.length > 0 && fresh) ? liveRows(live) : gtfsRows(stopId);
+    if (live && live.length > 0 && fresh) {
+      const rows = liveRows(stopId, live);
+      // OBA vrne le bližnje prihode; če filter med njimi ne najde nič, ima vozni
+      // red lahko primeren odhod malo kasneje.
+      if (rows.length > 0 || !centerFilter) return rows;
+    }
+    return gtfsRows(stopId);
   }
 
   // Ali je za katero od prikazanih postaj na voljo živ podatek — od tega je odvisno,
@@ -122,7 +179,10 @@
   }
 
   // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnosti jasne.
-  function makeBoards<T extends Stop>(g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number) {
+  function makeBoards<T extends Stop>(
+    g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number,
+    _idx: CenterIndex | null, filter: CenterDir | null,
+  ) {
     if (!g) return [];
     // Postajališči z istim imenom sta par čez cesto — brez namiga o smeri ju
     // uporabnik ne razlikuje (na Domu sta prej dvakrat pisala "UKC - Pobreška").
@@ -135,12 +195,23 @@
         rows,
         directionHint: (nameCount.get(s.name) ?? 0) > 1 ? (rows[0]?.headsign ?? '') : '',
       };
-    });
+    // Ob vklopljenem filtru kartica brez odhodov ni odgovor na vprašanje
+    // "kje ujamem avtobus v center" — raje je ni.
+    }).filter(b => !filter || b.rows.length > 0);
   }
-  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick);
-  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick);
+  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter);
+  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter);
   $: nearLive = anyLive(nearStops, liveByStop, tick);
   $: favLive = anyLive(favStopList, liveByStop, tick);
+
+  const CENTER_CHIPS: { id: CenterDir; label: string; icon: ComponentType }[] = [
+    { id: 'to', label: 'V center', icon: ArrowDownToDot },
+    { id: 'from', label: 'Iz centra', icon: ArrowUpFromDot },
+  ];
+  function toggleCenter(dir: CenterDir) {
+    centerFilter = centerFilter === dir ? null : dir;
+  }
+  $: centerSuffix = centerFilter === 'to' ? ' · v center' : centerFilter === 'from' ? ' · iz centra' : '';
 
   async function refresh() {
     await onRequestLocation();
@@ -186,6 +257,26 @@
       </div>
     </button>
 
+    <!-- Smer: pokaži samo postajališča, s katerih se pelje v center (Glavni trg
+         ali Avtobusna postaja kot ena od naslednjih postaj) oziroma iz njega. -->
+    <div class="flex gap-2" role="group" aria-label="Smer vožnje">
+      {#each CENTER_CHIPS as c (c.id)}
+        {@const on = centerFilter === c.id}
+        <button type="button"
+                class="pressable flex-1 h-11 rounded-full border flex items-center justify-center gap-2 t-subhead font-semibold"
+                style="touch-action: manipulation;
+                       background: {on ? 'var(--accent)' : 'var(--surface-2)'};
+                       color: {on ? '#ffffff' : 'var(--text)'};
+                       border-color: {on ? 'var(--accent)' : 'var(--border)'};"
+                aria-pressed={on}
+                on:click={() => toggleCenter(c.id)}>
+          <svelte:component this={c.icon} size={17} strokeWidth={2}
+                            color={on ? '#ffffff' : 'var(--text-muted)'} />
+          {c.label}
+        </button>
+      {/each}
+    </div>
+
     <!-- Nearby boards (toggable v nastavitvah) -->
     {#if $homeShowNearby}
     {#if !gtfs}
@@ -202,11 +293,19 @@
                 style="background: var(--accent); color: #ffffff;"
                 on:click={refresh}>Omogoči lokacijo</button>
       </EmptyState>
+    {:else if boards.length === 0 && centerFilter}
+      <EmptyState icon={CloudOff}
+                  title={centerFilter === 'to' ? 'V bližini ni odhodov v center' : 'V bližini ni odhodov iz centra'}
+                  body="Ta smer se s postajališč v tvoji bližini zdaj ne pelje. Poglej vse odhode ali poskusi čez nekaj minut.">
+        <button class="pressable h-11 px-5 rounded-xl t-subhead font-semibold"
+                style="background: var(--accent); color: #ffffff;"
+                on:click={() => centerFilter = null}>Pokaži vse odhode</button>
+      </EmptyState>
     {:else if boards.length === 0}
       <EmptyState icon={CloudOff} title="Ni postajališč v bližini" body="Premakni se bližje središču mesta." />
     {:else}
       <div class="flex items-center justify-between pt-1">
-        <h2 class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča</h2>
+        <h2 class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča{centerSuffix}</h2>
         <LiveDot live={nearLive} label={nearLive ? 'V živo' : 'Po voznem redu'} />
       </div>
 
@@ -219,7 +318,7 @@
 
     {#if $homeShowFavs && favBoards.length > 0}
       <div class="flex items-center justify-between pt-2">
-        <h2 class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča</h2>
+        <h2 class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča{centerSuffix}</h2>
         <LiveDot live={favLive} label={favLive ? 'V živo' : 'Po voznem redu'} />
       </div>
       {#each favBoards as b (b.stop.id)}

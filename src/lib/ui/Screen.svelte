@@ -56,7 +56,7 @@
     <div bind:this={scrollEl}
          role="group"
          class="absolute inset-0 {scrollable ? 'overflow-y-auto scrollbox' : 'overflow-hidden'}"
-         style="padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); transform: translateY({pullY}px); transition: {pulling ? 'none' : 'transform var(--dur-base) var(--ease-ios)'};"
+         style="padding-bottom: calc(var(--tabbar-space) + 1rem); transform: translateY({pullY}px); transition: {pulling ? 'none' : 'transform var(--dur-base) var(--ease-ios)'};"
          on:touchstart={onTouchStart}
          on:touchmove={onTouchMove}
          on:touchend={onTouchEnd}

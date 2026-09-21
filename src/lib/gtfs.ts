@@ -287,6 +287,106 @@ export function nextServiceDeparture(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Smer proti središču mesta / iz njega.
+//
+// "Center" sta dve vozlišči, ki ju Mariborčan tako razume: Glavni trg in
+// Avtobusna postaja. Obe imata po več postajališč (par čez cesto, perona), zato
+// se ujemanje dela po IMENU in ne po id-ju — id-ji se ob novem feedu lahko
+// premaknejo, imeni pa sta stabilni.
+// ---------------------------------------------------------------------------
+export const CENTER_STOP_NAMES = ['Glavni trg', 'Avtobusna postaja'];
+
+export function isCenterStopName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return CENTER_STOP_NAMES.some(c => n.startsWith(c.toLowerCase()));
+}
+
+export type CenterDir = 'to' | 'from';
+
+// Za vsako postajališče: katere vožnje od tod še pridejo v center (`to`) in
+// katere so center že pustile za sabo (`from`). Ključ je linija + opis smeri;
+// `lines` je groba rezerva za žive prihode iz OBA (glej matchesCenter).
+export type CenterEntry = {
+  toKeys: Set<string>; toLines: Set<string>;
+  fromKeys: Set<string>; fromLines: Set<string>;
+};
+export type CenterIndex = Map<number, CenterEntry>;
+
+export function departureKey(routeShort: string, headsign: string): string {
+  return `${routeShort.trim().toLowerCase()}|${headsign.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+}
+
+export function buildCenterIndex(gtfs: GTFS, when: Date = new Date()): CenterIndex {
+  const active = todayServiceIds(gtfs, when);
+  const centerIds = new Set(gtfs.stops.filter(s => isCenterStopName(s.name)).map(s => s.id));
+  const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
+  const idx: CenterIndex = new Map();
+  const entryFor = (id: number): CenterEntry => {
+    let e = idx.get(id);
+    if (!e) {
+      e = { toKeys: new Set(), toLines: new Set(), fromKeys: new Set(), fromLines: new Set() };
+      idx.set(id, e);
+    }
+    return e;
+  };
+
+  for (const t of gtfs.trips) {
+    if (!active.has(t.service)) continue;
+    const route = routeById.get(t.route);
+    if (!route) continue;
+
+    // Kje v tej vožnji leži center. Krožne linije ga obiščejo večkrat, zato
+    // štejeta prvi in zadnji obisk: pred zadnjim center šele pride, po prvem
+    // je že mimo.
+    let first = -1, last = -1;
+    for (let i = 0; i < t.stops.length; i++) {
+      if (!centerIds.has(t.stops[i][0])) continue;
+      if (first < 0) first = i;
+      last = i;
+    }
+    if (first < 0) continue;
+
+    const key = departureKey(route.short, t.headsign);
+    const line = route.short.trim().toLowerCase();
+    for (let i = 0; i < t.stops.length; i++) {
+      const e = entryFor(t.stops[i][0]);
+      if (i < last) { e.toKeys.add(key); e.toLines.add(line); }
+      if (i > first) { e.fromKeys.add(key); e.fromLines.add(line); }
+    }
+  }
+  return idx;
+}
+
+// Ali s tega postajališča sploh vozi kaj v izbrano smer.
+export function stopServesCenter(e: CenterEntry | undefined, dir: CenterDir): boolean {
+  if (!e) return false;
+  return (dir === 'to' ? e.toLines.size : e.fromLines.size) > 0;
+}
+
+// Ali posamezen odhod ustreza izbrani smeri.
+//
+// Odhod iz voznega reda ima točen ključ (linija + opis smeri) in se odloči
+// izključno po njem. Živ prihod iz OBA nosi svoj `LineDescription`, ki se z
+// opisom iz voznega reda ne ujame vedno — zato `lineFallback`, ki dovoli
+// odločitev po sami liniji. Cena rezerve: na redkih postajališčih, kjer ista
+// linija z istim id-jem vozi v obe smeri (npr. Dogoše), se živ prihod pokaže v
+// obeh načinih. Raje to, kot da bi skrili avtobus, ki v center res pelje.
+export function matchesCenter(
+  e: CenterEntry | undefined,
+  dir: CenterDir,
+  routeShort: string,
+  headsign: string,
+  opts: { lineFallback?: boolean } = {},
+): boolean {
+  if (!e) return false;
+  const keys = dir === 'to' ? e.toKeys : e.fromKeys;
+  if (keys.has(departureKey(routeShort, headsign))) return true;
+  if (!opts.lineFallback) return false;
+  const lines = dir === 'to' ? e.toLines : e.fromLines;
+  return lines.has(routeShort.trim().toLowerCase());
+}
+
 // Upcoming departures from a stop today, sorted asc. Returns up to `k` entries.
 export function upcomingDepartures(
   gtfs: GTFS,
