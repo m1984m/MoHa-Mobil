@@ -11,6 +11,8 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '22. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Za uporabnika se ne spremeni nič — ta različica dopolnjuje orodje za razvijalca',
-  'Anonimno štetje uporabe lahko še vedno izklopiš v Nastavitvah pod »Podatki«',
+  'Pot po korakih je zdaj časovnica: zgoraj piše, kdaj moraš kreniti od doma',
+  'Pri vsakem avtobusu je jasno, kje vstopiš in kje izstopiš, ter ob kateri uri',
+  'Čakanje med prestopi je svoja vrstica — vidiš ga vnaprej',
+  'Namesto celega opisa linije je zapisan cilj, vmesne postaje so pod njim',
 ];

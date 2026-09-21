@@ -6,6 +6,7 @@
   import MapView from '../MapView.svelte';
   import BottomSheet from '../BottomSheet.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
+  import PlanSteps from '../ui/PlanSteps.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import { upcomingDepartures, nextServiceDeparture, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
@@ -787,34 +788,10 @@
                 <span class="t-callout font-medium">Deli pot</span>
               </button>
 
-              <div class="t-footnote text-muted uppercase tracking-wide mb-2">Koraki</div>
-              <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-                {#each activePlan.plan.legs as leg, i}
-                  <li class="px-4 py-3 flex items-start gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                    {#if leg.kind === 'walk'}
-                      <div class="w-10 h-10 rounded-xl surface-2 grid place-items-center shrink-0">
-                        <Footprints size={18} />
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        <div class="t-callout font-medium">Hoja · {Math.round(leg.meters)} m</div>
-                        <div class="t-footnote text-muted">
-                          {#if leg.fromStop && leg.toStop}{leg.fromStop.name} → {leg.toStop.name}
-                          {:else if leg.toStop}do {leg.toStop.name}
-                          {:else if leg.fromStop}od {leg.fromStop.name}{/if}
-                        </div>
-                      </div>
-                      <div class="t-footnote text-muted">{fmtDur(leg.sec)}</div>
-                    {:else}
-                      <div class="shrink-0"><LineBadge short={leg.route.short} routeId={leg.route.id} size="md" /></div>
-                      <div class="flex-1 min-w-0">
-                        <div class="t-callout font-medium truncate">→ {leg.headsign}</div>
-                        <div class="t-footnote text-muted truncate">{leg.from.name} · {fmtTime(leg.depSec)} → {leg.to.name} · {fmtTime(leg.arrSec)}</div>
-                      </div>
-                      <div class="t-footnote text-muted">{leg.stopCount}×</div>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
+              <div class="t-footnote text-muted uppercase tracking-wide mb-2">Pot po korakih</div>
+              <div class="surface rounded-2xl border border-base shadow-card px-3 py-3">
+                <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} />
+              </div>
             </div>
           </div>
         {/if}
