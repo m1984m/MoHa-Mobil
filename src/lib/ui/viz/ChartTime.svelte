@@ -9,12 +9,19 @@
   export let enota = '';
   export let vrsta: 'ploskev' | 'stolpci' = 'ploskev';
   export let barva = 'var(--viz-1)';
+  // Kako se povzame vsota v naslovu: seštevek (klici, zagoni) ali povprečje
+  // (odzivni čas — seštevek median ne pomeni nič).
+  export let povzetek: 'vsota' | 'povprecje' = 'vsota';
 
   const W = 320, H = 96, L = 4, R = 4, T = 8, B = 18;   // viewBox; SVG se razteza
 
   $: vrednosti = tocke.map(t => Number(t.n) || 0);
   $: najvec = Math.max(1, ...vrednosti);
   $: skupaj = vrednosti.reduce((a, b) => a + b, 0);
+  $: povzetekVrednost = povzetek === 'povprecje' && vrednosti.length
+    ? Math.round(skupaj / vrednosti.length)
+    : skupaj;
+  $: povzetekOznaka = povzetek === 'povprecje' ? 'povprečno' : 'skupaj';
   $: slabihSkupaj = tocke.reduce((a, t) => a + (Number(t.slabo) || 0), 0);
 
   // Vodoravne pomožne črte: tri je dovolj, več jih le zamaže sliko.
@@ -61,12 +68,25 @@
   <figcaption>
     <span class="t-subhead font-semibold">{naslov}</span>
     <span class="t-footnote text-muted">
-      skupaj {stevilo(skupaj)}{enota ? ' ' + enota : ''}{slabihSkupaj > 0 ? ' · ' + stevilo(slabihSkupaj) + ' napak' : ''}
+      {povzetekOznaka} {stevilo(povzetekVrednost)}{enota ? ' ' + enota : ''}{slabihSkupaj > 0 ? ' · ' + stevilo(slabihSkupaj) + ' napak' : ''}
     </span>
   </figcaption>
 
   {#if tocke.length === 0}
     <p class="t-footnote text-muted py-3">Za to obdobje ni podatkov.</p>
+  {:else if tocke.length === 1}
+    <!-- En dan ni časovnica. Namesto praznega grafa z eno piko pokažemo
+         vrednost in povemo, zakaj črte (še) ni. -->
+    <div class="mm-viz-ena">
+      <span class="mm-viz-ena-st">{stevilo(Number(tocke[0].n) || 0)}</span>
+      <span class="t-footnote text-muted">
+        {enota} · {datum(tocke[0].dan)}
+        {#if Number(tocke[0].slabo) > 0}
+          <span style="color: var(--viz-bad)">· {stevilo(Number(tocke[0].slabo))} napak</span>
+        {/if}
+        <br />Za črto je potreben vsaj drugi dan.
+      </span>
+    </div>
   {:else}
     <div class="mm-viz-plot" bind:this={vsebnik}
          role="img" aria-label="{naslov}: {stevilo(skupaj)} {enota} v {tocke.length} dneh"
@@ -135,6 +155,8 @@
   .mm-viz-plot { position: relative; height: calc(96px * var(--ui-scale)); touch-action: pan-y; }
   .mm-viz-plot svg { display: block; }
   .mm-viz-os { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; pointer-events: none; }
+  .mm-viz-ena { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 2px; }
+  .mm-viz-ena-st { font-size: calc(26px * var(--ui-scale)); font-weight: 700; letter-spacing: -0.4px; line-height: 1.1; }
   .mm-viz-oblacek {
     position: absolute; top: -2px; transform: translateX(-50%);
     background: var(--surface); color: var(--text);

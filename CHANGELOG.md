@@ -5,6 +5,13 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.17.1 — 2026-09-22
+
+- Časovnica z eno samo meritvijo ni več skoraj prazen graf: pokaže vrednost kot številko in pove, da je za črto potreben vsaj drugi dan. En dan ni časovnica.
+- Naslov grafa odzivnega časa je povedal »skupaj 321 ms« — seštevek median ne pomeni nič. Zdaj piše povprečje.
+
+---
+
 ## 0.17.0 — 2026-09-22
 
 Statistika dobi grafe in karto. Za uporabnika se ne spremeni nič.

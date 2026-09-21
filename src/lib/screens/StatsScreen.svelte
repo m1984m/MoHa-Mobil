@@ -213,7 +213,7 @@
                 Rdeči del stolpca so neuspeli klici. Prav ta številka bi septembra pokazala,
                 da posrednik ne odgovarja.
               </p>
-              <ChartTime tocke={odziv} naslov="Odzivni čas (mediana)" enota="ms" vrsta="ploskev" />
+              <ChartTime tocke={odziv} naslov="Odzivni čas (mediana)" enota="ms" vrsta="ploskev" povzetek="povprecje" />
             </section>
 
             {#if StopMapComp && podatki.postaje?.length}
