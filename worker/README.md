@@ -409,3 +409,38 @@ vrne na javna posrednika in vgrajen ključ.
 | `/health` | GET | ne | edina pot brez preverjanja izvora |
 
 Vse drugo vrne 404, tuj izvor vrne 403, zahteva navzgor se prekine po 9 sekundah.
+
+## Analitika (Workers Analytics Engine)
+
+Worker piše dogodke v nabor `moha_mobil` prek vezave `ANALYTICS`
+(`wrangler.toml`). Dva vira:
+
+- **strežniško štetje** — vsak klic `/oba/*` in `/ors/*`: metoda, izid
+  (`ok` / `cache` / `napaka` / `nedosegljiv`), odzivni čas, `relay` ali
+  `direct`, oznaka države. Brez podatka o uporabniku.
+- **`POST /ev`** — dogodki iz aplikacije. Sprejmejo se samo znana imena in
+  znane vrednosti razsežnosti; prosto besedilo se zavrže. Telo do 4 kB,
+  največ 20 dogodkov na zahtevo, zavora 600 dogodkov na minuto na izolat.
+
+Koordinate, naslov IP in identifikator naprave se ne zapisujejo nikoli. Zato
+ni piškotka in ni privolitvenega okna. V aplikaciji je pod **Nastavitve →
+Podatki** stikalo za izklop, spoštuje se tudi `Do Not Track`.
+
+Če vezave ni, štetje tiho ne naredi nič — pot, po kateri tečejo vozni redi,
+ostane nedotaknjena. `GET /health` javi `analytics: true|false`.
+
+### Pogled v podatke
+
+```bash
+cd worker
+CF_ACCOUNT_ID=... CF_API_TOKEN=... node scripts/statistika.mjs 7
+```
+
+Žeton: dash.cloudflare.com → My Profile → API Tokens → Create Token →
+Custom token, ena sama pravica **Account · Account Analytics · Read**.
+Vrednosti lahko namesto v okolje shraniš v `worker/secrets/analytics.json`
+(`{ "accountId": "...", "apiToken": "..." }`) — ta mapa je v `.gitignore`.
+
+Brezplačni paket: 100.000 zapisov in 10.000 poizvedb na dan, hramba tri
+mesece. Za stalno nadzorno ploščo obstaja Counterscale, ki teče nad istim
+naborom.
