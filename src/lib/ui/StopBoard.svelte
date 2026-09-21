@@ -7,6 +7,9 @@
     headsign: string;
     minutesFromNow: number;
     depSec: number;
+    // Ime končne postaje, kadar ga poznamo (odhod iz voznega reda). Uporabi ga
+    // način za starejše, ki cel opis linije ne pokaže — glej splitHeadsign.
+    destination?: string;
   };
 </script>
 
@@ -14,8 +17,8 @@
   import { Bus, Star, MoonStar } from 'lucide-svelte';
   import LineBadge from './LineBadge.svelte';
   import DepartureTime from './DepartureTime.svelte';
-  import { compactLists } from '../settings';
-  import { nextServiceDeparture, type GTFS, type Stop } from '../gtfs';
+  import { compactLists, seniorMode } from '../settings';
+  import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
   import { fmtClock, fmtDayOffset } from '../time';
 
   // Skupna kartica postaje z odhodi. Prej sta bila na Domu dva identična bloka
@@ -40,6 +43,9 @@
 
   $: rowPad = $compactLists ? 'py-1.5' : 'py-2.5';
   $: rowText = $compactLists ? 't-subhead' : 't-callout';
+  // V načinu za starejše so vrstice ločene ploskve z razmikom med njimi —
+  // sosednji tarči brez praznine zgreši vsak tresoč prst (WCAG 2.5.8).
+  $: badgeSize = ($seniorMode ? 'lg' : ($compactLists ? 'sm' : 'md')) as 'sm' | 'md' | 'lg';
 </script>
 
 <div class="surface rounded-2xl border border-base shadow-card overflow-hidden">
@@ -49,7 +55,7 @@
           on:click={() => onSelect(stop)}>
     <div class="min-w-0 flex items-center gap-2">
       {#if starred}
-        <Star size={16} fill="var(--status-delay)" color="var(--status-delay)" />
+        <Star size={$seniorMode ? 21 : 16} fill="var(--status-delay)" color="var(--status-delay)" />
       {/if}
       <div class="min-w-0">
         <div class="t-title3 font-semibold truncate">{stop.name}</div>
@@ -60,7 +66,7 @@
         </div>
       </div>
     </div>
-    <Bus size={22} strokeWidth={1.75} color="var(--text-muted)" />
+    <Bus size={$seniorMode ? 28 : 22} strokeWidth={1.75} color="var(--text-muted)" />
   </button>
 
   {#if rows.length === 0}
@@ -81,17 +87,25 @@
       {/if}
     </div>
   {:else}
-    <ul>
+    <ul class="mm-board" class:mm-board-roomy={$seniorMode}>
       {#each rows as r}
-        <li class="border-t border-base">
+        {@const split = $seniorMode ? splitHeadsign(r.headsign, r.destination) : null}
+        <li class={$seniorMode ? '' : 'border-t border-base'}>
           <button type="button"
                   class="pressable w-full text-left px-4 {rowPad} flex items-center gap-3"
-                  style="touch-action: manipulation;"
+                  style="touch-action: manipulation; min-height: var(--row-min);"
                   on:click={() => onSelect(stop)}
                   aria-label="{r.routeShort} proti {r.headsign}">
-            <LineBadge short={r.routeShort} routeId={r.routeId} size={$compactLists ? 'sm' : 'md'} />
+            <LineBadge short={r.routeShort} routeId={r.routeId} size={badgeSize} />
             <div class="flex-1 min-w-0">
-              <div class="{rowText} font-medium truncate">{r.headsign}</div>
+              {#if split}
+                <div class="{rowText} font-semibold">{split.dest}</div>
+                {#if split.via}
+                  <div class="t-footnote text-muted truncate mt-0.5">prek {split.via}</div>
+                {/if}
+              {:else}
+                <div class="{rowText} font-medium truncate">{r.headsign}</div>
+              {/if}
             </div>
             <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
           </button>
@@ -100,3 +114,20 @@
     </ul>
   {/if}
 </div>
+
+<style>
+  /* Razmik med tarčami namesto skupne črte. Vklopi ga --row-gap, ki ga postavi
+     način za starejše; v privzetem načinu je 0 in postavitev ostane, kot je bila. */
+  .mm-board-roomy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--row-gap);
+    padding: var(--row-gap);
+    border-top: 1px solid var(--border);
+  }
+  .mm-board-roomy li {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+</style>

@@ -25,7 +25,10 @@
      kot TEKST na belem padeta na 2,2:1 / 2,1:1 kontrast ("zdaj", zamude). */
   --accent: #D32027;
   --accent-pressed: #A8181E;
-  --status-ontime: #1B8A3F;
+  /* #1B8A3F je imel na beli 4,42:1 in je za las padel pod AA (4,5) — izmerjeno
+     21.09.2026, komentar spodaj je trdil nasprotno. #177A37 da 5,42:1 na beli
+     in 4,86:1 na surface-2. */
+  --status-ontime: #177A37;
   /* #C76A00 je na surface-2 le 3,43:1 — pod AA za navadno besedilo; s to barvo
      je pisano opozorilo za iPhone na zaslonu opomnikov. #A85700 = 4,67:1. */
   --status-delay: #A85700;
@@ -66,6 +69,37 @@
   --tabbar-h: 60px;
   --tabbar-gap: 10px;
   --tabbar-space: calc(env(safe-area-inset-bottom) + var(--tabbar-h) + var(--tabbar-gap));
+
+  /* Lestvica besedila in tarč. 1 = privzeto; način za starejše jo dvigne. */
+  --ui-scale: 1;
+  --row-min: 0px;      /* dodatna najmanjša višina vrstice v seznamu odhodov */
+  --row-gap: 0px;      /* razmik med tarčami v kartici postaje */
+}
+
+/* ---------- Način za starejše ----------
+   Ni samo večja pisava. Starost prinese troje hkrati: slabšo ostrino vida,
+   upad občutljivosti za kontrast in manj natančen prst — zato gredo skupaj
+   večje besedilo, kontrast 7:1 (WCAG 1.4.6 AAA), večje tarče z razmikom med
+   njimi (WCAG 2.5.5) in manj vsebine na zaslon. */
+:root.senior {
+  --ui-scale: 1.5;
+  --text-muted: #4F4F54;        /* 8,14:1 na beli, 7,30:1 na surface-2 */
+  --accent: #A8181E;            /* 7,46:1 */
+  --accent-pressed: #7E1116;
+  --status-ontime: #0F5D25;     /* 8,04:1 */
+  --status-delay: #7E4100;      /* 7,94:1 */
+  --status-disrupt: #A80010;    /* 7,86:1 */
+  --tabbar-h: 76px;             /* napisi se smejo prelomiti v dve vrstici */
+  --row-min: 64px;
+  --row-gap: 8px;
+}
+:root.senior.dark {
+  /* Na črnem je težava obratna — pridušena siva je presvetla premalo. */
+  --text-muted: #AEAEB2;        /* 7,69:1 na #1C1C1E */
+  --accent: #EF4F54;            /* ostane: je tudi podlaga za belo besedilo */
+  --accent-pressed: #D32027;
+  --status-ontime: #34C759;     /* 7,66:1 */
+  --status-delay: #FF9500;      /* 7,74:1 */
 }
 
 :root.dark {
@@ -303,16 +337,19 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
   .pressable:active { transform: none; }
 }
 
-/* ---------- Type scale (iOS HIG) ---------- */
-@utility t-largeTitle { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.4px; }
-@utility t-title1     { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.3px; }
-@utility t-title2     { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.2px; }
-@utility t-title3     { font-size: 18px; line-height: 23px; font-weight: 600; letter-spacing: -0.2px; }
-@utility t-headline   { font-size: 17px; line-height: 22px; font-weight: 600; }
-@utility t-body       { font-size: 17px; line-height: 22px; font-weight: 400; }
-@utility t-callout    { font-size: 16px; line-height: 21px; font-weight: 400; }
-@utility t-subhead    { font-size: 15px; line-height: 20px; font-weight: 500; }
-@utility t-footnote   { font-size: 13px; line-height: 18px; font-weight: 400; }
+/* ---------- Type scale (iOS HIG) ----------
+   Vsaka stopnja se množi z --ui-scale, ki ga način za starejše postavi na 1,5.
+   calc() stoji v pravilu, ki se uporabi na elementu, in ne na :root — sicer bi
+   se var(--ui-scale) razrešil na korenu in sprememba ne bi učinkovala. */
+@utility t-largeTitle { font-size: calc(28px * var(--ui-scale)); line-height: calc(34px * var(--ui-scale)); font-weight: 700; letter-spacing: -0.4px; }
+@utility t-title1     { font-size: calc(24px * var(--ui-scale)); line-height: calc(30px * var(--ui-scale)); font-weight: 700; letter-spacing: -0.3px; }
+@utility t-title2     { font-size: calc(20px * var(--ui-scale)); line-height: calc(26px * var(--ui-scale)); font-weight: 600; letter-spacing: -0.2px; }
+@utility t-title3     { font-size: calc(18px * var(--ui-scale)); line-height: calc(23px * var(--ui-scale)); font-weight: 600; letter-spacing: -0.2px; }
+@utility t-headline   { font-size: calc(17px * var(--ui-scale)); line-height: calc(22px * var(--ui-scale)); font-weight: 600; }
+@utility t-body       { font-size: calc(17px * var(--ui-scale)); line-height: calc(22px * var(--ui-scale)); font-weight: 400; }
+@utility t-callout    { font-size: calc(16px * var(--ui-scale)); line-height: calc(21px * var(--ui-scale)); font-weight: 400; }
+@utility t-subhead    { font-size: calc(15px * var(--ui-scale)); line-height: calc(20px * var(--ui-scale)); font-weight: 500; }
+@utility t-footnote   { font-size: calc(13px * var(--ui-scale)); line-height: calc(18px * var(--ui-scale)); font-weight: 400; }
 
 /* ---------- Animations ---------- */
 @keyframes shimmer {

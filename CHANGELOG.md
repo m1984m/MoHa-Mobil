@@ -5,6 +5,34 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.14.0 — 2026-09-21
+
+Način za starejše. Vklopi se v Nastavitvah pod **Izgled** in se kombinira s katerokoli temo.
+
+### Zakaj ni samo večja pisava
+Starost prinese troje hkrati: manjšo ostrino vida, upad občutljivosti za kontrast in manj natančen prst. Zato gredo skupaj večje besedilo, kontrast 7:1 (WCAG 1.4.6 AAA), večje tarče z razmikom med njimi (WCAG 2.5.5) in manj vsebine na zaslon.
+
+Pri izdelavi vzorca se je pokazalo, zakaj samo povečava ne zadošča: pri +50 % se cel opis linije (»Pobreška Europark - Univerzitetni kampus - Kamnica«) razlomi v **pet vrstic** in vrstica zraste na **173 px**. Rešitev ni manjša pisava, ampak manj besedila.
+
+### Kaj se spremeni, ko je način vklopljen
+- **Besedilo +50 %** prek nove spremenljivke `--ui-scale`, ki množi celotno lestvico iOS HIG. Cilj 16 → 24 px, ime postaje 18 → 27 px, drobni tisk 13 → 20 px. Nobeno besedilo ni več manjše od 16 px.
+- **Cilj namesto opisa linije.** V ospredju je končna postaja (»Kamnica«), vmesne so v drobnejši vrstici pod njo (»prek Pobreška Europark, Univerzitetni kampus«). Končna postaja se vzame iz **zadnje postaje vožnje** v voznem redu, ne iz razreza opisa; za žive prihode iz OBA, kjer vožnje ne poznamo, ostane razrez zadnjega dela opisa.
+- **Večje tarče z razmikom.** Vrstica odhoda najmanj 64 px (izmerjeno 80 px), značka linije 36 → 44 px, gumba »V center«/»Iz centra« 44 → 56 px, med vrsticami 8 px praznine namesto skupne črte — sosednji tarči brez presledka zgreši vsak tresoč prst.
+- **Kontrast po AAA.** Pridušeno besedilo `#6E6E73` → `#4F4F54` (8,14:1), poudarek `#D32027` → `#A8181E` (7,46:1), »na voznem redu« `#177A37` → `#0F5D25` (8,04:1), zamuda `#A85700` → `#7E4100` (7,94:1). V temni temi `#8E8E93` → `#AEAEB2` (7,69:1).
+- **Manj na zaslonu.** Pet postajališč namesto osmih, dva odhoda na kartico namesto treh. Dolg seznam pri veliki pisavi zahteva le več drsenja.
+- **Spodnja vrstica raste z besedilom** (60 → 76 px, izmerjeno 87 px z dvovrstičnim napisom »Vozni redi«), ikone 23 → 30 px.
+- Naslov z vremenom in naslov razdelka z oznako »V živo« se postavita eden pod drugega, ker se pri veliki pisavi stiskata v dva ozka stolpca.
+
+### Popravek, ki velja za vse
+- **Zelena za »na voznem redu« je bila pod mejo AA.** `#1B8A3F` ima na beli podlagi 4,42:1, meja pa je 4,5:1 — komentar v kodi je ob uvedbi trdil nasprotno. Zdaj `#177A37`: 5,42:1 na beli in 4,86:1 na `surface-2`.
+
+### Preverjeno
+- Privzeto stanje nespremenjeno: lestvica 1, osem kartic po tri vrstice, cilj 16 px, vrstica 56 px, spodnja vrstica 62 px, cel opis linije. Po izklopu se vse vrne v to stanje.
+- Vklopljeno: lestvica 1,5, pet kartic po dve vrstici, cilj 24 px, ime postaje 27 px, drobni tisk 20 px, vrstica 80 px, značka 44 px, gumb 56 px, spodnja vrstica 87 px, cilj »Kamnica« + »prek Pobreška Europark, Univerzitetni kampus«.
+- Brez vodoravnega drsenja pri 390 in 320 px, napisi v spodnji vrstici niso obrezani, temna tema dobi svojo pridušeno barvo (`senior dark`), `npm run check` 0/0, gradnja zelena, 0 napak v konzoli.
+
+---
+
 ## 0.13.0 — 2026-09-21
 
 Videz po iOS 27 in nov način iskanja odhodov proti središču mesta.

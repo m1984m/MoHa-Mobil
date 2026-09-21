@@ -387,6 +387,34 @@ export function matchesCenter(
   return lines.has(routeShort.trim().toLowerCase());
 }
 
+// ---------------------------------------------------------------------------
+// Krajši zapis cilja.
+//
+// `headsign` v tem feedu ni cilj, ampak cel opis linije
+// ("Pobreška Europark - Univerzitetni kampus - Kamnica"). Pri navadni velikosti
+// besedila se to obreže s tremi pikami, pri +50 % pa se razlomi v pet vrstic in
+// vrstica zraste na 173 px (izmerjeno). Zato ga razdelimo: v ospredje končna
+// postaja, vmesne v drobnejšo vrstico.
+//
+// `destination` je ime zadnje postaje vožnje, kadar ga poznamo (odhod iz
+// voznega reda). Živ prihod iz OBA vožnje nima, zato se vzame zadnji del opisa.
+// ---------------------------------------------------------------------------
+export function splitHeadsign(headsign: string, destination?: string): { dest: string; via: string } {
+  const parts = headsign.split(/\s+[-–—]\s+/).map(p => p.trim()).filter(Boolean);
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ');
+  const dest = (destination ?? parts[parts.length - 1] ?? headsign).trim();
+  const via = parts.filter(p => norm(p) !== norm(dest)).join(', ');
+  return { dest: dest || headsign, via };
+}
+
+// Ime zadnje postaje vožnje — pravi cilj, neodvisen od zapisa opisa linije.
+export function tripDestination(gtfs: GTFS, trip: Trip, stopNames?: Map<number, string>): string {
+  const last = trip.stops[trip.stops.length - 1];
+  if (!last) return '';
+  const names = stopNames ?? new Map(gtfs.stops.map(s => [s.id, s.name]));
+  return names.get(last[0]) ?? '';
+}
+
 // Upcoming departures from a stop today, sorted asc. Returns up to `k` entries.
 export function upcomingDepartures(
   gtfs: GTFS,

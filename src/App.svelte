@@ -7,7 +7,7 @@
   import { loadGTFS, type GTFS, type Stop } from './lib/gtfs';
   import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
-  import { defaultTab, liveLocationWatch } from './lib/settings';
+  import { defaultTab, liveLocationWatch, seniorMode } from './lib/settings';
   import { alarms } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack } from './lib/backstack';
@@ -155,6 +155,12 @@
     } finally {
       gtfsRetrying = false;
     }
+  }
+
+  // Razred za način za starejše. Ločen od tem (applyTheme prevrača samo svoje
+  // razrede), zato se lahko kombinira s katerokoli temo.
+  $: if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('senior', $seniorMode);
   }
 
   onMount(() => {

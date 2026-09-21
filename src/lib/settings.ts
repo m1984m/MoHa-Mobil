@@ -53,6 +53,12 @@ export const departureDisplay = persisted<DepartureDisplay>('mm.departureDisplay
 // Kompaktni seznami — manjše višine vrstic, več vsebine na ekran.
 export const compactLists = persisted<boolean>('mm.compactLists.v1', false);
 
+// Način za starejše: besedilo +50 %, večje tarče za dotik, razmik med njimi,
+// kontrast po WCAG AAA (7:1) in manj vsebine na zaslon. Ni isto kot samo večja
+// pisava — pri +50 % se cel opis linije razlomi v pet vrstic, zato je v tem
+// načinu v ospredju končna postaja, vmesne pa v drobnejši vrstici pod njo.
+export const seniorMode = persisted<boolean>('mm.seniorMode.v1', false);
+
 // Sledi uporabnikovi lokaciji v živo (watchPosition) — pika na karti se premika
 // med hojo/vožnjo. Default ON za beta, da dobimo feedback; off pa prihrani baterijo.
 export const liveLocationWatch = persisted<boolean>('mm.liveLocationWatch.v1', true);

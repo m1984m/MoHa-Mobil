@@ -11,8 +11,8 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '21. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Na Domu nova gumba »V center« in »Iz centra« — pokažeta samo postajališča v izbrano smer',
-  'Spodnji meni lebdi nad vsebino in je prosojen, tako da se karta pod njim vidi',
-  'Kdor ima v telefonu vklopljeno zmanjšano prosojnost, dobi meni brez učinka',
-  'Kontrastna in črno-bela tema ostaneta neprosojni',
+  'Nov »Način za starejše« v Nastavitvah pod Izgledom: besedilo in gumbi so večji',
+  'V tem načinu je pri odhodih v ospredju končna postaja, vmesne so pod njo',
+  'Močnejši kontrast in manj vsebine na zaslon, da ni treba toliko drsati',
+  'Zelena barva za »na voznem redu« je potemnjena — prej je bila premalo berljiva',
 ];

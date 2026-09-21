@@ -1,8 +1,12 @@
 <script lang="ts">
   import type { ComponentType } from 'svelte';
+  import { seniorMode } from '../settings';
   export let tabs: { id: string; label: string; icon: ComponentType; iconActive?: ComponentType }[] = [];
   export let active: string;
   export let onChange: (id: string) => void;
+
+  // Ikone rastejo z besedilom; --tabbar-h poskrbi, da vrstica zraste z njimi.
+  $: iconSize = $seniorMode ? 30 : 23;
 
   // Lebdeča steklena vrstica (iOS 27). Prej je bila neprosojna ploskev od roba
   // do roba s črto na vrhu — vsebina pod njo je bila skrita. Zdaj vrstica stoji
@@ -15,10 +19,11 @@
             max-width: calc(40rem - 2 * var(--tabbar-gap));
             bottom: calc(env(safe-area-inset-bottom) + var(--tabbar-gap));
             border-radius: calc(var(--tabbar-h) / 2 - 2px);">
-  <div class="grid" style="grid-template-columns: repeat({tabs.length}, 1fr); height: var(--tabbar-h);">
+  <div class="grid" style="grid-template-columns: repeat({tabs.length}, 1fr);">
     {#each tabs as t}
       {@const isActive = t.id === active}
       <button class="mm-tab pressable relative flex flex-col items-center justify-center gap-0.5"
+              style="min-height: var(--tabbar-h); padding: 4px 2px;"
               on:click={() => onChange(t.id)}
               aria-label={t.label}
               aria-current={isActive ? 'page' : undefined}>
@@ -27,10 +32,10 @@
         {/if}
         <span class="relative flex flex-col items-center gap-0.5">
           <svelte:component this={(isActive && t.iconActive) || t.icon}
-                            size={23}
+                            size={iconSize}
                             strokeWidth={isActive ? 2.25 : 1.75}
                             color={isActive ? 'var(--accent)' : 'var(--text-muted)'} />
-          <span class="t-footnote leading-none" style="color: {isActive ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: {isActive ? 600 : 400};">
+          <span class="t-footnote mm-tab-label" style="color: {isActive ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: {isActive ? 600 : 400};">
             {t.label}
           </span>
         </span>
@@ -40,7 +45,11 @@
 </nav>
 
 <style>
-  .mm-tab { background: none; border: 0; padding: 0; color: inherit; touch-action: manipulation; }
+  .mm-tab { background: none; border: 0; color: inherit; touch-action: manipulation; }
+
+  /* Napis se sme prelomiti v dve vrstici (»Vozni redi« v načinu za starejše);
+     vrstica zraste z njim, ker ima gumb min-height in ne fiksne višine. */
+  .mm-tab-label { line-height: 1.15; text-align: center; }
 
   /* Kapsula pod aktivnim zavihkom. Absolutna, da ne premakne ikone in napisa. */
   .mm-tab-pill {

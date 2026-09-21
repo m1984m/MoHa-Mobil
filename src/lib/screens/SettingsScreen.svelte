@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus } from 'lucide-svelte';
+  import { Sun, Moon, Monitor, Info, Code2, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
-  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
+  import { plannerShowFavs, mapStyleKind, walkSpeedKmh, homeShowNearby, homeShowFavs, defaultTab, nearbyRadiusM, departureDisplay, compactLists, mapLabelSize, liveLocationWatch, seniorMode, type MapStyleKind, type DefaultTab, type DepartureDisplay, type MapLabelSize } from '../settings';
   import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from '../release';
   import { loadMeta, type GtfsMeta } from '../gtfs';
   import { disablePush } from '../push';
@@ -161,6 +161,27 @@
             {/if}
           </button>
         {/each}
+      </ul>
+
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-3">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
+          <Accessibility size={20} color={$seniorMode ? 'var(--accent)' : 'var(--text-muted)'} strokeWidth={$seniorMode ? 2.2 : 1.75} />
+          <div class="flex-1">
+            <div class="t-body {$seniorMode ? 'font-semibold' : ''}">Način za starejše</div>
+            <div class="t-footnote text-muted mt-0.5">
+              Večje besedilo in gumbi, močnejši kontrast, manj vsebine na zaslon.
+              Pri odhodih je v ospredju končna postaja.
+            </div>
+          </div>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$seniorMode ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => seniorMode.update(v => !v)}
+                  aria-label="Preklopi način za starejše"
+                  aria-pressed={$seniorMode}>
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$seniorMode ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
       </ul>
     </section>
 

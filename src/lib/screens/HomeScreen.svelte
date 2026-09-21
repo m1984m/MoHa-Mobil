@@ -3,7 +3,7 @@
   import { MapPinned, CloudOff, ArrowDownToDot, ArrowUpFromDot } from 'lucide-svelte';
   import {
     nearestStops, upcomingDepartures, loadMeta, feedCoversDate,
-    buildCenterIndex, stopServesCenter, matchesCenter,
+    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination,
     type GTFS, type Stop, type CenterDir, type CenterIndex,
   } from '../gtfs';
   import type { Weather } from '../weather';
@@ -13,7 +13,7 @@
   import EmptyState from '../ui/EmptyState.svelte';
   import StopBoard, { type BoardRow } from '../ui/StopBoard.svelte';
   import { favStops } from '../favorites';
-  import { homeShowNearby, homeShowFavs, nearbyRadiusM } from '../settings';
+  import { homeShowNearby, homeShowFavs, nearbyRadiusM, seniorMode } from '../settings';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { fmtMonthYearGenitive } from '../time';
 
@@ -77,7 +77,11 @@
     const ok = dir && idx ? list.filter(s => stopServesCenter(idx.get(s.id), dir)) : list;
     return ok.slice(0, k);
   }
-  $: nearStops = pickStops(nearCandidates, centerIndex, centerFilter, 8);
+  // V načinu za starejše je na zaslonu manj kartic in manj odhodov na kartico —
+  // dolg seznam pri veliki pisavi zahteva le več drsenja, ne da bi kaj povedal.
+  $: maxStops = $seniorMode ? 5 : 8;
+  $: maxRows = $seniorMode ? 2 : 3;
+  $: nearStops = pickStops(nearCandidates, centerIndex, centerFilter, maxStops);
   $: favStopList = pickStops(
     gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [],
     centerIndex, centerFilter, 50,
@@ -115,7 +119,9 @@
     liveByStop = next;
   }
 
-  const ROWS = 3;
+  // Imena postaj za "cilj" v načinu za starejše — zadnja postaja vožnje je
+  // zanesljivejši cilj kot razrez opisa linije.
+  $: stopNames = gtfs ? new Map(gtfs.stops.map(s => [s.id, s.name])) : new Map<number, string>();
 
   // Ob vklopljenem filtru se odhodi najprej presejejo in šele nato odreže prve
   // tri — sicer bi bila kartica prazna vedno, ko prvi trije odhodi peljejo v
@@ -135,7 +141,7 @@
         minutesFromNow: a.etaMin,
         depSec: (hh || 0) * 3600 + (mm || 0) * 60,
       });
-      if (out.length === ROWS) break;
+      if (out.length === maxRows) break;
     }
     return out;
   }
@@ -144,7 +150,7 @@
     if (!gtfs) return [];
     const e = centerIndex?.get(stopId);
     const out: BoardRow[] = [];
-    for (const d of upcomingDepartures(gtfs, stopId, new Date(), centerFilter ? 24 : ROWS)) {
+    for (const d of upcomingDepartures(gtfs, stopId, new Date(), centerFilter ? 24 : maxRows)) {
       if (centerFilter && !matchesCenter(e, centerFilter, d.route.short, d.trip.headsign)) continue;
       out.push({
         routeId: d.route.id,
@@ -152,8 +158,9 @@
         headsign: d.trip.headsign,
         minutesFromNow: d.minutesFromNow,
         depSec: d.depSec,
+        destination: tripDestination(gtfs, d.trip, stopNames),
       });
-      if (out.length === ROWS) break;
+      if (out.length === maxRows) break;
     }
     return out;
   }
@@ -181,7 +188,7 @@
   // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnosti jasne.
   function makeBoards<T extends Stop>(
     g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number,
-    _idx: CenterIndex | null, filter: CenterDir | null,
+    _idx: CenterIndex | null, filter: CenterDir | null, _senior: boolean,
   ) {
     if (!g) return [];
     // Postajališči z istim imenom sta par čez cesto — brez namiga o smeri ju
@@ -199,8 +206,8 @@
     // "kje ujamem avtobus v center" — raje je ni.
     }).filter(b => !filter || b.rows.length > 0);
   }
-  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter);
-  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter);
+  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
+  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
   $: nearLive = anyLive(nearStops, liveByStop, tick);
   $: favLive = anyLive(favStopList, liveByStop, tick);
 
@@ -223,7 +230,7 @@
 <Screen title="Dom" onRefresh={refresh}>
   <div class="px-4 pb-6 space-y-4 max-w-screen-sm mx-auto">
     <!-- Greeting / context strip -->
-    <div class="flex items-start justify-between">
+    <div class="flex items-start justify-between" class:mm-stack={$seniorMode}>
       <div class="min-w-0">
         <div class="t-subhead text-muted">
           {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
@@ -263,14 +270,14 @@
       {#each CENTER_CHIPS as c (c.id)}
         {@const on = centerFilter === c.id}
         <button type="button"
-                class="pressable flex-1 h-11 rounded-full border flex items-center justify-center gap-2 t-subhead font-semibold"
-                style="touch-action: manipulation;
+                class="pressable flex-1 rounded-full border flex items-center justify-center gap-2 t-subhead font-semibold"
+                style="touch-action: manipulation; min-height: {$seniorMode ? '56px' : '44px'};
                        background: {on ? 'var(--accent)' : 'var(--surface-2)'};
                        color: {on ? '#ffffff' : 'var(--text)'};
                        border-color: {on ? 'var(--accent)' : 'var(--border)'};"
                 aria-pressed={on}
                 on:click={() => toggleCenter(c.id)}>
-          <svelte:component this={c.icon} size={17} strokeWidth={2}
+          <svelte:component this={c.icon} size={$seniorMode ? 22 : 17} strokeWidth={2}
                             color={on ? '#ffffff' : 'var(--text-muted)'} />
           {c.label}
         </button>
@@ -304,7 +311,7 @@
     {:else if boards.length === 0}
       <EmptyState icon={CloudOff} title="Ni postajališč v bližini" body="Premakni se bližje središču mesta." />
     {:else}
-      <div class="flex items-center justify-between pt-1">
+      <div class="flex items-center justify-between pt-1" class:mm-stack={$seniorMode}>
         <h2 class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča{centerSuffix}</h2>
         <LiveDot live={nearLive} label={nearLive ? 'V živo' : 'Po voznem redu'} />
       </div>
@@ -317,7 +324,7 @@
     {/if}
 
     {#if $homeShowFavs && favBoards.length > 0}
-      <div class="flex items-center justify-between pt-2">
+      <div class="flex items-center justify-between pt-2" class:mm-stack={$seniorMode}>
         <h2 class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča{centerSuffix}</h2>
         <LiveDot live={favLive} label={favLive ? 'V živo' : 'Po voznem redu'} />
       </div>
@@ -328,3 +335,13 @@
     {/if}
   </div>
 </Screen>
+
+<style>
+  /* Pri +50 % besedila se vrstica "naslov levo, oznaka desno" razbije v dva
+     ozka stolpca, ki oba lomita besede. V načinu za starejše gre v dve vrstici. */
+  .mm-stack {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+</style>
