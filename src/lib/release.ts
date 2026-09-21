@@ -11,6 +11,6 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '22. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Za uporabnika se ne spremeni nič — ta različica doda orodje za razvijalca',
+  'Za uporabnika se ne spremeni nič — ta različica dopolnjuje orodje za razvijalca',
   'Anonimno štetje uporabe lahko še vedno izklopiš v Nastavitvah pod »Podatki«',
 ];

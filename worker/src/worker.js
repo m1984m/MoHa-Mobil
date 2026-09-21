@@ -135,8 +135,9 @@ async function handleOba(request, env, ctx, path, cors) {
   // Stetje gre skozi isto pot kot odgovor; `stej` se poklice pri vsakem izhodu.
   const zacetek = Date.now();
   const drzava = (request.cf && request.cf.country) || '';
+  let postaja = '';   // samo pri GetArrivalsForStopPoint; napolni se spodaj
   const stej = (izid, status, preko) => recordUpstream(env, {
-    storitev: 'oba', metoda: method, izid, status, preko, drzava, ms: Date.now() - zacetek,
+    storitev: 'oba', metoda: method, izid, status, preko, drzava, ms: Date.now() - zacetek, postaja,
   });
 
   const inUrl = new URL(request.url);
@@ -147,6 +148,7 @@ async function handleOba(request, env, ctx, path, cors) {
     const id = inUrl.searchParams.get('stopPointId');
     if (!/^\d{1,7}$/.test(id ?? '')) return json({ error: 'bad stopPointId' }, 400, cors);
     upstream.searchParams.set('stopPointId', id);
+    postaja = id;
   }
 
   // Ključ predpomnilnika je upstream URL, zato si zadetek delijo vsi uporabniki:

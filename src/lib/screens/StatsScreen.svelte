@@ -1,11 +1,20 @@
 <script lang="ts">
-  import { ArrowLeft, RefreshCw, KeyRound, TriangleAlert } from 'lucide-svelte';
+  import { ArrowLeft, RefreshCw, KeyRound, TriangleAlert, Table2, ChartColumn } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
+  import type { GTFS } from '../gtfs';
+  import ChartTime from '../ui/viz/ChartTime.svelte';
+  import ChartBars from '../ui/viz/ChartBars.svelte';
   import { pridobi, beriKljuc, shraniKljuc, vsota, NapacenKljuc, type Statistika, type Vrstica } from '../stats';
 
   // Skriti zaslon za razvijalca: odpre se po desetih dotikih na ime v
   // Nastavitvah. Vsebuje samo seštevke — nobenega podatka o posamezniku.
+  //
+  // Oblike so izbrane po nalogi podatka, ne po okusu: časovnice so črta oziroma
+  // stolpci (sprememba skozi čas), primerjave so vodoravni stolpci (velikost),
+  // posamezne številke so ploščice (ena vrednost), postajališča pa karta (prostor).
+  // Nikjer ni dveh meril na eni osi in nikjer ni barve kot edinega nosilca pomena.
   export let open = false;
+  export let gtfs: GTFS | null = null;
   export let onClose: () => void;
 
   let dni = 7;
@@ -14,6 +23,10 @@
   let napaka = '';
   let rabiKljuc = false;
   let vnos = '';
+  let stevilke = false;          // pogled s surovimi številkami (dostopna različica grafov)
+
+  // Karta vleče MapLibre (~800 kB), zato se naloži šele, ko so podatki tu.
+  let StopMapComp: typeof import('../ui/viz/StopMap.svelte').default | null = null;
 
   const IZBIRE = [1, 7, 30];
 
@@ -24,11 +37,14 @@
     try {
       podatki = await pridobi(dni);
       rabiKljuc = false;
+      if (!StopMapComp && podatki.postaje?.length) {
+        import('../ui/viz/StopMap.svelte').then(m => { StopMapComp = m.default; }).catch(() => {});
+      }
     } catch (e) {
       podatki = null;
       if (e instanceof NapacenKljuc) {
         rabiKljuc = true;
-        napaka = beriKljuc() ? '' : (e.message === 'Ključ ni pravi.' ? 'Ključ ni pravi. Poskusi znova.' : '');
+        napaka = e.message === 'Ključ ni pravi.' ? 'Ključ ni pravi. Poskusi znova.' : '';
       } else {
         napaka = e instanceof Error ? e.message : String(e);
       }
@@ -51,7 +67,6 @@
     rabiKljuc = true;
   }
 
-  // Ob odprtju naloži; ob zaprtju pozabi podatke, da ne visijo v pomnilniku.
   $: if (open && !podatki && !nalagam && !rabiKljuc && !napaka) nalozi();
   $: if (!open) { podatki = null; napaka = ''; }
 
@@ -61,21 +76,40 @@
     nalozi();
   }
 
-  function stevilo(v: Vrstica, polje = 'n'): string {
-    return Number(v[polje] ?? 0).toLocaleString('sl-SI');
-  }
+  const stevilo = (n: number | string) => Number(n ?? 0).toLocaleString('sl-SI');
 
   function datum(v: string): string {
     const d = new Date(String(v).replace(' ', 'T'));
     return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('sl-SI', { day: 'numeric', month: 'short' });
   }
 
-  $: namescenih = podatki ? vsota(podatki.zagoni.filter(z => z.nacin === 'namescena')) : 0;
+  // ── izpeljane vrednosti ────────────────────────────────────────────────────
+  $: zagoniDnevi = (podatki?.zagoniDnevi ?? []).map(v => ({ dan: String(v.dan), n: Number(v.n) || 0 }));
+  $: zaledjeDnevi = (podatki?.zaledjeDnevi ?? []).map(v => ({
+    dan: String(v.dan), n: Number(v.n) || 0, slabo: Number(v.napak) || 0,
+  }));
+  $: odziv = (podatki?.zaledjeDnevi ?? []).map(v => ({ dan: String(v.dan), n: Math.round(Number(v.ms_p50) || 0) }));
+
   $: vsehZagonov = podatki ? vsota(podatki.zagoni) : 0;
+  $: namescenih = podatki ? vsota(podatki.zagoni.filter(z => z.nacin === 'namescena')) : 0;
   $: klicevZaledja = podatki ? vsota(podatki.zaledje) : 0;
   $: napakZaledja = podatki
-    ? vsota(podatki.zaledje.filter(v => v.izid === 'napaka' || v.izid === 'nedosegljiv'))
-    : 0;
+    ? vsota(podatki.zaledje.filter(v => v.izid === 'napaka' || v.izid === 'nedosegljiv')) : 0;
+  $: medianaMs = odziv.length ? Math.round(odziv.reduce((a, b) => a + b.n, 0) / odziv.length) : 0;
+
+  $: razlicice = (podatki?.zagoni ?? []).map(z => ({
+    oznaka: `${z.razlicica} · ${z.nacin === 'namescena' ? 'nameščena' : 'brskalnik'}`,
+    n: Number(z.n) || 0,
+  }));
+  $: zavihki = (podatki?.zavihki ?? []).map(z => ({ oznaka: String(z.zavihek), n: Number(z.n) || 0 }));
+  $: postajeZaKarto = (podatki?.postaje ?? []).map(p => ({ postaja: String(p.postaja), n: Number(p.n) || 0 }));
+  $: dejanja = [
+    ...(podatki?.filter ?? []).map(v => ({ oznaka: 'filter · ' + v.smer, n: Number(v.n) || 0 })),
+    ...(podatki?.namestitev ?? []).map(v => ({ oznaka: 'namestitev · ' + v.korak, n: Number(v.n) || 0 })),
+    ...(podatki?.omrezje ?? []).map(v => ({
+      oznaka: 'omrežje · ' + v.stanje, n: Number(v.n) || 0, poudarek: v.stanje === 'offline',
+    })),
+  ];
 </script>
 
 {#if open}
@@ -87,6 +121,14 @@
         <ArrowLeft size={20} />
       </button>
       <h1 class="t-title2 flex-1 min-w-0 truncate">Statistika</h1>
+      {#if podatki}
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
+                on:click={() => stevilke = !stevilke}
+                aria-pressed={stevilke}
+                aria-label={stevilke ? 'Pokaži grafe' : 'Pokaži številke'}>
+          {#if stevilke}<ChartColumn size={18} />{:else}<Table2 size={18} />{/if}
+        </button>
+      {/if}
       <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
               on:click={nalozi} disabled={nalagam} aria-label="Osveži">
         <RefreshCw size={18} class={nalagam ? 'animate-spin' : ''} />
@@ -131,107 +173,146 @@
 
         {#if podatki}
           <!-- obdobje -->
-          <div class="flex gap-2">
+          <div class="flex gap-2" role="group" aria-label="Obdobje">
             {#each IZBIRE as d}
               {@const a = dni === d}
               <button class="pressable flex-1 min-h-[44px] rounded-xl t-subhead font-semibold border"
                       style="background: {a ? 'var(--accent)' : 'var(--surface-2)'}; color: {a ? '#fff' : 'var(--text)'}; border-color: {a ? 'var(--accent)' : 'var(--border)'};"
+                      aria-pressed={a}
                       on:click={() => izbraniDnevi(d)}>
                 {d === 1 ? 'danes' : d + ' dni'}
               </button>
             {/each}
           </div>
 
-          <!-- povzetek -->
+          <!-- ploščice: ena vrednost na ploščico, brez grafa -->
           <div class="grid grid-cols-2 gap-3">
             <div class="surface-2 rounded-2xl border border-base p-3">
               <div class="t-footnote text-muted">Zagonov</div>
-              <div class="t-title1">{vsehZagonov.toLocaleString('sl-SI')}</div>
-              <div class="t-footnote text-muted">od tega nameščenih {namescenih.toLocaleString('sl-SI')}</div>
+              <div class="mm-hero">{stevilo(vsehZagonov)}</div>
+              <div class="t-footnote text-muted">nameščenih {stevilo(namescenih)}</div>
             </div>
             <div class="surface-2 rounded-2xl border border-base p-3">
               <div class="t-footnote text-muted">Klicev zaledja</div>
-              <div class="t-title1">{klicevZaledja.toLocaleString('sl-SI')}</div>
+              <div class="mm-hero">{stevilo(klicevZaledja)}</div>
               <div class="t-footnote" style="color: {napakZaledja > 0 ? 'var(--status-disrupt)' : 'var(--text-muted)'}">
-                {napakZaledja > 0 ? napakZaledja.toLocaleString('sl-SI') + ' napak' : 'brez napak'}
+                {napakZaledja > 0 ? stevilo(napakZaledja) + ' napak' : 'brez napak'}
               </div>
             </div>
           </div>
 
-          <!-- zagoni -->
-          <section>
-            <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zagoni</h2>
-            <ul class="surface rounded-2xl border border-base overflow-hidden">
-              {#each podatki.zagoni as z, i}
-                <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                  <div class="flex-1 min-w-0">
-                    <div class="t-subhead font-medium truncate">
-                      {z.nacin === 'namescena' ? 'Nameščena' : 'V brskalniku'} · {z.razlicica}
-                    </div>
-                    <div class="t-footnote text-muted truncate">
-                      tema {z.tema}{z.starejsi === 'da' ? ' · za starejše' : ''}
-                    </div>
-                  </div>
-                  <div class="t-subhead font-bold tabular-nums">{stevilo(z)}</div>
-                </li>
-              {:else}
-                <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
-              {/each}
-            </ul>
-          </section>
+          {#if !stevilke}
+            <!-- ── grafi ─────────────────────────────────────────────────── -->
+            <section class="surface-2 rounded-2xl border border-base p-3">
+              <ChartTime tocke={zagoniDnevi} naslov="Zagoni po dnevih" enota="zagonov" vrsta="ploskev" />
+            </section>
 
-          <!-- zavihki + filter -->
-          <section>
-            <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zavihki</h2>
-            <ul class="surface rounded-2xl border border-base overflow-hidden">
-              {#each podatki.zavihki as z, i}
-                <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                  <div class="flex-1 t-subhead truncate">{z.zavihek}</div>
-                  <div class="t-subhead font-bold tabular-nums">{stevilo(z)}</div>
-                </li>
-              {:else}
-                <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
-              {/each}
-            </ul>
-          </section>
+            <section class="surface-2 rounded-2xl border border-base p-3 space-y-4">
+              <ChartTime tocke={zaledjeDnevi} naslov="Klici zaledja po dnevih" enota="klicev" vrsta="stolpci" />
+              <p class="t-footnote text-muted">
+                Rdeči del stolpca so neuspeli klici. Prav ta številka bi septembra pokazala,
+                da posrednik ne odgovarja.
+              </p>
+              <ChartTime tocke={odziv} naslov="Odzivni čas (mediana)" enota="ms" vrsta="ploskev" />
+            </section>
 
-          <section>
-            <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Filter smeri in namestitev</h2>
-            <ul class="surface rounded-2xl border border-base overflow-hidden">
-              {#each [...podatki.filter.map(v => ({ k: 'filter · ' + v.smer, n: v.n })), ...podatki.namestitev.map(v => ({ k: 'namestitev · ' + v.korak, n: v.n })), ...podatki.omrezje.map(v => ({ k: 'omrežje · ' + v.stanje, n: v.n }))] as v, i}
-                <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                  <div class="flex-1 t-subhead truncate">{v.k}</div>
-                  <div class="t-subhead font-bold tabular-nums">{Number(v.n).toLocaleString('sl-SI')}</div>
-                </li>
-              {:else}
-                <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
-              {/each}
-            </ul>
-          </section>
+            {#if StopMapComp && podatki.postaje?.length}
+              <section class="surface-2 rounded-2xl border border-base p-3">
+                <svelte:component this={StopMapComp} postaje={postajeZaKarto} {gtfs} />
+              </section>
+            {/if}
 
-          <!-- zaledje -->
-          <section>
-            <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zaledje po dnevih</h2>
-            <ul class="surface rounded-2xl border border-base overflow-hidden">
-              {#each podatki.zaledje as v, i}
-                {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv'}
-                <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                  <div class="flex-1 min-w-0">
-                    <div class="t-subhead font-medium truncate">
-                      {datum(String(v.dan))} · {v.storitev}
-                      <span style="color: {slabo ? 'var(--status-disrupt)' : 'var(--status-ontime)'}">{v.izid}</span>
+            <section class="surface-2 rounded-2xl border border-base p-3">
+              <ChartBars vrstice={zavihki} naslov="Zavihki" enota="preklopov" />
+            </section>
+
+            <section class="surface-2 rounded-2xl border border-base p-3">
+              <ChartBars vrstice={razlicice} naslov="Katera gradnja teče" enota="zagonov" />
+            </section>
+
+            {#if dejanja.length}
+              <section class="surface-2 rounded-2xl border border-base p-3">
+                <ChartBars vrstice={dejanja} naslov="Dejanja" enota="dogodkov" />
+              </section>
+            {/if}
+
+          {:else}
+            <!-- ── številke: ista vsebina brez barv, za bralnik zaslona in izvoz ── -->
+            <section>
+              <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zagoni</h2>
+              <ul class="surface rounded-2xl border border-base overflow-hidden">
+                {#each podatki.zagoni as z, i}
+                  <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                    <div class="flex-1 min-w-0">
+                      <div class="t-subhead font-medium truncate">
+                        {z.nacin === 'namescena' ? 'Nameščena' : 'V brskalniku'} · {z.razlicica}
+                      </div>
+                      <div class="t-footnote text-muted truncate">
+                        tema {z.tema}{z.starejsi === 'da' ? ' · za starejše' : ''}
+                      </div>
                     </div>
-                    <div class="t-footnote text-muted">mediana {Number(v.ms_p50 ?? 0).toLocaleString('sl-SI')} ms</div>
-                  </div>
-                  <div class="t-subhead font-bold tabular-nums">{stevilo(v)}</div>
-                </li>
-              {:else}
-                <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
-              {/each}
-            </ul>
-          </section>
+                    <div class="t-subhead font-bold tabular-nums">{stevilo(z.n)}</div>
+                  </li>
+                {:else}
+                  <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
+                {/each}
+              </ul>
+            </section>
+
+            <section>
+              <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zavihki in dejanja</h2>
+              <ul class="surface rounded-2xl border border-base overflow-hidden">
+                {#each [...zavihki, ...dejanja] as v, i}
+                  <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                    <div class="flex-1 t-subhead truncate">{v.oznaka}</div>
+                    <div class="t-subhead font-bold tabular-nums">{stevilo(v.n)}</div>
+                  </li>
+                {:else}
+                  <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
+                {/each}
+              </ul>
+            </section>
+
+            <section>
+              <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zaledje po dnevih</h2>
+              <ul class="surface rounded-2xl border border-base overflow-hidden">
+                {#each podatki.zaledje as v, i}
+                  {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv'}
+                  <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                    <div class="flex-1 min-w-0">
+                      <div class="t-subhead font-medium truncate">
+                        {datum(String(v.dan))} · {v.storitev}
+                        <span style="color: {slabo ? 'var(--status-disrupt)' : 'var(--status-ontime)'}">{v.izid}</span>
+                      </div>
+                      <div class="t-footnote text-muted">mediana {stevilo(v.ms_p50)} ms</div>
+                    </div>
+                    <div class="t-subhead font-bold tabular-nums">{stevilo(v.n)}</div>
+                  </li>
+                {:else}
+                  <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
+                {/each}
+              </ul>
+            </section>
+
+            {#if podatki.postaje?.length}
+              <section>
+                <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Postajališča (id · pogledi)</h2>
+                <ul class="surface rounded-2xl border border-base overflow-hidden">
+                  {#each podatki.postaje.slice(0, 15) as v, i}
+                    <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                      <div class="flex-1 t-subhead truncate">
+                        {gtfs?.stops.find(s => s.id === Number(v.postaja))?.name ?? ('id ' + v.postaja)}
+                      </div>
+                      <div class="t-subhead font-bold tabular-nums">{stevilo(v.n)}</div>
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
+          {/if}
 
           <p class="t-footnote text-muted leading-relaxed">
+            Povprečna mediana odziva {stevilo(medianaMs)} ms.
             Osveženo {new Date(podatki.ob).toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' })}{podatki.izPredpomnilnika ? ' (iz predpomnilnika Workerja)' : ''}.
             Hramba je tri mesece. Samo seštevki — nobenega podatka o posamezniku.
           </p>
@@ -242,3 +323,14 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /* Vodilna številka: velika in v sans, kot pri ploščici s KPI. */
+  .mm-hero {
+    font-size: calc(30px * var(--ui-scale));
+    line-height: 1.1;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin: 2px 0;
+  }
+</style>

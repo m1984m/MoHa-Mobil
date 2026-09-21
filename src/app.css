@@ -270,6 +270,46 @@ input, textarea, select, button { font-family: inherit; color: inherit; }
 @utility shadow-elev { box-shadow: var(--shadow-2); }
 @utility shadow-float { box-shadow: var(--shadow-3); }
 
+/* ---------- Barve za grafe ----------
+   Ločene od blagovne rdeče: rdeča je v aplikaciji barva poudarka (gumbi,
+   aktivni zavihek), na grafu pa mora rdeča pomeniti napako. Če bi bila serija
+   rdeča, bi se pomena mešala.
+   Paleta je preverjena z validatorjem (OKLab, simulacija barvne slepote):
+   svetla #2a78d6/#e34948 in temna #3987e5/#e66767 — CVD ΔE 21,6 oz. 19,2
+   (meja 8), navadni vid 32,3 oz. 29,0 (meja 15), kontrast do podlage ≥ 3:1.
+   Zaporedna lestvica je en odtenek od svetlega proti temnemu. */
+:root {
+  --viz-1: #2a78d6;
+  --viz-bad: #e34948;
+  --viz-grid: rgba(0, 0, 0, 0.08);
+  --viz-s1: #dce9f8;
+  --viz-s2: #a8c9ee;
+  --viz-s3: #6ba6e3;
+  --viz-s4: #2a78d6;
+  --viz-s5: #1a5aa5;
+}
+:root.dark {
+  --viz-1: #3987e5;
+  --viz-bad: #e66767;
+  --viz-grid: rgba(255, 255, 255, 0.10);
+  --viz-s1: #143a63;
+  --viz-s2: #1c5391;
+  --viz-s3: #2a72c4;
+  --viz-s4: #3987e5;
+  --viz-s5: #7cb0ef;
+}
+/* Visoki kontrast in črno-belo: grafi brez barvnega kodiranja. */
+:root.contrast, :root.mono {
+  --viz-1: #000000;
+  --viz-bad: #000000;
+  --viz-grid: rgba(0, 0, 0, 0.35);
+  --viz-s1: #e0e0e0;
+  --viz-s2: #b0b0b0;
+  --viz-s3: #808080;
+  --viz-s4: #505050;
+  --viz-s5: #000000;
+}
+
 /* ---------- Steklena površina (iOS 27) ----------
    Predpona mm- namenoma: razred živi v skupnem CSS-u in bi brez nje lahko
    podedoval tuja pravila. Osnova deluje povsod (barva + rob + senca); zameglitev

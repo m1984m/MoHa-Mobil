@@ -433,7 +433,7 @@
   <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false} />
 
   {#if StatsScreenComp}
-    <svelte:component this={StatsScreenComp} open={statsOpen} onClose={() => statsOpen = false} />
+    <svelte:component this={StatsScreenComp} open={statsOpen} {gtfs} onClose={() => statsOpen = false} />
   {/if}
 
   <UpdateToast />

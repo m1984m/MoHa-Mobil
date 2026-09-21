@@ -16,6 +16,9 @@ export type Statistika = {
   filter: Vrstica[];
   namestitev: Vrstica[];
   omrezje: Vrstica[];
+  zagoniDnevi: Vrstica[];
+  zaledjeDnevi: Vrstica[];
+  postaje: Vrstica[];
   zaledje: Vrstica[];
 };
 

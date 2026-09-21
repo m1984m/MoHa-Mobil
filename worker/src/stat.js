@@ -73,6 +73,25 @@ export function poizvedbe(dni) {
       SELECT blob3 AS stanje, SUM(_sample_interval) AS n
       FROM ${NABOR} WHERE blob1 = 'app' AND blob2 = 'omrezje' AND ${OD}
       GROUP BY stanje ORDER BY n DESC FORMAT JSON`,
+    // Casovnica zagonov po dnevih — ena serija, za crto/ploscino.
+    zagoniDnevi: `
+      SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan, SUM(_sample_interval) AS n
+      FROM ${NABOR} WHERE blob1 = 'app' AND blob2 = 'zagon' AND ${OD}
+      GROUP BY dan ORDER BY dan FORMAT JSON`,
+    // Casovnica zaledja po dnevih: skupaj, od tega napake, in mediana odziva.
+    zaledjeDnevi: `
+      SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
+             SUM(_sample_interval) AS n,
+             sumIf(_sample_interval, blob4 = 'napaka' OR blob4 = 'nedosegljiv') AS napak,
+             quantileExactWeighted(0.5)(double1, _sample_interval) AS ms_p50
+      FROM ${NABOR} WHERE blob1 = 'srv' AND ${OD}
+      GROUP BY dan ORDER BY dan FORMAT JSON`,
+    // Najbolj gledana postajalisca (blob8 pri GetArrivalsForStopPoint).
+    postaje: `
+      SELECT blob8 AS postaja, SUM(_sample_interval) AS n
+      FROM ${NABOR}
+      WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND ${OD}
+      GROUP BY postaja ORDER BY n DESC LIMIT 60 FORMAT JSON`,
     zaledje: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
              blob2 AS storitev, blob4 AS izid,

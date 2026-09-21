@@ -5,6 +5,41 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.17.0 — 2026-09-22
+
+Statistika dobi grafe in karto. Za uporabnika se ne spremeni nič.
+
+### Oblike so izbrane po nalogi podatka
+- **Časovnice** so črta s ploskvijo (zagoni, odzivni čas) oziroma stolpci (klici zaledja) — sprememba skozi čas.
+- **Primerjave** so vodoravni stolpci (zavihki, gradnje, dejanja) — velikost. Vodoravno zato, ker so oznake različno dolge besede, ki bi se pri navpičnih stolpcih morale vrteti ali krajšati.
+- **Posamezne številke** ostanejo ploščice brez grafa — en podatek ni graf.
+- **Postajališča** so karta (MapLibre): prostorski podatek pripada prostorski obliki.
+
+**Nikjer ni dveh meril na eni osi.** Zato sta klici zaledja in odzivni čas dva grafa in ne eden z dvema osema — to je najpogostejša napaka pri grafih.
+
+### Barve
+Paleta je preverjena z validatorjem (OKLab, simulacija barvne slepote), ne izbrana po občutku: svetla `#2a78d6` / `#e34948` in temna `#3987e5` / `#e66767`. Razlika pri barvni slepoti ΔE 21,6 oziroma 19,2 (meja 8), pri navadnem vidu 32,3 oziroma 29,0 (meja 15), kontrast do podlage povsod nad 3:1.
+
+Blagovna rdeča se v grafih **ne** uporablja kot serija: v aplikaciji pomeni poudarek, na grafu pa mora rdeča pomeniti napako. Če bi bila serija rdeča, bi se pomena mešala.
+
+Za velikost (stolpci, krogi na karti) je zaporedna lestvica enega odtenka, več je temneje. Temna tema ima svoje korake, ne obrnjenih svetlih. Visoki kontrast in črno-belo dobita sivinsko lestvico.
+
+### Interakcija in dostopnost
+- Dotik ali miška po časovnici pokaže navpičnico in oblaček z datumom in vrednostjo.
+- Gumb v glavi preklopi med **grafi in številkami** — ista vsebina brez barv, za bralnik zaslona in za prepis.
+- Napake so rdeče **in** označene z besedo; barva ni nikoli edini nosilec pomena.
+- Vse mere se množijo z `--ui-scale`, zato grafi delujejo tudi v načinu za starejše.
+
+### Karta najbolj gledanih postajališč
+- Nova razsežnost v štetju: pri klicu prihodov se zabeleži **id postajališča** (blob8, samo pri `GetArrivalsForStopPoint`). Je seštevek po obdobju in ni vezan na napravo ali sejo. Stikalo `BELEZI_POSTAJO` v `worker/src/analytics.js` ga izklopi.
+- Polmer kroga raste s korenom števila (ploščina je sorazmerna z vrednostjo), barva je ista zaporedna lestvica, bel obroč loči prekrivajoče se kroge. Dotik kroga pokaže ime postajališča in število pogledov.
+- MapLibre se naloži šele, ko so podatki tu, in samo če je kaj za pokazati.
+
+### Nove poizvedbe
+`zagoniDnevi`, `zaledjeDnevi` (skupaj, od tega napake, mediana) in `postaje` — vse v `worker/src/stat.js`, kjer so že prejšnje. `sumIf` je v tem narečju podprt.
+
+---
+
 ## 0.16.0 — 2026-09-22
 
 Skriti zaslon s statistiko v aplikaciji. Za uporabnika se ne spremeni nič.

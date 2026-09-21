@@ -118,18 +118,26 @@ export function zapisi(env, { vir, dogodek, dims = [], ms = 0 }) {
   }
 }
 
+// Stikalo za zapis postajalisca pri GetArrivalsForStopPoint.
+const BELEZI_POSTAJO = true;
+
 /**
  * Štetje na strežniku. Kliče se iz poti /oba in /ors.
  * `izid` je 'ok' | 'cache' | 'napaka', `preko` pa 'relay' | 'direct'.
  */
-export function recordUpstream(env, { storitev, metoda, izid, status, preko, drzava, ms }) {
+export function recordUpstream(env, { storitev, metoda, izid, status, preko, drzava, ms, postaja }) {
   return zapisi(env, {
     vir: 'srv',
     dogodek: storitev,                       // 'oba' | 'ors'
-    dims: [metoda, izid, String(status ?? ''), preko ?? '', drzava ?? ''],
+    // blob8 je id postajalisca, in to SAMO pri GetArrivalsForStopPoint. Iz tega
+    // se na zaslonu s statistiko izrise karta najbolj gledanih postajalisc.
+    // Je seštevek po dnevih in ni vezan na napravo ali sejo; ce kdaj ne bo vec
+    // zazelen, postavi BELEZI_POSTAJO na false in zapis odpade.
+    dims: [metoda, izid, String(status ?? ''), preko ?? '', drzava ?? '', BELEZI_POSTAJO ? String(postaja ?? '') : ''],
     ms,
   });
 }
+
 
 /**
  * POST /ev — dogodki iz aplikacije.
