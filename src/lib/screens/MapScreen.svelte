@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert, Bike } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
@@ -13,7 +13,8 @@
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
   import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
-  import { mapStyleKind, departureDisplay, compactLists, getWalkMps } from '../settings';
+  import { mapStyleKind, departureDisplay, compactLists, getWalkMps, showBikes } from '../settings';
+  import { bikeStations, bikesError, startBikes, nearestBikeStation, type BikeStation } from '../bikes';
   import { pushBack } from '../backstack';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
@@ -21,6 +22,9 @@
   import { toast } from '../toast';
   import { walkRoutingDegraded } from '../routing';
   import { fmtClock, fmtDuration, fmtWaitSentence, fmtDayOffset, LEAVE_HINT_MAX_MIN } from '../time';
+  import { t, tr, plural } from '../i18n';
+  import Hint from '../ui/Hint.svelte';
+  import { hintVisible } from '../onboarding';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -67,6 +71,29 @@
   // Pin mode: aktiviran s tap-om na pin FAB (levo spodaj). Pokaže križ na sredini karte
   // + zamenja FAB-e na "Potrdi" / "Prekliči". Drugi tap na Potrdi zabije pin na center.
   let pinMode = false;
+
+  // MBajk: podatki tečejo samo, dokler je Karta odprta in sloj vklopljen.
+  let selectedBike: BikeStation | null = null;
+  let stopBikes: (() => void) | null = null;
+  // Med prikazom poti je sloj skrit — takrat tudi ne poizvedujemo.
+  $: bikesWanted = $showBikes && !activePlan;
+  $: if (bikesWanted && !stopBikes) stopBikes = startBikes();
+  $: if (!bikesWanted && stopBikes) { stopBikes(); stopBikes = null; selectedBike = null; }
+  let backBike: (() => void) | null = null;
+  $: if (selectedBike && !backBike) {
+    backBike = pushBack(() => selectedBike = null);
+  } else if (!selectedBike && backBike) {
+    const r = backBike; backBike = null; r();
+  }
+  // Kartica postaje kaže sveže številke, ne tistih ob tapu.
+  $: if (selectedBike) selectedBike = $bikeStations.find(b => b.id === selectedBike!.id) ?? selectedBike;
+  $: nearBike = selectedStop && $showBikes ? nearestBikeStation($bikeStations, selectedStop.lat, selectedStop.lon) : null;
+  $: if (selectedStop || selectedVehicle || activePlan) selectedBike = null;
+  function selectBike(b: BikeStation) {
+    onStopChange(null);
+    if (selectedVehicle) closeVehicle();
+    selectedBike = b;
+  }
   $: if (selectedStop || activePlan || selectedVehicle) pinMode = false;
 
   // Sistemski "nazaj" zapira poglede tega zaslona (bus detail, vozni redi, share)
@@ -131,6 +158,7 @@
     if (liveArrivalsTimer) clearInterval(liveArrivalsTimer);
     if (vehicleArrivalTimer) clearInterval(vehicleArrivalTimer);
     stopPolling();
+    stopBikes?.();
   });
 
   // Ko user izbere živ bus, potegnemo arrivals za njegov nextStopPointId in najdemo
@@ -306,7 +334,7 @@
   function tapArrivalBus(busCode: string) {
     if (!busCode) return;
     const lv = live.vehicles.find(v => v.busCode === busCode);
-    if (!lv) { flashToast('Avtobusa trenutno ni v živo'); return; }
+    if (!lv) { flashToast(tr('Avtobusa trenutno ni v živo')); return; }
     const dv = liveDisplay.find(d => d.tripId === lv.deviceId);
     if (!dv) return;
     stopBeforeVehicle = selectedStop;
@@ -519,12 +547,12 @@
     if (match) {
       const snapshot = { label: match.label, from: match.from, to: match.to };
       savedRoutes.remove(match.id);
-      toast.showUndo('Pot odstranjena iz priljubljenih', () => savedRoutes.add(snapshot));
+      toast.showUndo(tr('Pot odstranjena iz priljubljenih'), () => savedRoutes.add(snapshot));
       return;
     }
     const label = `${activePlan.from.name} → ${activePlan.to.name}`;
     savedRoutes.add({ label, from: activePlan.from, to: activePlan.to });
-    toast.show('Pot shranjena med priljubljene');
+    toast.show(tr('Pot shranjena med priljubljene'));
   }
 
   let shareDialogOpen = false;
@@ -561,16 +589,16 @@
   function buildShareInfo(): { title: string; text: string; url: string } {
     const f = activePlan!.from, t = activePlan!.to;
     const url = `${location.origin}${location.pathname}?from=${f.lat.toFixed(5)},${f.lon.toFixed(5)},${encodeURIComponent(f.name)}&to=${t.lat.toFixed(5)},${t.lon.toFixed(5)},${encodeURIComponent(t.name)}`;
-    const title = `Pot: ${f.name} → ${t.name}`;
+    const title = tr('Pot: {from} → {to}', { from: f.name, to: t.name });
     const lines: string[] = [];
     lines.push(`${f.name} → ${t.name}`);
-    lines.push(`Odhod ${fmtTime(activePlan!.plan.depSec)} · prihod ${fmtTime(activePlan!.plan.arrSec)} (${fmtDur(activePlan!.plan.arrSec - activePlan!.plan.depSec)})`);
+    lines.push(tr('Odhod {dep} · prihod {arr} ({dur})', { dep: fmtTime(activePlan!.plan.depSec), arr: fmtTime(activePlan!.plan.arrSec), dur: fmtDur(activePlan!.plan.arrSec - activePlan!.plan.depSec) }));
     const busShorts = activePlan!.plan.legs.filter(l => l.kind === 'bus').map((l: any) => l.route.short);
-    if (busShorts.length > 0) lines.push(`Linije: ${busShorts.join(' → ')}`);
-    if (planSummary.transfers > 0) lines.push(`Prestopi: ${planSummary.transfers}`);
-    if (planSummary.walkMin > 0) lines.push(`Hoja: ${planSummary.walkMin} min (${Math.round(planSummary.walkM)} m)`);
+    if (busShorts.length > 0) lines.push(tr('Linije: {lines}', { lines: busShorts.join(' → ') }));
+    if (planSummary.transfers > 0) lines.push(tr('Prestopi: {n}', { n: planSummary.transfers }));
+    if (planSummary.walkMin > 0) lines.push(tr('Hoja: {min} min ({m} m)', { min: planSummary.walkMin, m: Math.round(planSummary.walkM) }));
     lines.push('');
-    lines.push(`Odpri v MoHa Mobil: ${url}`);
+    lines.push(tr('Odpri v MoHa Mobil: {url}', { url }));
     return { title, text: lines.join('\n'), url };
   }
 
@@ -597,7 +625,7 @@
     try {
       if (nav.clipboard?.writeText) {
         await nav.clipboard.writeText(value);
-        flashToast(what === 'url' ? 'Povezava kopirana' : 'Besedilo kopirano');
+        flashToast(what === 'url' ? tr('Povezava kopirana') : tr('Besedilo kopirano'));
         return;
       }
     } catch {}
@@ -610,9 +638,9 @@
       ta.focus(); ta.select();
       const ok = document.execCommand('copy');
       document.body.removeChild(ta);
-      flashToast(ok ? 'Kopirano' : 'Kopiranje ni uspelo');
+      flashToast(ok ? tr('Kopirano') : tr('Kopiranje ni uspelo'));
     } catch {
-      flashToast('Kopiranje ni uspelo');
+      flashToast(tr('Kopiranje ni uspelo'));
     }
   }
 
@@ -648,9 +676,11 @@
     mapStyle={$mapStyleKind}
     showCrosshair={pinMode}
     onStopTap={(s) => onStopChange(s)}
-    onMapTap={() => { if (selectedStop) onStopChange(null); else if (selectedVehicle) closeVehicle(); }}
+    onMapTap={() => { if (selectedBike) selectedBike = null; else if (selectedStop) onStopChange(null); else if (selectedVehicle) closeVehicle(); }}
     onMapLongPress={onMapLongPress}
     onVehicleTap={onVehicleTap}
+    bikes={$showBikes && !activePlan ? $bikeStations : []}
+    onBikeTap={selectBike}
     onUserPan={() => { if (followBus) followBus = false; }} />
 
   <!-- Active plan floating card (expands inline) -->
@@ -664,23 +694,23 @@
                on:click={() => planExpanded = !planExpanded}
                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') planExpanded = !planExpanded; }}
                role="button" tabindex="0"
-               aria-label="Pokaži podrobnosti">
+               aria-label={$t('Pokaži podrobnosti')}>
             {#if hasAlternatives}
               <button type="button"
                       class="pressable inline-flex items-center gap-1 h-6 px-2 rounded-full border border-base t-footnote mb-1.5"
                       style="background: var(--surface-2)"
                       on:click|stopPropagation={onOpenPlanner}
-                      aria-label="Nazaj na vse predloge">
-                <ArrowLeft size={12} /> Vsi predlogi
+                      aria-label={$t('Nazaj na vse predloge')}>
+                <ArrowLeft size={12} /> {$t('Vsi predlogi')}
               </button>
             {/if}
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
                 <div class="t-footnote text-muted truncate">{activePlan.from.name} → {activePlan.to.name}</div>
-                <div class="t-title3 font-semibold">{fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec)} · prihod {fmtTime(activePlan.plan.arrSec)}</div>
+                <div class="t-title3 font-semibold">{$t('{dur} · prihod {time}', { dur: fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec), time: fmtTime(activePlan.plan.arrSec) })}</div>
                 <div class="t-footnote text-muted mt-0.5">
-                  {#if planSummary.transfers === 0}brez prestopanja{:else if planSummary.transfers === 1}1 prestop{:else}{planSummary.transfers} prestopov{/if}
-                  {#if planSummary.walkMin > 0} · {planSummary.walkMin} min peš ({Math.round(planSummary.walkM)} m){/if}
+                  {#if planSummary.transfers === 0}{$t('brez prestopanja')}{:else}{planSummary.transfers} {plural(planSummary.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}{/if}
+                  {#if planSummary.walkMin > 0} · {$t('{min} min peš ({m} m)', { min: planSummary.walkMin, m: Math.round(planSummary.walkM) })}{/if}
                 </div>
               </div>
               <div class="shrink-0 self-center transition-transform" style="transform: rotate({planExpanded ? 180 : 0}deg)">
@@ -705,14 +735,14 @@
                     class="flex-1 min-h-[44px] grid place-items-center border-b border-base"
                     style="touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0.08);"
                     on:click|stopPropagation={onClearPlan}
-                    aria-label="Počisti pot">
+                    aria-label={$t('Počisti pot')}>
               <X size={18} />
             </button>
             <button type="button"
                     class="flex-1 min-h-[44px] grid place-items-center"
                     style="touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0.08);"
                     on:click|stopPropagation={savePlan}
-                    aria-label={isPlanSaved ? 'Odstrani shranjeno pot' : 'Shrani pot'}>
+                    aria-label={isPlanSaved ? $t('Odstrani shranjeno pot') : $t('Shrani pot')}>
               {#key isPlanSaved}
                 <Star size={18}
                       fill={isPlanSaved ? 'var(--status-delay)' : 'none'}
@@ -736,15 +766,15 @@
                 <div class="grid grid-cols-3 gap-2 mt-3">
                   <div class="text-center">
                     <div class="t-title3 font-bold">{planSummary.transfers}</div>
-                    <div class="t-footnote text-muted">{planSummary.transfers === 1 ? 'prestop' : 'prestopov'}</div>
+                    <div class="t-footnote text-muted">{plural(planSummary.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}</div>
                   </div>
                   <div class="text-center">
                     <div class="t-title3 font-bold">{planSummary.walkMin}′</div>
-                    <div class="t-footnote text-muted">peš · {Math.round(planSummary.walkM)} m</div>
+                    <div class="t-footnote text-muted">{$t('peš · {m} m', { m: Math.round(planSummary.walkM) })}</div>
                   </div>
                   <div class="text-center">
                     <div class="t-title3 font-bold">{planSummary.rideMin}′</div>
-                    <div class="t-footnote text-muted">vožnja</div>
+                    <div class="t-footnote text-muted">{$t('vožnja')}</div>
                   </div>
                 </div>
               </div>
@@ -756,7 +786,7 @@
                     <Flame size={18} />
                   </div>
                   <div class="min-w-0">
-                    <div class="t-footnote text-muted">Porabil(a) si</div>
+                    <div class="t-footnote text-muted">{$t('Porabil(a) si')}</div>
                     <div class="t-title3 font-bold">{planSummary.kcal} kcal</div>
                   </div>
                 </div>
@@ -766,18 +796,18 @@
                     <Leaf size={18} />
                   </div>
                   <div class="min-w-0">
-                    <div class="t-footnote text-muted">Prihranek CO₂</div>
+                    <div class="t-footnote text-muted">{$t('Prihranek CO₂')}</div>
                     <div class="t-title3 font-bold">{planSummary.co2SavedKg} kg</div>
                   </div>
                 </div>
               </div>
               <div class="t-footnote text-muted px-1 mb-3">
-                Razdalja z avtom je ~{planSummary.driveKm} km.
+                {$t('Razdalja z avtom je ~{km} km.', { km: planSummary.driveKm })}
               </div>
               {#if $walkRoutingDegraded}
                 <div class="t-footnote px-1 mb-3 flex items-start gap-1.5" style="color: var(--status-delay)">
                   <TriangleAlert size={14} class="shrink-0 mt-0.5" />
-                  <span>Pešpoti trenutno niso na voljo — časi hoje so ocenjeni po zračni razdalji in so lahko prekratki.</span>
+                  <span>{$t('Pešpoti trenutno niso na voljo — časi hoje so ocenjeni po zračni razdalji in so lahko prekratki.')}</span>
                 </div>
               {/if}
 
@@ -785,10 +815,10 @@
                       class="pressable w-full h-11 rounded-xl surface-2 border border-base mb-4 flex items-center justify-center gap-2"
                       on:click|stopPropagation={sharePlan}>
                 <Share2 size={16} />
-                <span class="t-callout font-medium">Deli pot</span>
+                <span class="t-callout font-medium">{$t('Deli pot')}</span>
               </button>
 
-              <div class="t-footnote text-muted uppercase tracking-wide mb-2">Pot po korakih</div>
+              <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Pot po korakih')}</div>
               <div class="surface rounded-2xl border border-base shadow-card px-3 py-3">
                 <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} />
               </div>
@@ -804,9 +834,78 @@
     <button class="pressable absolute z-30 right-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
             style="top: calc(env(safe-area-inset-top) + 0.75rem)"
             on:click={openStopSearch}
-            aria-label="Poišči postajo">
+            aria-label={$t('Poišči postajo')}>
       <Search size={18} color="var(--accent)" />
     </button>
+  {/if}
+
+  <!-- MBajk: vklop sloja (levo zgoraj, zrcalno z iskanjem) -->
+  {#if !activePlan}
+    <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
+            style="top: calc(env(safe-area-inset-top) + 0.75rem); {$showBikes ? 'background: #7C3AED; border-color: #7C3AED;' : ''}"
+            on:click={() => showBikes.update(v => !v)}
+            aria-pressed={$showBikes}
+            aria-label={$showBikes ? $t('Skrij postaje MBajk') : $t('Pokaži postaje MBajk')}>
+      <Bike size={18} color={$showBikes ? '#ffffff' : 'var(--text-muted)'} />
+    </button>
+  {/if}
+
+  <!-- MBajk: kartica izbrane postaje -->
+  {#if selectedBike && !activePlan}
+    <div class="absolute left-0 right-0 px-4 z-30" style="bottom: calc(var(--tabbar-space) + 1rem)">
+      <div class="surface rounded-2xl border border-base shadow-float p-4 max-w-screen-sm mx-auto">
+        <div class="flex items-start gap-3">
+          <div class="w-11 h-11 rounded-xl grid place-items-center shrink-0" style="background: #7C3AED; color: #ffffff">
+            <Bike size={20} />
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="t-footnote text-muted uppercase tracking-wide">{$t('MBajk · izposoja koles')}</div>
+            <h2 class="t-headline font-semibold">{selectedBike.name}</h2>
+          </div>
+          <button class="pressable w-11 h-11 -mt-1 -mr-1 rounded-full surface-2 grid place-items-center shrink-0"
+                  on:click={() => selectedBike = null} aria-label={$t('Zapri')}>
+            <X size={18} />
+          </button>
+        </div>
+        {#if selectedBike.active}
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <div class="surface-2 rounded-xl px-3 py-2">
+              <div class="t-title2 font-bold">{selectedBike.bikes}</div>
+              <div class="t-footnote text-muted">{plural(selectedBike.bikes, ['prosto kolo', 'prosti kolesi', 'prosta kolesa', 'prostih koles'], ['bike available', 'bikes available'])}</div>
+            </div>
+            <div class="surface-2 rounded-xl px-3 py-2">
+              <div class="t-title2 font-bold">{selectedBike.docks}</div>
+              <div class="t-footnote text-muted">{plural(selectedBike.docks, ['prosto stojalo', 'prosti stojali', 'prosta stojala', 'prostih stojal'], ['free dock', 'free docks'])}</div>
+            </div>
+          </div>
+        {:else}
+          <div class="t-callout mt-3" style="color: var(--status-delay)">{$t('Postaja trenutno ne deluje.')}</div>
+        {/if}
+        <div class="t-footnote text-muted mt-3">
+          {$t('Prva ura vsake izposoje je brezplačna. Potrebna je registracija (letno 3 €, tedensko 1 €).')}
+          {#if $bikesError}<span style="color: var(--status-delay)"> {$t('Podatki so lahko zastareli.')}</span>{/if}
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button class="pressable flex-1 min-h-[44px] rounded-xl t-callout font-semibold flex items-center justify-center gap-2"
+                  style="background: var(--accent); color: #ffffff"
+                  on:click={() => { const b = selectedBike; if (b) onPlanToStop({ id: -1, name: b.name, lat: b.lat, lon: b.lon } as Stop); }}>
+            <Navigation size={16} color="#ffffff" /> {$t('Pot do tu')}
+          </button>
+          <a class="pressable flex-1 min-h-[44px] rounded-xl surface-2 border border-base t-callout font-semibold flex items-center justify-center"
+             href="https://www.mbajk.si/sl/offers/groups" target="_blank" rel="noopener">{$t('Registracija')}</a>
+        </div>
+        <div class="t-footnote text-muted mt-2" style="font-size: 11px">{$t('Podatki: MBajk / JCDecaux')}</div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Namig za izbiro cilja na karti (nad gumboma levo spodaj) -->
+  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike && !pinMode && $hintVisible('map.pin')}
+    <div class="absolute z-20 left-4 right-4" style="bottom: calc(var(--tabbar-space) + {hasGeo ? '9.5rem' : '5.5rem'})">
+      <div class="max-w-screen-sm mx-auto shadow-card rounded-2xl">
+        <Hint id="map.pin" text={$t('Za pot do poljubne točke tapni rdeči gumb z bucikom, premakni karto pod buciko in potrdi.')} />
+      </div>
+    </div>
   {/if}
 
   <!-- Live indicator -->
@@ -818,13 +917,13 @@
               style="background: {isLive && staleSec < 30 ? 'var(--status-ontime)' : 'var(--status-delay)'}"></span>
         <span class="t-footnote" style="color: var(--text-muted)">
           {#if isLive}
-            {live.vehicles.length} vozil · {staleSec < 2 ? 'zdaj' : `pred ${staleSec} s`}
+            {live.vehicles.length} {plural(live.vehicles.length, ['vozilo', 'vozili', 'vozila', 'vozil'], ['bus', 'buses'])} · {staleSec < 2 ? $t('zdaj') : $t('pred {s} s', { s: staleSec })}
           {:else if live.loading}
-            Povezovanje…
+            {$t('Povezovanje…')}
           {:else if live.error}
-            Offline · po voznem redu
+            {$t('Offline · po voznem redu')}
           {:else}
-            Po voznem redu
+            {$t('Po voznem redu')}
           {/if}
         </span>
       </div>
@@ -832,49 +931,49 @@
   {/if}
 
   <!-- Desno spodaj: Načrtuj (normalno) ALI Potrdi (pin mode) -->
-  {#if !activePlan && !selectedStop && !selectedVehicle}
+  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
     {#if pinMode}
       <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
               style="bottom: calc(var(--tabbar-space) + 1.5rem); background: var(--accent); color: #ffffff;"
               on:click={() => { mapRef?.dropPinAtCenter(); pinMode = false; }}
-              aria-label="Potrdi lokacijo cilja">
+              aria-label={$t('Potrdi lokacijo cilja')}>
         <Check size={18} color="#ffffff" />
-        Potrdi tukaj
+        {$t('Potrdi tukaj')}
       </button>
     {:else}
       <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
               style="bottom: calc(var(--tabbar-space) + 1.5rem); background: var(--accent); color: #ffffff;"
               on:click={onOpenPlanner}>
         <Navigation size={18} color="#ffffff" />
-        Načrtuj
+        {$t('Načrtuj')}
       </button>
     {/if}
   {/if}
 
   <!-- Recenter -->
-  {#if hasGeo && !activePlan}
+  {#if hasGeo && !activePlan && !selectedBike}
     <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
             style="bottom: calc(var(--tabbar-space) + 1.5rem)"
             on:click={() => mapRef?.flyTo(origin.lat, origin.lon, 15)}
-            aria-label="Moja lokacija">
+            aria-label={$t('Moja lokacija')}>
       <Navigation size={18} color="var(--accent)" />
     </button>
   {/if}
 
   <!-- Levo nad Recenter: Pin FAB (vstop v pin mode) ALI Prekliči (izhod) -->
-  {#if !activePlan && !selectedStop && !selectedVehicle}
+  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
     {#if pinMode}
       <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
               style="bottom: calc(var(--tabbar-space) + {hasGeo ? '5.5rem' : '1.5rem'})"
               on:click={() => pinMode = false}
-              aria-label="Prekliči izbiro cilja">
+              aria-label={$t('Prekliči izbiro cilja')}>
         <X size={18} color="var(--text)" />
       </button>
     {:else}
       <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full shadow-card grid place-items-center"
               style="bottom: calc(var(--tabbar-space) + {hasGeo ? '5.5rem' : '1.5rem'}); background: var(--accent); color: #ffffff"
               on:click={() => pinMode = true}
-              aria-label="Izberi cilj na karti">
+              aria-label={$t('Izberi cilj na karti')}>
         <MapPin size={18} color="#ffffff" />
       </button>
     {/if}
@@ -888,31 +987,47 @@
         <!-- Naslov v svoji vrstici, akcije pod njim: s 44 px tarčami so štirje gumbi
              odjedli toliko širine, da so se daljša imena postaj obrezala na tretjini. -->
         <div class="mb-3">
-          <div class="t-footnote text-muted uppercase tracking-wide">Postaja</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Postaja')}</div>
           <h2 class="t-title2 font-semibold">{selectedStop.name}</h2>
           {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
           <div class="flex items-center gap-2 mt-2.5">
             <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card"
                     style="background: var(--accent); color: #ffffff"
                     on:click={() => onPlanToStop(selectedStop!)}
-                    aria-label="Načrtuj pot do te postaje">
+                    aria-label={$t('Načrtuj pot do te postaje')}>
               <Navigation size={18} color="#ffffff" />
             </button>
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => stopTimetableOpen = true}
-                    aria-label="Vozni red postaje">
+                    aria-label={$t('Vozni red postaje')}>
               <CalendarClock size={18} />
             </button>
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => favStops.toggle(selectedStop!.id)}
-                    aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljena'}>
+                    aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljena')}>
               <Star size={18} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'} />
             </button>
-            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center ml-auto" on:click={() => onStopChange(null)} aria-label="Zapri">
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center ml-auto" on:click={() => onStopChange(null)} aria-label={$t('Zapri')}>
               <X size={18} />
             </button>
           </div>
         </div>
+
+        <div class="mb-3"><Hint id="stop.fav" text={$t('Z zvezdico shraniš postajališče med priljubljene — njegovi odhodi so potem vedno na Domu.')} /></div>
+
+        {#if nearBike}
+          <!-- Zadnji kilometer: MBajk ob postajališču -->
+          <button type="button"
+                  class="pressable w-full flex items-center gap-3 rounded-2xl surface-2 px-3 py-2.5 mb-4 text-left"
+                  on:click={() => { const b = nearBike; if (b) { selectBike(b); mapRef?.flyTo(b.lat, b.lon, 16); } }}>
+            <span class="w-9 h-9 rounded-lg grid place-items-center shrink-0" style="background: #7C3AED; color: #ffffff"><Bike size={18} /></span>
+            <span class="min-w-0 flex-1">
+              <span class="block t-footnote text-muted">{$t('MBajk v bližini · {m} m', { m: Math.round(nearBike.m / 10) * 10 })}</span>
+              <span class="block t-callout font-medium truncate">{nearBike.name}</span>
+            </span>
+            <span class="t-callout font-semibold shrink-0">{nearBike.bikes} <Bike size={14} class="inline -mt-0.5" /></span>
+          </button>
+        {/if}
 
         <div class="rounded-2xl p-4 flex items-center gap-3 mb-4"
              style="background: linear-gradient(135deg, var(--surface-2), var(--surface-3));">
@@ -921,16 +1036,16 @@
           </div>
           <!-- aria-live: čas se osvežuje vsakih 15–30 s; bralnik zaslona sprememb prej ni javil. -->
           <div class="flex-1 min-w-0" aria-live="polite">
-            <div class="t-footnote text-muted">Čakanje</div>
+            <div class="t-footnote text-muted">{$t('Čakanje')}</div>
             <div class="t-headline font-semibold">
               {#if nextDayDep}
-                Prvi {fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday)} ob {fmtTime(nextDayDep.depSec)}
+                {$t('Prvi {day} ob {time}', { day: fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday), time: fmtTime(nextDayDep.depSec) })}
               {:else}
                 {waitLabel(nextWait)}
               {/if}
             </div>
             {#if nextDayDep}
-              <div class="t-footnote text-muted mt-0.5">Danes ni več odhodov · linija {nextDayDep.route.short}</div>
+              <div class="t-footnote text-muted mt-0.5">{$t('Danes ni več odhodov · linija {line}', { line: nextDayDep.route.short })}</div>
             {/if}
           </div>
           {#if showLeaveHint && leaveInMin != null}
@@ -938,19 +1053,19 @@
             <div class="text-right pl-3 border-l border-base shrink-0">
               <div class="t-footnote text-muted flex items-center gap-1 justify-end">
                 <Footprints size={12} />
-                Kreni
+                {$t('Kreni')}
               </div>
               <div class="t-title3 font-bold leading-tight" style="color: {c}">
-                {leaveInMin <= 0 ? (nextWait != null && nextWait <= 0 ? 'zamuda' : 'zdaj') : `${leaveInMin} min`}
+                {leaveInMin <= 0 ? (nextWait != null && nextWait <= 0 ? $t('zamuda') : $t('zdaj')) : `${leaveInMin} min`}
               </div>
-              <div class="t-footnote text-muted">{walkToStopMin} min hoje</div>
+              <div class="t-footnote text-muted">{$t('{n} min hoje', { n: walkToStopMin ?? '' })}</div>
             </div>
           {/if}
         </div>
 
         <div class="flex items-center justify-between mb-2">
-          <h2 class="t-footnote text-muted uppercase tracking-wide">Naslednji odhodi</h2>
-          <LiveDot live={liveArrivals.length > 0} label={liveArrivals.length > 0 ? 'V živo' : 'Po voznem redu'} />
+          <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Naslednji odhodi')}</h2>
+          <LiveDot live={liveArrivals.length > 0} label={liveArrivals.length > 0 ? $t('V živo') : $t('Po voznem redu')} />
         </div>
         {#if liveArrivals.length > 0}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
@@ -959,12 +1074,12 @@
               {@const absDelay = Math.abs(a.delayMin)}
               {@const delayColor = absDelay > 5 ? 'var(--status-disrupt)' : absDelay >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}
               <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, dirForArrival(a, gtfsRoute.id), selectedStop?.id ?? null)} aria-label="Vozni red linije {a.lineCode}">
+                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, dirForArrival(a, gtfsRoute.id), selectedStop?.id ?? null)} aria-label={$t('Vozni red linije {line}', { line: a.lineCode })}>
                   <LineBadge short={a.lineCode} routeId={gtfsRoute?.id ?? a.lineId} size="md" />
                 </button>
                 <button class="pressable flex-1 {$compactLists ? 'py-1.5' : 'py-3'} pr-4 pl-1 flex items-center gap-3 text-left min-w-0"
                         on:click={() => tapArrivalBus(a.busCode)}
-                        aria-label="Pokaži avtobus na karti">
+                        aria-label={$t('Pokaži avtobus na karti')}>
                   <div class="flex-1 min-w-0">
                     <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{a.headsign}</div>
                     <div class="t-footnote text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -972,10 +1087,10 @@
                       {#if a.busCode}<span>{$departureDisplay !== 'minutes' ? '· ' : ''}bus #{a.busCode}</span>{/if}
                       {#if a.predicted}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
-                              style="background: color-mix(in oklab, var(--status-ontime) 16%, transparent); color: var(--status-ontime)">v živo</span>
+                              style="background: color-mix(in oklab, var(--status-ontime) 16%, transparent); color: var(--status-ontime)">{$t('v živo')}</span>
                       {:else}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
-                              style="background: color-mix(in oklab, var(--text-muted) 16%, transparent); color: var(--text-muted)">po redu</span>
+                              style="background: color-mix(in oklab, var(--text-muted) 16%, transparent); color: var(--text-muted)">{$t('po redu')}</span>
                       {/if}
                       {#if a.delayKnown && absDelay >= 1}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
@@ -989,7 +1104,7 @@
                     {#if $departureDisplay === 'clock'}
                       <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold tabular-nums">{a.arrivalTime}</span>
                     {:else if a.etaMin <= 0}
-                      <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold" style="color: var(--status-ontime)">zdaj</span>
+                      <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold" style="color: var(--status-ontime)">{$t('zdaj')}</span>
                     {:else}
                       <span class="{$compactLists ? 't-subhead' : 't-title1'} font-bold" style={a.delayKnown && absDelay > 5 ? 'color: var(--status-disrupt)' : a.delayKnown && absDelay >= 3 ? 'color: var(--status-delay)' : ''}>{a.etaMin}</span>
                       <span class="t-footnote text-muted ml-0.5">min</span>
@@ -1000,15 +1115,15 @@
             {/each}
           </ul>
         {:else if liveArrivalsLoading}
-          <div class="surface-2 rounded-2xl p-4 t-callout text-muted">Nalagam žive prihode…</div>
+          <div class="surface-2 rounded-2xl p-4 t-callout text-muted">{$t('Nalagam žive prihode…')}</div>
         {:else if departures.length === 0}
           <div class="surface-2 rounded-2xl p-4 flex items-center gap-3">
             <MoonStar size={20} color="var(--text-muted)" />
             <div class="flex-1 min-w-0">
-              <div class="t-callout text-muted">Danes ni več odhodov s te postaje.</div>
+              <div class="t-callout text-muted">{$t('Danes ni več odhodov s te postaje.')}</div>
               {#if nextDayDep}
                 <div class="t-footnote mt-0.5">
-                  Prvi {fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday)} ob
+                  {$t('Prvi {day} ob', { day: fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday) })}
                   <span class="font-semibold tabular-nums">{fmtTime(nextDayDep.depSec)}</span>
                   · {nextDayDep.trip.headsign}
                 </div>
@@ -1024,7 +1139,7 @@
               <li class="px-4 {$compactLists ? 'py-1.5' : 'py-3'} flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                 <button class="pressable min-w-[44px] min-h-[44px] grid place-items-center -ml-1"
                         on:click={() => openLineTimetable(d.route, d.trip.dir, selectedStop?.id ?? null)}
-                        aria-label="Vozni red linije {d.route.short}">
+                        aria-label={$t('Vozni red linije {line}', { line: d.route.short })}>
                   <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                 </button>
                 <div class="flex-1 min-w-0">
@@ -1044,7 +1159,7 @@
                   class="pressable w-full h-11 mt-3 rounded-xl surface-2 border border-base flex items-center justify-center gap-2"
                   on:click={() => stopTimetableOpen = true}>
             <CalendarClock size={16} />
-            <span class="t-callout font-medium">Celoten vozni red postaje</span>
+            <span class="t-callout font-medium">{$t('Celoten vozni red postaje')}</span>
           </button>
         {/if}
 
@@ -1052,10 +1167,10 @@
         {#if stopBeforeVehicle}
           <button class="pressable w-full min-h-[48px] mb-3 px-3 py-2 rounded-xl surface-2 flex items-center gap-2.5 text-left"
                   on:click={backToStop}
-                  aria-label="Nazaj na postajo {stopBeforeVehicle.name}">
+                  aria-label={$t('Nazaj na postajo {name}', { name: stopBeforeVehicle.name })}>
             <ArrowLeft size={18} color="var(--text-muted)" />
             <span class="min-w-0">
-              <span class="block t-footnote text-muted">Nazaj na postajo</span>
+              <span class="block t-footnote text-muted">{$t('Nazaj na postajo')}</span>
               <span class="block t-subhead font-semibold truncate">{stopBeforeVehicle.name}</span>
             </span>
           </button>
@@ -1065,7 +1180,7 @@
             <LineBadge short={selectedVehicle.routeShort} routeId={selectedVehicle.routeId} size="lg" />
             <div class="min-w-0">
               <div class="t-footnote text-muted uppercase tracking-wide flex items-center gap-1.5">
-                Avtobus
+                {$t('Avtobus')}
                 {#if selectedLive}<span class="t-footnote" style="color: var(--text-muted)">#{selectedLive.busCode}</span>{/if}
               </div>
               <div class="t-title3 font-semibold truncate">→ {selectedVehicle.headsign}</div>
@@ -1075,7 +1190,7 @@
             <button class="pressable w-11 h-11 rounded-full grid place-items-center"
                     style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
                     on:click={() => followBus = !followBus}
-                    aria-label={followBus ? 'Prenehaj slediti' : 'Sledim avtobus'}>
+                    aria-label={followBus ? $t('Prenehaj slediti') : $t('Sledim avtobus')}>
               <Navigation size={18} />
             </button>
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
@@ -1092,11 +1207,11 @@
               <Bus size={20} />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="t-footnote text-muted">Naslednja postaja</div>
+              <div class="t-footnote text-muted">{$t('Naslednja postaja')}</div>
               {#if liveNextStopName}
                 <div class="t-headline font-semibold truncate">{liveNextStopName}</div>
                 <div class="t-subhead text-muted">
-                  {#if eta == null}—{:else if eta === 0}prihaja zdaj{:else}čez {eta} min{/if}
+                  {#if eta == null}—{:else if eta === 0}{$t('prihaja zdaj')}{:else}{$t('čez {n} min', { n: eta })}{/if}
                   {#if delay != null && delay !== 0}
                     <span class="ml-1" style="color: {delay > 0 ? 'var(--status-delay)' : 'var(--status-ontime)'}">
                       ({delay > 0 ? '+' : ''}{delay} min)
@@ -1105,27 +1220,27 @@
                 </div>
               {:else}
                 <div class="t-headline font-semibold">
-                  {#if eta == null}—{:else if eta === 0}prihaja zdaj{:else}čez {eta} min{/if}
+                  {#if eta == null}—{:else if eta === 0}{$t('prihaja zdaj')}{:else}{$t('čez {n} min', { n: eta })}{/if}
                 </div>
               {/if}
             </div>
             {#if vehicleArrival?.predicted ?? selectedLive.predicted}
-              <span class="px-2 h-6 rounded-full surface t-footnote border border-base grid place-items-center" style="color: var(--status-delay)">ocena</span>
+              <span class="px-2 h-6 rounded-full surface t-footnote border border-base grid place-items-center" style="color: var(--status-delay)">{$t('ocena')}</span>
             {:else}
               <span class="px-2 h-6 rounded-full surface t-footnote border border-base grid place-items-center" style="color: var(--status-ontime)">GPS</span>
             {/if}
           </div>
         {/if}
         <div class="flex items-center justify-between mb-2">
-          <h2 class="t-footnote text-muted uppercase tracking-wide">Naslednje postaje</h2>
-          <LiveDot live={isLive} label={isLive ? 'V živo' : 'Ocenjeno'} />
+          <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Naslednje postaje')}</h2>
+          <LiveDot live={isLive} label={isLive ? $t('V živo') : $t('Ocenjeno')} />
         </div>
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each vehNextStops as ns, i}
             <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
               <button class="pressable w-full px-4 py-2.5 flex items-center gap-3 text-left"
                       on:click={() => jumpToStopFromBus(ns.stop)}
-                      aria-label="Odpri postajo {ns.stop.name}">
+                      aria-label={$t('Odpri postajo {name}', { name: ns.stop.name })}>
                 <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {i === 0 ? selectedVehicle.color : 'var(--border-strong)'}"></div>
                 <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} truncate">{ns.stop.name}</div>
                 <div class="t-footnote text-muted shrink-0">{fmtTime(ns.arr)} · {ns.minutes}′</div>
@@ -1134,9 +1249,9 @@
           {/each}
         </ul>
         {#if selectedLive}
-          <p class="mt-3 t-footnote text-muted px-1">Pozicija je GPS v živo; časi prihodov so iz voznega reda.</p>
+          <p class="mt-3 t-footnote text-muted px-1">{$t('Pozicija je GPS v živo; časi prihodov so iz voznega reda.')}</p>
         {:else}
-          <p class="mt-3 t-footnote text-muted px-1">Pozicija je ocenjena iz voznega reda (±1–2 min).</p>
+          <p class="mt-3 t-footnote text-muted px-1">{$t('Pozicija je ocenjena iz voznega reda (±1–2 min).')}</p>
         {/if}
 
       {/if}
@@ -1150,7 +1265,7 @@
          role="presentation">
       <div class="surface w-full sm:max-w-lg mx-auto rounded-b-3xl shadow-float flex flex-col overflow-hidden"
            style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - 4rem);"
-           role="dialog" aria-modal="true" aria-label="Poišči postajo" tabindex="-1"
+           role="dialog" aria-modal="true" aria-label={$t('Poišči postajo')} tabindex="-1"
            use:focusTrap>
         <div class="flex items-center gap-2 px-4 pt-3 pb-3 shrink-0">
           <div class="relative flex-1 surface-2 rounded-xl border border-base">
@@ -1159,19 +1274,19 @@
             <input bind:value={stopQuery}
                    autofocus
                    class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
-                   placeholder="Ime postaje…"
-                   aria-label="Ime postaje" />
+                   placeholder={$t('Ime postaje…')}
+                   aria-label={$t('Ime postaje')} />
           </div>
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
-                  on:click={() => stopSearchOpen = false} aria-label="Zapri">
+                  on:click={() => stopSearchOpen = false} aria-label={$t('Zapri')}>
             <X size={18} />
           </button>
         </div>
         <div class="flex-1 overflow-y-auto px-4 pb-4">
           {#if stopQuery.trim().length < 2}
-            <div class="t-footnote text-muted text-center py-6">Vnesi vsaj dve črki imena postaje.</div>
+            <div class="t-footnote text-muted text-center py-6">{$t('Vnesi vsaj dve črki imena postaje.')}</div>
           {:else if stopSearchResults.length === 0}
-            <div class="t-body text-muted text-center py-6">Ni zadetkov.</div>
+            <div class="t-body text-muted text-center py-6">{$t('Ni zadetkov.')}</div>
           {:else}
             <ul class="surface-2 rounded-2xl overflow-hidden">
               {#each stopSearchResults as s, i}
@@ -1200,27 +1315,27 @@
          role="presentation">
       <div class="surface w-full sm:max-w-md rounded-3xl shadow-float overflow-hidden flex flex-col"
            style="max-height: calc(100dvh - 2rem);"
-           role="dialog" aria-modal="true" aria-label="Deli pot" tabindex="-1"
+           role="dialog" aria-modal="true" aria-label={$t('Deli pot')} tabindex="-1"
            use:focusTrap>
         <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
           <div class="min-w-0 flex-1">
-            <div class="t-footnote text-muted uppercase tracking-wide">Deli pot</div>
-            <div class="t-title3 font-semibold">Predogled</div>
+            <div class="t-footnote text-muted uppercase tracking-wide">{$t('Deli pot')}</div>
+            <div class="t-title3 font-semibold">{$t('Predogled')}</div>
           </div>
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                  on:click={() => shareDialogOpen = false} aria-label="Zapri">
+                  on:click={() => shareDialogOpen = false} aria-label={$t('Zapri')}>
             <X size={18} />
           </button>
         </div>
         <div class="px-5 pb-4 space-y-3 overflow-y-auto">
-          <div class="t-footnote text-muted">Informacije, ki jih deliš:</div>
+          <div class="t-footnote text-muted">{$t('Informacije, ki jih deliš:')}</div>
           <pre class="surface-2 rounded-xl border border-base p-3 t-footnote whitespace-pre-wrap break-all">{shareText}</pre>
           <div class="flex gap-2">
             <button class="pressable flex-1 h-11 rounded-xl t-callout font-semibold"
                     style="background: var(--accent); color: #ffffff;"
-                    on:click={() => copyShare('text')}>Kopiraj vse</button>
+                    on:click={() => copyShare('text')}>{$t('Kopiraj vse')}</button>
             <button class="pressable flex-1 h-11 rounded-xl surface-2 border border-base t-callout font-semibold"
-                    on:click={() => copyShare('url')}>Samo povezavo</button>
+                    on:click={() => copyShare('url')}>{$t('Samo povezavo')}</button>
           </div>
         </div>
       </div>

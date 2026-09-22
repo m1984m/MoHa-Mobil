@@ -4,6 +4,7 @@
   import { allTripsForRouteDirection, dayKindToDate, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
+  import { t, plural } from '../i18n';
 
   export let open = false;
   export let gtfs: GTFS | null;
@@ -27,11 +28,11 @@
     return d === 0 ? 'sunday' : d === 6 ? 'saturday' : 'weekday';
   }
 
-  const days: { id: DayKind; label: string }[] = [
-    { id: 'weekday', label: 'Delavnik' },
-    { id: 'saturday', label: 'Sobota' },
-    { id: 'sunday', label: 'Nedelja' },
-  ];
+  $: days = [
+    { id: 'weekday', label: $t('Delavnik') },
+    { id: 'saturday', label: $t('Sobota') },
+    { id: 'sunday', label: $t('Nedelja') },
+  ] as { id: DayKind; label: string }[];
 
   $: trips = gtfs && route ? allTripsForRouteDirection(gtfs, route.id, dir, dayKindToDate(day)) : [];
 
@@ -112,28 +113,28 @@
        role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
-         role="dialog" aria-modal="true" aria-label="Vozni red linije {route.short}" tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Vozni red linije {linija}', { linija: route.short })} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <LineBadge short={route.short} routeId={route.id} size="lg" />
         <div class="min-w-0 flex-1">
-          <div class="t-footnote text-muted uppercase tracking-wide">Linija</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Linija')}</div>
           <div class="t-title3 truncate">{route.long || route.short}</div>
         </div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={onClose} aria-label="Zapri">
+                on:click={onClose} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
 
       <div class="px-5 pb-2 shrink-0 flex items-center gap-2">
         <div class="flex-1 min-w-0 surface-2 rounded-xl px-3 py-2">
-          <div class="t-footnote text-muted">Smer</div>
+          <div class="t-footnote text-muted">{$t('Smer')}</div>
           <div class="t-body font-semibold truncate">{dirHeadsigns.get(dir) || '—'}</div>
         </div>
         {#if dirOptions.length > 1}
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                  on:click={swapDir} aria-label="Zamenjaj smer">
+                  on:click={swapDir} aria-label={$t('Zamenjaj smer')}>
             <ArrowRightLeft size={16} />
           </button>
         {/if}
@@ -144,8 +145,8 @@
                 on:click={() => pickerOpen = !pickerOpen}>
           <MapPin size={16} color="var(--accent)" />
           <div class="flex-1 min-w-0">
-            <div class="t-footnote text-muted">Postaja</div>
-            <div class="t-body font-semibold truncate">{selectedStopName ?? 'Vse postaje (od izhodišča)'}</div>
+            <div class="t-footnote text-muted">{$t('Postaja')}</div>
+            <div class="t-body font-semibold truncate">{selectedStopName ?? $t('Vse postaje (od izhodišča)')}</div>
           </div>
           <ChevronDown size={16} style="transform: rotate({pickerOpen ? 180 : 0}deg); transition: transform 180ms" />
         </button>
@@ -153,13 +154,13 @@
           {#if onOpenStop}
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => onOpenStop!(selectedStopId!)}
-                    aria-label="Odpri postajo na karti">
+                    aria-label={$t('Odpri postajo na karti')}>
               <ExternalLink size={18} color="var(--accent)" />
             </button>
           {/if}
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                   on:click={() => favStops.toggle(selectedStopId!)}
-                  aria-label={selectedIsFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
+                  aria-label={selectedIsFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljene')}
                   aria-pressed={selectedIsFav}>
             <Star size={18}
                   color={selectedIsFav ? 'var(--status-delay)' : 'var(--text-muted)'}
@@ -185,7 +186,7 @@
             <li>
               <button class="pressable w-full text-left px-4 py-3 flex items-center gap-3"
                       on:click={() => { selectedStopId = null; pickerOpen = false; }}>
-                <div class="flex-1 t-body font-medium">Vse postaje (od izhodišča)</div>
+                <div class="flex-1 t-body font-medium">{$t('Vse postaje (od izhodišča)')}</div>
                 {#if selectedStopId == null}<Check size={18} color="var(--accent)" />{/if}
               </button>
             </li>
@@ -202,36 +203,36 @@
           </ul>
         {:else if selectedStopId != null}
           {#if stopSchedule.length === 0}
-            <div class="t-body text-muted text-center py-8">Ta dan ni voženj skozi to postajo.</div>
+            <div class="t-body text-muted text-center py-8">{$t('Ta dan ni voženj skozi to postajo.')}</div>
           {:else}
-            <div class="t-footnote text-muted mb-2">{stopSchedule.length} prihodov · {selectedStopName}</div>
+            <div class="t-footnote text-muted mb-2">{stopSchedule.length} {plural(stopSchedule.length, ['prihod', 'prihoda', 'prihodi', 'prihodov'], ['departure', 'departures'])} · {selectedStopName}</div>
             <ul class="surface rounded-2xl border border-base overflow-hidden">
-              {#each stopSchedule as { t, sec }, i}
-                {@const lastSec = t.stops[t.stops.length - 1]?.[1] ?? sec}
+              {#each stopSchedule as { t: trip, sec }, i}
+                {@const lastSec = trip.stops[trip.stops.length - 1]?.[1] ?? sec}
                 <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                   <div class="tabular-nums font-bold text-lg w-14">{fmtTime(sec)}</div>
                   <div class="flex-1 min-w-0">
-                    <div class="t-footnote text-muted truncate">→ {t.headsign}</div>
-                    <div class="t-footnote text-muted">konča {fmtTime(lastSec)}</div>
+                    <div class="t-footnote text-muted truncate">→ {trip.headsign}</div>
+                    <div class="t-footnote text-muted">{$t('konča {cas}', { cas: fmtTime(lastSec) })}</div>
                   </div>
                 </li>
               {/each}
             </ul>
           {/if}
         {:else if trips.length === 0}
-          <div class="t-body text-muted text-center py-8">Ta dan ni voženj v izbrani smeri.</div>
+          <div class="t-body text-muted text-center py-8">{$t('Ta dan ni voženj v izbrani smeri.')}</div>
         {:else}
-          <div class="t-footnote text-muted mb-2">{trips.length} voženj</div>
+          <div class="t-footnote text-muted mb-2">{trips.length} {plural(trips.length, ['vožnja', 'vožnji', 'vožnje', 'voženj'], ['trip', 'trips'])}</div>
           <ul class="surface rounded-2xl border border-base overflow-hidden">
-            {#each trips as t, i}
-              {@const first = t.stops[0]}
-              {@const last = t.stops[t.stops.length - 1]}
+            {#each trips as trip, i}
+              {@const first = trip.stops[0]}
+              {@const last = trip.stops[trip.stops.length - 1]}
               {@const durSec = (last?.[1] ?? 0) - (first?.[2] ?? 0)}
               <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                 <div class="tabular-nums font-bold w-12">{fmtTime(first?.[2] ?? 0)}</div>
                 <div class="t-footnote text-muted">→</div>
                 <div class="tabular-nums font-bold w-12">{fmtTime(last?.[1] ?? 0)}</div>
-                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)}′ · {t.stops.length} post.</div>
+                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)}′ · {$t('{n} post.', { n: trip.stops.length })}</div>
               </li>
             {/each}
           </ul>

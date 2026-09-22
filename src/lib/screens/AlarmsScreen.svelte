@@ -15,7 +15,8 @@
   } from '../alarms';
   import type { Alarm, Occurrence } from '../alarms';
   import { pushState, enablePush, disablePush, showLocalTest, isIOS, isStandalone } from '../push';
-  import { fmtClock, fmtPlural } from '../time';
+  import { fmtClock } from '../time';
+  import { t, tr, plural, locale } from '../i18n';
 
   // Zaslon je poln prekrivni sloj (z-50, nad TabBar), ne šesti zavihek:
   // pet zavihkov na 390 px že zapolni vrstico, šesti bi oznake obrezal.
@@ -24,7 +25,7 @@
   export let gtfs: GTFS | null;
   export let onClose: () => void;
 
-  const DATE_FMT = new Intl.DateTimeFormat('sl-SI', { day: 'numeric', month: 'long', year: 'numeric' });
+  const DATE_FMT = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', year: 'numeric' });
 
   // Ponovitve so vir podatka "naslednjič zazvoni …" in telo prve sinhronizacije.
   $: occ = open && gtfs ? computeOccurrences(gtfs, $alarms) : [];
@@ -108,7 +109,7 @@
   function del(a: Alarm) {
     removeAlarm(a.id);
     editorOpen = false;
-    toast.showUndo(`Opomnik ${a.routeShort} odstranjen`, () => alarms.update(l => [...l, a]));
+    toast.showUndo(tr('Opomnik {line} odstranjen', { line: a.routeShort }), () => alarms.update(l => [...l, a]));
   }
 
   function setDays(preset: 'week' | 'weekend') {
@@ -145,13 +146,13 @@
   <div class="mm-tap fixed inset-0 z-50 surface flex flex-col" style="padding-top: env(safe-area-inset-top);">
     <header class="shrink-0 px-2 pt-2 pb-2 flex items-center gap-1">
       <button class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0"
-              on:click={onClose} aria-label="Nazaj">
+              on:click={onClose} aria-label={$t('Nazaj')}>
         <ArrowLeft size={20} />
       </button>
-      <h1 class="t-title2 flex-1 min-w-0 truncate">Opomniki za odhod</h1>
+      <h1 class="t-title2 flex-1 min-w-0 truncate">{$t('Opomniki za odhod')}</h1>
       {#if $favLines.length > 0}
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
-                on:click={openNew} aria-label="Nov opomnik">
+                on:click={openNew} aria-label={$t('Nov opomnik')}>
           <Plus size={20} />
         </button>
       {/if}
@@ -173,35 +174,35 @@
 
         <!-- Obvestila -->
         <section>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Obvestila</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">{$t('Obvestila')}</div>
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
             <li class="min-h-[56px] px-4 py-3 flex items-center gap-3">
               <svelte:component this={$pushState.subscribed ? BellRing : BellOff}
                                 size={20}
                                 color={$pushState.subscribed ? 'var(--status-ontime)' : 'var(--text-muted)'} />
               <div class="flex-1 min-w-0">
-                <div class="t-body">{$pushState.subscribed ? 'Obvestila so vklopljena' : 'Obvestila so izklopljena'}</div>
+                <div class="t-body">{$pushState.subscribed ? $t('Obvestila so vklopljena') : $t('Obvestila so izklopljena')}</div>
                 <div class="t-footnote text-muted">
                   {#if !$pushState.supported}
-                    Ta brskalnik ne podpira potisnih obvestil.
+                    {$t('Ta brskalnik ne podpira potisnih obvestil.')}
                   {:else if $pushState.permission === 'denied'}
-                    Brskalnik obvestila zavrača — dovoli jih v nastavitvah strani.
+                    {$t('Brskalnik obvestila zavrača — dovoli jih v nastavitvah strani.')}
                   {:else if $pushState.subscribed}
-                    Opomniki lahko zazvonijo na tej napravi.
+                    {$t('Opomniki lahko zazvonijo na tej napravi.')}
                   {:else}
-                    Brez njih opomniki ne morejo zazvoniti.
+                    {$t('Brez njih opomniki ne morejo zazvoniti.')}
                   {/if}
                 </div>
               </div>
               {#if $pushState.subscribed}
                 <button class="pressable shrink-0 min-h-[44px] px-4 rounded-xl surface-2 border border-base t-footnote font-semibold disabled:opacity-50"
                         disabled={$pushState.busy}
-                        on:click={onDisable}>Izklopi</button>
+                        on:click={onDisable}>{$t('Izklopi')}</button>
               {:else}
                 <button class="pressable shrink-0 min-h-[44px] px-4 rounded-xl t-footnote font-semibold disabled:opacity-50"
                         style="background: var(--accent); color: #ffffff;"
                         disabled={$pushState.busy || !$pushState.supported || $pushState.permission === 'denied'}
-                        on:click={onEnable}>{$pushState.busy ? 'Vklapljam…' : 'Vklopi obvestila'}</button>
+                        on:click={onEnable}>{$pushState.busy ? $t('Vklapljam…') : $t('Vklopi obvestila')}</button>
               {/if}
             </li>
 
@@ -210,10 +211,8 @@
             <li class="px-4 py-3 border-t border-base flex items-start gap-3">
               <div class="shrink-0"><BellOff size={20} color="var(--text-muted)" /></div>
               <div class="t-footnote text-muted">
-                <strong class="font-semibold">To ni sistemska budilka.</strong>
-                Opomnik pride kot navadno obvestilo, zato v načinu »Ne moti« (Android) ali
-                »Focus« (iPhone) ne bo zvonilo in ga lahko preslišiš. Za zbujanje pusti
-                budilko telefona.
+                <strong class="font-semibold">{$t('To ni sistemska budilka.')}</strong>
+                {$t('Opomnik pride kot navadno obvestilo, zato v načinu »Ne moti« (Android) ali »Focus« (iPhone) ne bo zvonilo in ga lahko preslišiš. Za zbujanje pusti budilko telefona.')}
               </div>
             </li>
 
@@ -221,8 +220,7 @@
               <li class="px-4 py-3 border-t border-base flex items-start gap-3">
                 <div class="shrink-0"><Smartphone size={20} color="var(--status-delay)" /></div>
                 <div class="t-footnote" style="color: var(--status-delay)">
-                  Na iPhonu in iPadu obvestila delujejo šele, ko aplikacijo dodaš na začetni zaslon
-                  (Deli → Dodaj na začetni zaslon) in jo odpreš s te ikone.
+                  {$t('Na iPhonu in iPadu obvestila delujejo šele, ko aplikacijo dodaš na začetni zaslon (Deli → Dodaj na začetni zaslon) in jo odpreš s te ikone.')}
                 </div>
               </li>
             {/if}
@@ -235,11 +233,11 @@
 
             <li class="border-t border-base">
               <button class="pressable w-full min-h-[56px] px-4 flex items-center gap-3 text-left"
-                      on:click={onTest} aria-label="Pokaži preizkusno obvestilo zdaj">
+                      on:click={onTest} aria-label={$t('Pokaži preizkusno obvestilo zdaj')}>
                 <Send size={20} color="var(--text-muted)" />
                 <div class="flex-1">
-                  <div class="t-body">Preizkusi zdaj</div>
-                  <div class="t-footnote text-muted">Takoj prikaže obvestilo na tej napravi</div>
+                  <div class="t-body">{$t('Preizkusi zdaj')}</div>
+                  <div class="t-footnote text-muted">{$t('Takoj prikaže obvestilo na tej napravi')}</div>
                 </div>
               </button>
             </li>
@@ -248,12 +246,15 @@
                  se sme pokazati samo, če je uskladitev res uspela. -->
             <li class="min-h-[44px] px-4 py-3 border-t border-base t-footnote text-muted">
               {#if !$pushState.subscribed}
-                Dokler obvestila niso vklopljena, opomniki ne bodo zazvonili.
+                {$t('Dokler obvestila niso vklopljena, opomniki ne bodo zazvonili.')}
               {:else if $pushState.until !== null}
-                V vrsti je {$pushState.count} {fmtPlural($pushState.count, 'zvonjenje', 'zvonjenji', 'zvonjenja', 'zvonjenj')},
-                zadnje {DATE_FMT.format(new Date($pushState.until))}.{#if $pushState.lastSync} Nazadnje usklajeno ob {fmtLastSync($pushState.lastSync)}.{/if}
+                {$t('V vrsti je {n} {word}, zadnje {date}.', {
+                  n: $pushState.count,
+                  word: plural($pushState.count, ['zvonjenje', 'zvonjenji', 'zvonjenja', 'zvonjenj'], ['notification', 'notifications']),
+                  date: DATE_FMT.format(new Date($pushState.until)),
+                })}{#if $pushState.lastSync} {$t('Nazadnje usklajeno ob {time}.', { time: fmtLastSync($pushState.lastSync) })}{/if}
               {:else}
-                Strežnik nima zvonjenj v vrsti.{#if $pushState.lastSync} Nazadnje usklajeno ob {fmtLastSync($pushState.lastSync)}.{/if}
+                {$t('Strežnik nima zvonjenj v vrsti.')}{#if $pushState.lastSync} {$t('Nazadnje usklajeno ob {time}.', { time: fmtLastSync($pushState.lastSync) })}{/if}
               {/if}
             </li>
           </ul>
@@ -262,18 +263,18 @@
         <!-- Seznam opomnikov -->
         <section>
           <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">
-            Opomniki{#if $alarms.length > 0} · {enabledCount} od {$alarms.length} vklopljenih{/if}
+            {$t('Opomniki')}{#if $alarms.length > 0} · {$t('{n} od {total} vklopljenih', { n: enabledCount, total: $alarms.length })}{/if}
           </div>
 
           {#if $favLines.length === 0}
-            <EmptyState icon={AlarmClock} title="Najprej pripni linijo"
-                        body="Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajo in tapni »Pripni linijo«." />
+            <EmptyState icon={AlarmClock} title={$t('Najprej pripni linijo')}
+                        body={$t('Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajo in tapni »Pripni linijo«.')} />
           {:else if $alarms.length === 0}
-            <EmptyState icon={AlarmClock} title="Ni opomnikov"
-                        body="Nastavi opozorilo nekaj minut pred odhodom, da ti avtobus ne uide.">
+            <EmptyState icon={AlarmClock} title={$t('Ni opomnikov')}
+                        body={$t('Nastavi opozorilo nekaj minut pred odhodom, da ti avtobus ne uide.')}>
               <button class="pressable min-h-[44px] px-5 rounded-xl t-callout font-semibold"
                       style="background: var(--accent); color: #ffffff;"
-                      on:click={openNew}>Dodaj opomnik</button>
+                      on:click={openNew}>{$t('Dodaj opomnik')}</button>
             </EmptyState>
           {:else}
             <ul class="space-y-3">
@@ -284,14 +285,14 @@
                     <LineBadge short={a.routeShort} routeId={a.routeId} size="sm" />
                     <div class="min-w-0 flex-1">
                       <div class="t-body font-medium truncate">{a.stopName}</div>
-                      <div class="t-footnote text-muted truncate">proti {a.headsign}</div>
+                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: a.headsign })}</div>
                     </div>
                     <button type="button"
                             class="pressable relative w-12 h-7 rounded-full transition-colors shrink-0"
                             style="background: {a.enabled ? 'var(--accent)' : 'var(--surface-3)'}"
                             role="switch"
                             aria-checked={a.enabled}
-                            aria-label="Vklopi ali izklopi opomnik {a.routeShort} {a.stopName}"
+                            aria-label={$t('Vklopi ali izklopi opomnik {line} {stop}', { line: a.routeShort, stop: a.stopName })}
                             on:click={() => toggleAlarm(a.id)}>
                       <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
                             style="left: {a.enabled ? '1.375rem' : '0.125rem'}"></span>
@@ -302,26 +303,26 @@
                     <span aria-hidden="true">·</span>
                     <span class="tabular-nums">{fmtClock(a.fromMin * 60)}–{fmtClock(a.toMin * 60)}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{a.leadMin} min prej</span>
+                    <span>{$t('{n} min prej', { n: a.leadMin })}</span>
                   </div>
                   <div class="px-4 pb-3 t-footnote" style="color: {a.enabled && nxt ? 'var(--accent)' : 'var(--text-muted)'}">
                     {#if !a.enabled}
-                      Izklopljen
+                      {$t('Izklopljen')}
                     {:else}
-                      Naslednjič {nextRingLabel(nxt)}
+                      {$t('Naslednjič {when}', { when: nextRingLabel(nxt) })}
                     {/if}
                   </div>
                   <div class="flex border-t border-base">
                     <button class="pressable flex-1 min-h-[44px] flex items-center justify-center gap-2 t-footnote font-medium"
                             on:click={() => openEdit(a)}
-                            aria-label="Uredi opomnik {a.routeShort} {a.stopName}">
-                      <Pencil size={14} /> Uredi
+                            aria-label={$t('Uredi opomnik {line} {stop}', { line: a.routeShort, stop: a.stopName })}>
+                      <Pencil size={14} /> {$t('Uredi')}
                     </button>
                     <button class="pressable flex-1 min-h-[44px] flex items-center justify-center gap-2 t-footnote font-medium border-l border-base"
                             style="color: var(--status-disrupt)"
                             on:click={() => del(a)}
-                            aria-label="Izbriši opomnik {a.routeShort} {a.stopName}">
-                      <Trash2 size={14} /> Izbriši
+                            aria-label={$t('Izbriši opomnik {line} {stop}', { line: a.routeShort, stop: a.stopName })}>
+                      <Trash2 size={14} /> {$t('Izbriši')}
                     </button>
                   </div>
                 </li>
@@ -342,15 +343,15 @@
        role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
-         role="dialog" aria-modal="true" aria-label={editId ? 'Uredi opomnik' : 'Nov opomnik'} tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={editId ? $t('Uredi opomnik') : $t('Nov opomnik')} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0">
         <div class="min-w-0 flex-1">
-          <div class="t-footnote text-muted uppercase tracking-wide">Opomnik za odhod</div>
-          <div class="t-title2 truncate">{editId ? 'Uredi opomnik' : 'Nov opomnik'}</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Opomnik za odhod')}</div>
+          <div class="t-title2 truncate">{editId ? $t('Uredi opomnik') : $t('Nov opomnik')}</div>
         </div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={() => editorOpen = false} aria-label="Zapri">
+                on:click={() => editorOpen = false} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
@@ -359,9 +360,9 @@
 
         <!-- Linija -->
         <div>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2">Linija in postaja</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Linija in postaja')}</div>
           {#if $favLines.length === 0}
-            <div class="t-footnote text-muted">Ni pripetih linij.</div>
+            <div class="t-footnote text-muted">{$t('Ni pripetih linij.')}</div>
           {:else}
             <ul class="surface-2 rounded-2xl overflow-hidden">
               {#each $favLines as f, i (favKey(f))}
@@ -373,7 +374,7 @@
                     <LineBadge short={f.routeShort} routeId={f.routeId} size="sm" />
                     <div class="flex-1 min-w-0">
                       <div class="t-subhead font-medium truncate">{f.stopName}</div>
-                      <div class="t-footnote text-muted truncate">proti {f.headsign}</div>
+                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: f.headsign })}</div>
                     </div>
                     {#if sel}
                       <div class="w-5 h-5 rounded-full bg-accent grid place-items-center shrink-0">
@@ -389,61 +390,61 @@
 
         <!-- Dnevi -->
         <div>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2">Dnevi</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Dnevi')}</div>
           <div class="flex gap-1.5 mb-2">
             {#each DAY_SHORT as d, i}
               <button class="pressable flex-1 min-h-[44px] rounded-xl t-footnote font-semibold"
                       style="background: {eDays[i] ? 'var(--accent)' : 'var(--surface-2)'}; color: {eDays[i] ? 'white' : 'var(--text)'}"
                       role="switch"
                       aria-checked={eDays[i]}
-                      aria-label={d}
-                      on:click={() => toggleDay(i)}>{d}</button>
+                      aria-label={$t(d)}
+                      on:click={() => toggleDay(i)}>{$t(d)}</button>
             {/each}
           </div>
           <div class="flex gap-1.5">
             <button class="pressable flex-1 min-h-[40px] rounded-xl surface-2 border border-base t-footnote"
-                    on:click={() => setDays('week')}>Delavniki</button>
+                    on:click={() => setDays('week')}>{$t('Delavniki')}</button>
             <button class="pressable flex-1 min-h-[40px] rounded-xl surface-2 border border-base t-footnote"
-                    on:click={() => setDays('weekend')}>Vikend</button>
+                    on:click={() => setDays('weekend')}>{$t('Vikend')}</button>
           </div>
           {#if !eDays.some(Boolean)}
-            <div class="t-footnote mt-2" style="color: var(--status-delay)">Izberi vsaj en dan.</div>
+            <div class="t-footnote mt-2" style="color: var(--status-delay)">{$t('Izberi vsaj en dan.')}</div>
           {/if}
         </div>
 
         <!-- Okno -->
         <div>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2">Časovno okno</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Časovno okno')}</div>
           <div class="flex items-center gap-2">
             <label class="flex-1">
-              <span class="t-footnote text-muted">Od</span>
+              <span class="t-footnote text-muted">{$t('Od')}</span>
               <input type="time" bind:value={eFrom}
                      class="w-full h-12 surface-2 rounded-xl border border-base px-3 t-body tabular-nums"
-                     aria-label="Začetek okna" />
+                     aria-label={$t('Začetek okna')} />
             </label>
             <label class="flex-1">
-              <span class="t-footnote text-muted">Do</span>
+              <span class="t-footnote text-muted">{$t('Do')}</span>
               <input type="time" bind:value={eTo}
                      class="w-full h-12 surface-2 rounded-xl border border-base px-3 t-body tabular-nums"
-                     aria-label="Konec okna" />
+                     aria-label={$t('Konec okna')} />
             </label>
           </div>
           <div class="t-footnote mt-2" style="color: {windowValid ? 'var(--text-muted)' : 'var(--status-delay)'}">
             {#if windowValid}
-              Zazvoni pred prvim odhodom v tem oknu.
+              {$t('Zazvoni pred prvim odhodom v tem oknu.')}
             {:else}
-              Konec okna mora biti za začetkom — okno čez polnoč ni podprto.
+              {$t('Konec okna mora biti za začetkom — okno čez polnoč ni podprto.')}
             {/if}
           </div>
         </div>
 
         <!-- Odmik -->
         <div>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2">Koliko prej naj zazvoni</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Koliko prej naj zazvoni')}</div>
           <div class="flex items-center gap-3">
             <input type="range" min="0" max={MAX_LEAD_MIN} step="1" bind:value={eLead}
                    class="flex-1 accent-[var(--accent)]"
-                   aria-label="Odmik pred odhodom v minutah" />
+                   aria-label={$t('Odmik pred odhodom v minutah')} />
             <div class="w-20 text-right t-title3 font-semibold tabular-nums">{eLead} min</div>
           </div>
         </div>
@@ -451,11 +452,11 @@
 
       <div class="shrink-0 px-5 pt-3 pb-5 border-t border-base flex gap-2">
         <button type="button" class="pressable flex-1 min-h-[48px] rounded-xl surface-2 border border-base t-callout font-semibold"
-                on:click={() => editorOpen = false}>Prekliči</button>
+                on:click={() => editorOpen = false}>{$t('Prekliči')}</button>
         <button type="button" class="pressable flex-1 min-h-[48px] rounded-xl t-callout font-semibold disabled:opacity-50"
                 style="background: var(--accent); color: #ffffff;"
                 disabled={!canSave}
-                on:click={save}>Shrani</button>
+                on:click={save}>{$t('Shrani')}</button>
       </div>
     </div>
   </div>

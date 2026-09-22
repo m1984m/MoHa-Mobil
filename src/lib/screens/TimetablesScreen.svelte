@@ -7,6 +7,7 @@
   import { favStops } from '../favorites';
   import { pushBack } from '../backstack';
   import type { GTFS, Route, Stop } from '../gtfs';
+  import { t } from '../i18n';
 
   export let gtfs: GTFS | null;
   export let onStopSelect: (s: Stop) => void = () => {};
@@ -58,16 +59,16 @@
   function openStop(s: Stop) { selectedStop = s; stopOpen = true; }
 </script>
 
-<Screen title="Vozni redi">
+<Screen title={$t('Vozni redi')}>
   <div class="max-w-screen-sm mx-auto px-4 pb-6">
-    <p class="t-footnote text-muted mb-4">Izberi linijo ali poišči postajo za vozni red.</p>
+    <p class="t-footnote text-muted mb-4">{$t('Izberi linijo ali poišči postajo za vozni red.')}</p>
 
     <div class="surface-2 rounded-xl p-1 flex gap-1 mb-4">
-      {#each [{id: 'lines' as Mode, label: 'Linije'}, {id: 'stops' as Mode, label: 'Postaje'}] as t}
-        {@const a = mode === t.id}
+      {#each [{id: 'lines' as Mode, label: $t('Linije')}, {id: 'stops' as Mode, label: $t('Postaje')}] as tab}
+        {@const a = mode === tab.id}
         <button class="pressable flex-1 h-10 rounded-lg t-subhead font-semibold"
                 style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
-                on:click={() => { mode = t.id; query = ''; }}>{t.label}</button>
+                on:click={() => { mode = tab.id; query = ''; }}>{tab.label}</button>
       {/each}
     </div>
 
@@ -75,12 +76,12 @@
       <Search size={18} color="var(--text-muted)" class="absolute left-3 top-1/2 -translate-y-1/2" />
       <input bind:value={query}
              class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
-             placeholder={mode === 'lines' ? 'Poišči linijo (npr. P16)…' : 'Poišči postajo…'} />
+             placeholder={mode === 'lines' ? $t('Poišči linijo (npr. P16)…') : $t('Poišči postajo…')} />
     </div>
 
     {#if mode === 'lines'}
       {#if filteredRoutes.length === 0}
-        <div class="t-body text-muted text-center py-12">Ni zadetkov.</div>
+        <div class="t-body text-muted text-center py-12">{$t('Ni zadetkov.')}</div>
       {:else}
         <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
           {#each filteredRoutes as r}
@@ -94,9 +95,9 @@
       {/if}
     {:else}
       {#if !query.trim()}
-        <div class="t-body text-muted text-center py-12">Vnesi ime postaje za iskanje voznega reda.</div>
+        <div class="t-body text-muted text-center py-12">{$t('Vnesi ime postaje za iskanje voznega reda.')}</div>
       {:else if stops.length === 0}
-        <div class="t-body text-muted text-center py-12">Ni zadetkov.</div>
+        <div class="t-body text-muted text-center py-12">{$t('Ni zadetkov.')}</div>
       {:else}
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each stops as s, i}
@@ -112,7 +113,7 @@
               </button>
               <button class="pressable px-4 grid place-items-center"
                       on:click={() => favStops.toggle(s.id)}
-                      aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
+                      aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljene')}
                       aria-pressed={isFav}>
                 <Star size={20}
                       color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'}

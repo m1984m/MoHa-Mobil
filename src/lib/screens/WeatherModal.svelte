@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { X, Sunrise, Sunset, Wind, Droplets, Sun } from 'lucide-svelte';
   import { fetchDayWeather, type DayWeather } from '../weather';
+  import { t } from '../i18n';
 
   export let open = false;
   export let lat: number;
@@ -37,17 +38,17 @@
     <div class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float overflow-hidden"
          style="padding-bottom: env(safe-area-inset-bottom);">
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
-        <div class="t-title2">Vreme danes</div>
+        <div class="t-title2">{$t('Vreme danes')}</div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={close} aria-label="Zapri">
+                on:click={close} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
 
       {#if loading && !data}
-        <div class="px-5 pb-6 t-body text-muted">Nalagam…</div>
+        <div class="px-5 pb-6 t-body text-muted">{$t('Nalagam…')}</div>
       {:else if !data}
-        <div class="px-5 pb-6 t-body text-muted">Podatki niso na voljo.</div>
+        <div class="px-5 pb-6 t-body text-muted">{$t('Podatki niso na voljo.')}</div>
       {:else}
         <div class="px-5 pt-2 pb-5">
           <div class="flex items-center gap-4">
@@ -58,7 +59,7 @@
                 <div class="t-subhead text-muted">{data.label}</div>
               </div>
               <div class="t-footnote text-muted">
-                Najvišja {data.tempMax}° · Najnižja {data.tempMin}°
+                {$t('Najvišja {max}° · Najnižja {min}°', { max: data.tempMax, min: data.tempMin })}
               </div>
             </div>
           </div>
@@ -68,35 +69,35 @@
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2">
             <Sunrise size={18} color="var(--status-delay)" />
             <div>
-              <div class="t-footnote text-muted">Sončni vzhod</div>
+              <div class="t-footnote text-muted">{$t('Sončni vzhod')}</div>
               <div class="t-body font-semibold">{data.sunrise}</div>
             </div>
           </div>
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2">
             <Sunset size={18} color="var(--status-delay)" />
             <div>
-              <div class="t-footnote text-muted">Sončni zahod</div>
+              <div class="t-footnote text-muted">{$t('Sončni zahod')}</div>
               <div class="t-body font-semibold">{data.sunset}</div>
             </div>
           </div>
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2">
             <Droplets size={18} color="var(--accent)" />
             <div>
-              <div class="t-footnote text-muted">Padavine</div>
+              <div class="t-footnote text-muted">{$t('Padavine')}</div>
               <div class="t-body font-semibold">{data.precipSumMm} mm</div>
             </div>
           </div>
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2">
             <Wind size={18} color="var(--text-muted)" />
             <div>
-              <div class="t-footnote text-muted">Veter (maks.)</div>
+              <div class="t-footnote text-muted">{$t('Veter (maks.)')}</div>
               <div class="t-body font-semibold">{data.windMaxKmh} km/h</div>
             </div>
           </div>
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2 col-span-2">
             <Sun size={18} color="var(--status-delay)" />
             <div>
-              <div class="t-footnote text-muted">UV indeks</div>
+              <div class="t-footnote text-muted">{$t('UV indeks')}</div>
               <div class="t-body font-semibold">{data.uvMax}</div>
             </div>
           </div>
@@ -104,7 +105,7 @@
 
         {#if data.hourly.length > 0}
           <div class="px-5 pb-5">
-            <div class="t-footnote text-muted uppercase tracking-wide mb-2">Po urah</div>
+            <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Po urah')}</div>
             <div class="surface-2 rounded-xl overflow-x-auto">
               <div class="flex gap-3 px-3 py-3 min-w-max">
                 {#each data.hourly as h}

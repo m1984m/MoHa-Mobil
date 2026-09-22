@@ -16,6 +16,7 @@
   import { pushBack } from '../backstack';
   import { focusTrap } from '../focusTrap';
   import { toast } from '../toast';
+  import { t, tr, plural } from '../i18n';
   import { onMount, onDestroy } from 'svelte';
 
   export let gtfs: GTFS | null;
@@ -26,8 +27,8 @@
   export let onOpenAlarms: () => void = () => {};
 
   $: alarmSummary = $alarms.length === 0
-    ? 'Opozori me, preden mi avtobus uide'
-    : `${$alarms.filter(a => a.enabled).length} od ${$alarms.length} vklopljenih`;
+    ? $t('Opozori me, preden mi avtobus uide')
+    : $t('{on} od {total} vklopljenih', { on: $alarms.filter(a => a.enabled).length, total: $alarms.length });
   // Opozorilo mora biti vidno že tu — opomnik, ki zaradi izteka voznega reda ne bo
   // zazvonil, se sicer opazi šele zjutraj, ko avtobus uide. Odvisno samo od gtfs in
   // seznama opomnikov, zato se ne preračunava ob vsakem 30-sekundnem tiku.
@@ -54,7 +55,7 @@
     const snapshot = [...$favStops];
     favStops.clear();
     clearConfirmOpen = false;
-    toast.showUndo('Priljubljene postaje počiščene', () => {
+    toast.showUndo(tr('Priljubljene postaje počiščene'), () => {
       for (const id of snapshot) favStops.toggle(id);
     });
   }
@@ -138,7 +139,7 @@
     const pinned = $favLines.filter(f => f.stopId === stop.id);
     favStops.toggle(stop.id);
     for (const p of pinned) favLines.remove(p.stopId, p.routeId, p.dir);
-    toast.showUndo(`${stop.name} odstranjena`, () => {
+    toast.showUndo(tr('{name} odstranjena', { name: stop.name }), () => {
       favStops.toggle(stop.id);
       for (const p of pinned) favLines.toggle(p);
     });
@@ -146,7 +147,7 @@
 
   function deleteRoute(r: SavedRoute) {
     savedRoutes.remove(r.id);
-    toast.showUndo('Pot odstranjena', () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
+    toast.showUndo(tr('Pot odstranjena'), () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
   }
 
   // ── Preimenovanje shranjene poti ──
@@ -238,20 +239,20 @@
   else if (pickerStop) pickerStop = null;
 }} />
 
-<Screen title="Priljubljene" onRefresh={refresh}>
+<Screen title={$t('Priljubljene')} onRefresh={refresh}>
   <div class="px-4 max-w-screen-sm mx-auto space-y-3">
     <button class="pressable w-full surface rounded-2xl border shadow-card min-h-[56px] px-4 py-3 flex items-center gap-3 text-left"
             style={alarmWarn ? 'border-color: var(--status-delay)' : ''}
             class:border-base={!alarmWarn}
             on:click={onOpenAlarms}
-            aria-label="Odpri opomnike za odhod">
+            aria-label={$t('Odpri opomnike za odhod')}>
       {#if alarmWarn}
         <AlertTriangle size={20} color="var(--status-delay)" />
       {:else}
         <AlarmClock size={20} color="var(--accent)" />
       {/if}
       <div class="flex-1 min-w-0">
-        <div class="t-body font-medium">Opomniki za odhod</div>
+        <div class="t-body font-medium">{$t('Opomniki za odhod')}</div>
         {#if alarmWarn}
           <div class="t-footnote" style="color: var(--status-delay)">{alarmWarn.text}</div>
         {:else}
@@ -262,7 +263,7 @@
     </button>
 
     {#if $savedRoutes.length > 0}
-      <h2 class="t-footnote text-muted uppercase tracking-wide mt-1">Shranjene poti</h2>
+      <h2 class="t-footnote text-muted uppercase tracking-wide mt-1">{$t('Shranjene poti')}</h2>
       {#each $savedRoutes as r (r.id)}
         {@const key = `r:${r.id}`}
         {@const dx = off(key)}
@@ -297,22 +298,22 @@
                     class="pressable w-11 min-h-[44px] grid place-items-center border-l border-base shrink-0"
                     on:pointerdown|stopPropagation
                     on:click|stopPropagation={() => openRename(r)}
-                    aria-label="Preimenuj pot {r.label}">
+                    aria-label={$t('Preimenuj pot {label}', { label: r.label })}>
               <Pencil size={16} color="var(--text-muted)" />
             </button>
           </div>
         </div>
       {/each}
-      <h2 class="t-footnote text-muted uppercase tracking-wide pt-2">Postajališča</h2>
+      <h2 class="t-footnote text-muted uppercase tracking-wide pt-2">{$t('Postajališča')}</h2>
     {/if}
 
     {#if favList.length === 0 && $savedRoutes.length === 0}
-      <EmptyState icon={Star} title="Še ni priljubljenih" body="Dodaj postajo s pritiskom na zvezdico ali shrani pot iz načrtovalca." />
+      <EmptyState icon={Star} title={$t('Še ni priljubljenih')} body={$t('Dodaj postajo s pritiskom na zvezdico ali shrani pot iz načrtovalca.')} />
     {:else if favList.length > 0}
       <div class="flex items-center justify-between">
-        <div class="t-footnote text-muted">{favList.length} {favList.length === 1 ? 'postaja' : favList.length < 5 ? 'postaje' : 'postaj'}</div>
+        <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
         <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
-          <Trash2 size={14} /> Počisti
+          <Trash2 size={14} /> {$t('Počisti')}
         </button>
       </div>
       {#each boards as b (b.stop.id)}
@@ -340,7 +341,7 @@
               <div class="t-title3 font-semibold flex-1 truncate">{b.stop.name}</div>
             </button>
             {#if b.deps.length === 0}
-              <div class="px-4 pb-3 t-footnote text-muted">Danes ni več odhodov</div>
+              <div class="px-4 pb-3 t-footnote text-muted">{$t('Danes ni več odhodov')}</div>
             {:else}
               <ul>
                 {#each b.deps as d}
@@ -348,7 +349,7 @@
                     <button class="pressable w-full text-left px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3"
                             on:click|capture={guardClick}
                             on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}
-                            aria-label="{d.route.short} proti {d.trip.headsign}">
+                            aria-label={$t('{line} proti {dest}', { line: d.route.short, dest: d.trip.headsign })}>
                       <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                       <div class="flex-1 min-w-0 {$compactLists ? 't-subhead' : 't-callout'} truncate">{d.trip.headsign}</div>
                       <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
@@ -364,7 +365,7 @@
                         style="background: var(--surface-2);"
                         on:pointerdown|stopPropagation
                         on:click|stopPropagation={() => openTimetableFor(f)}
-                        aria-label="Vozni red linije {f.routeShort} za {f.headsign}">
+                        aria-label={$t('Vozni red linije {line} za {dest}', { line: f.routeShort, dest: f.headsign })}>
                   <LineBadge short={f.routeShort} routeId={f.routeId} size="sm" />
                   <span class="t-footnote flex-1 min-w-0 truncate text-left">{f.headsign}</span>
                 </button>
@@ -374,8 +375,8 @@
                       style="background: var(--surface-2);"
                       on:pointerdown|stopPropagation
                       on:click|stopPropagation={() => pickerStop = b.stop}
-                      aria-label="Pripni linijo">
-                <Plus size={14} /> Pripni linijo
+                      aria-label={$t('Pripni linijo')}>
+                <Plus size={14} /> {$t('Pripni linijo')}
               </button>
             </div>
           </div>
@@ -392,21 +393,21 @@
        role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
-         role="dialog" aria-modal="true" aria-label="Pripni linijo" tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Pripni linijo')} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-3 shrink-0">
         <div class="min-w-0 flex-1">
-          <div class="t-footnote text-muted uppercase tracking-wide">Pripni linijo</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Pripni linijo')}</div>
           <div class="t-title2 truncate">{pickerStop.name}</div>
         </div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={() => pickerStop = null} aria-label="Zapri">
+                on:click={() => pickerStop = null} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         {#if pickerChoices.length === 0}
-          <div class="t-body text-muted text-center py-8">Ni linij za to postajo.</div>
+          <div class="t-body text-muted text-center py-8">{$t('Ni linij za to postajo.')}</div>
         {:else}
           <ul class="surface-2 rounded-2xl overflow-hidden">
             {#each pickerChoices as c, i}
@@ -440,31 +441,31 @@
        on:click|self={() => renameId = null}
        role="presentation">
     <div class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
-         role="dialog" aria-modal="true" aria-label="Preimenuj pot" tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Preimenuj pot')} tabindex="-1"
          use:focusTrap>
-      <div class="t-headline font-semibold mb-1">Preimenuj pot</div>
-      <div class="t-footnote text-muted mb-3">Na primer »Dom → Služba«.</div>
+      <div class="t-headline font-semibold mb-1">{$t('Preimenuj pot')}</div>
+      <div class="t-footnote text-muted mb-3">{$t('Na primer »Dom → Služba«.')}</div>
       <input bind:value={renameValue}
              maxlength="40"
              on:keydown={(e) => { if (e.key === 'Enter') commitRename(); }}
              class="w-full h-12 surface-2 rounded-xl border border-base px-3 t-body mb-4"
-             aria-label="Ime poti" />
+             aria-label={$t('Ime poti')} />
       <div class="flex gap-2">
         <button type="button" class="pressable flex-1 min-h-[44px] rounded-xl surface-2 border border-base t-callout font-semibold"
-                on:click={() => renameId = null}>Prekliči</button>
+                on:click={() => renameId = null}>{$t('Prekliči')}</button>
         <button type="button" class="pressable flex-1 min-h-[44px] rounded-xl t-callout font-semibold disabled:opacity-50"
                 style="background: var(--accent); color: #ffffff;"
                 disabled={!renameValue.trim()}
-                on:click={commitRename}>Shrani</button>
+                on:click={commitRename}>{$t('Shrani')}</button>
       </div>
     </div>
   </div>
 {/if}
 
 <ConfirmDialog open={clearConfirmOpen}
-               title="Počisti vse priljubljene postaje?"
-               body="Shranjene poti ostanejo. Dejanje lahko takoj razveljaviš."
-               confirmLabel="Počisti" destructive
+               title={$t('Počisti vse priljubljene postaje?')}
+               body={$t('Shranjene poti ostanejo. Dejanje lahko takoj razveljaviš.')}
+               confirmLabel={$t('Počisti')} destructive
                onConfirm={clearAll}
                onCancel={() => clearConfirmOpen = false} />
 

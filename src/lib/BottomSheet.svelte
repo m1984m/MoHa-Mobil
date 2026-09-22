@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { spring } from 'svelte/motion';
+  import { t } from './i18n';
 
   // Height fractions of viewport that the sheet occupies at each snap
   export let snaps: number[] = [0.12, 0.55, 0.92];
@@ -169,7 +170,7 @@
   class="fixed left-0 right-0 bottom-0 z-30 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.18)] surface border-t border-base flex flex-col pointer-events-auto"
   style="height: {sheetH}px; transform: translateY({$y}px); touch-action: none;"
   role="region"
-  aria-label="Podrobnosti"
+  aria-label={$t('Podrobnosti')}
   on:pointerdown={onDown}
   on:pointermove={onMove}
   on:pointerup={onUp}

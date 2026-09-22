@@ -19,6 +19,16 @@
     <meta name="apple-mobile-web-app-title" content="MoHa Mobil" />
     <title>MoHa Mobil</title>
     <script>
+      // Ali je to obstoječi uporabnik? Prebrati je treba PRED moduli aplikacije:
+      // settings.ts ob nalaganju takoj zapiše privzete vrednosti mm.* v shrambo, zato
+      // bi pozneje vsak nov uporabnik izgledal kot obstoječi (glej lib/onboarding.ts).
+      try {
+        window.__mmReturning = Object.keys(localStorage).some(function (k) {
+          return k.indexOf('mm.') === 0 && k !== 'mm.lang.v1' && k.indexOf('mm.onboarding') !== 0 && k.indexOf('mm.hints') !== 0;
+        });
+      } catch (e) { window.__mmReturning = false; }
+    </script>
+    <script>
       // GitHub Pages SPA redirect decode — obnovi originalno pot iz ?p=/...
       (function () {
         var q = window.location.search;

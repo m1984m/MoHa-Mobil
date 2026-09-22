@@ -10,6 +10,7 @@
   import { savedRoutes } from '../savedRoutes';
   import { focusTrap } from '../focusTrap';
   import { toast } from '../toast';
+  import { t, tr, plural } from '../i18n';
 
   export let open: boolean = false;
   export let gtfs: GTFS | null;
@@ -57,7 +58,7 @@
     if (!isFinite(h) || !isFinite(m)) return 0;
     return h * 3600 + m * 60;
   }
-  $: timeModeLabel = timeMode === 'now' ? 'Zdaj' : timeMode === 'depart' ? `Odhod ob ${timeStr}` : `Prihod do ${timeStr}`;
+  $: timeModeLabel = timeMode === 'now' ? $t('Zdaj') : timeMode === 'depart' ? $t('Odhod ob {time}', { time: timeStr }) : $t('Prihod do {time}', { time: timeStr });
 
   $: fromResults = gtfs && fromFocus && !fromPlace && fromQuery.trim()
     ? gtfs.stops.filter(s => s.name.toLowerCase().includes(fromQuery.trim().toLowerCase())).slice(0, 6)
@@ -120,7 +121,7 @@
   // Brisanje z možnostjo razveljavitve — prej je bil X nepovraten.
   function removeSaved(r: { id: string; label: string; from: Place; to: Place }) {
     savedRoutes.remove(r.id);
-    toast.showUndo('Pot odstranjena', () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
+    toast.showUndo(tr('Pot odstranjena'), () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
   }
 
   function pickFromAddr(p: Place) { fromPlace = p; fromQuery = p.name; fromFocus = false; fromAddrResults = []; }
@@ -128,8 +129,8 @@
 
   function useMyLocationAsFrom() {
     if (!hasGeo) return;
-    fromPlace = { lat: origin.lat, lon: origin.lon, name: 'Moja lokacija' };
-    fromQuery = 'Moja lokacija';
+    fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
+    fromQuery = tr('Moja lokacija');
     fromFocus = false;
   }
   function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name }; fromQuery = s.name; fromFocus = false; }
@@ -153,7 +154,7 @@
   }
 
   async function applyPendingDest(d: { lat: number; lon: number; name?: string }) {
-    const placeholder = d.name ?? `Izbrana lokacija (${d.lat.toFixed(4)}, ${d.lon.toFixed(4)})`;
+    const placeholder = d.name ?? tr('Izbrana lokacija ({lat}, {lon})', { lat: d.lat.toFixed(4), lon: d.lon.toFixed(4) });
     toPlace = { lat: d.lat, lon: d.lon, name: placeholder };
     toQuery = placeholder;
     toFocus = false;
@@ -161,8 +162,8 @@
     // Avtomatsko zapolni izhodišče z lokacijo uporabnika, če je na voljo in še ni izbrano —
     // iz obeh vstopnih točk (long-press / "pot do postaje") je "od moje lokacije" prevladujoča izbira.
     if (hasGeo && !fromPlace) {
-      fromPlace = { lat: origin.lat, lon: origin.lon, name: 'Moja lokacija' };
-      fromQuery = 'Moja lokacija';
+      fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
+      fromQuery = tr('Moja lokacija');
       fromFocus = false;
     }
     // Auto-run: če sta oba konca zapolnjena, takoj izračunaj — ena interakcija manj.
@@ -195,7 +196,7 @@
     if (timeMode === 'arrive') {
       const n = new Date();
       if (parseHM(timeStr) <= n.getHours() * 3600 + n.getMinutes() * 60) {
-        error = 'Izbrani čas prihoda je že mimo — izberi poznejšega.';
+        error = tr('Izbrani čas prihoda je že mimo — izberi poznejšega.');
         return;
       }
     }
@@ -209,7 +210,7 @@
       const st = gtfs.stops.find(s => s.name.toLowerCase() === ql);
       toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(toQuery.trim());
     }
-    if (!fromPlace || !toPlace) { error = 'Ne najdem izhodišča ali cilja.'; return; }
+    if (!fromPlace || !toPlace) { error = tr('Ne najdem izhodišča ali cilja.'); return; }
 
     abortActive();
     const ctl = new AbortController();
@@ -254,16 +255,16 @@
       if (plans.length === 0) {
         // Razčlenjena diagnoza namesto generičnega "Ni povezave." (slepa ulica).
         error = accessMap.size === 0
-          ? 'Izhodišče je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.'
+          ? tr('Izhodišče je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.')
           : egressMap.size === 0
-            ? 'Cilj je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.'
-            : 'Ob izbranem času ni povezave — poskusi drug čas odhoda.';
+            ? tr('Cilj je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.')
+            : tr('Ob izbranem času ni povezave — poskusi drug čas odhoda.');
         return;
       }
       candidates = plans;
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
-      error = 'Napaka: ' + (e?.message ?? e);
+      error = tr('Napaka: {msg}', { msg: String(e?.message ?? e) });
     } finally {
       // running sprosti samo run, ki je še aktiven — sicer starejši finally
       // ugasne indikator novejšemu (double-run race ob auto-run + ročnem kliku).
@@ -334,13 +335,13 @@
 
 {#if open}
   <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
-       role="dialog" aria-modal="true" aria-label="Načrtuj pot">
+       role="dialog" aria-modal="true" aria-label={$t('Načrtuj pot')}>
     <div class="surface rounded-b-3xl shadow-float"
          style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;"
          use:focusTrap>
       <div class="flex items-center justify-between px-4 pt-4 pb-2">
-        <div class="t-title2">Načrtuj pot</div>
-        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label="Zapri">
+        <div class="t-title2">{$t('Načrtuj pot')}</div>
+        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
@@ -357,7 +358,7 @@
               on:input={() => { if (fromPlace) fromPlace = null; }}
               on:blur={() => setTimeout(() => fromFocus = false, 150)}
               class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
-              placeholder="Od — postaja, naslov ali moja lokacija" />
+              placeholder={$t('Od — postaja, naslov ali moja lokacija')} />
           </div>
           {#if fromFocus && !fromPlace && (hasGeo || fromResults.length > 0 || fromAddrResults.length > 0 || showFromFavs)}
             <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
@@ -367,12 +368,12 @@
                 <li>
                   <button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={useMyLocationAsFrom}>
                     <Navigation size={16} color="var(--accent)" />
-                    <span class="font-medium">Moja lokacija</span>
+                    <span class="font-medium">{$t('Moja lokacija')}</span>
                   </button>
                 </li>
               {/if}
               {#if showFromFavs}
-                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">Priljubljena</li>
+                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena')}</li>
                 {#each favList as s}
                   <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFrom(s)}>
                     <Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
@@ -384,14 +385,14 @@
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFrom(s)}>
                   <MapPin size={14} color="var(--accent)" />
                   <span>{s.name}</span>
-                  <span class="ml-auto t-footnote text-muted">postaja</span>
+                  <span class="ml-auto t-footnote text-muted">{$t('postaja')}</span>
                 </button></li>
               {/each}
               {#each fromAddrResults as p}
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFromAddr(p)}>
                   <MapPin size={14} color="var(--text-muted)" />
                   <span class="truncate">{p.name}</span>
-                  <span class="ml-auto t-footnote text-muted">naslov</span>
+                  <span class="ml-auto t-footnote text-muted">{$t('naslov')}</span>
                 </button></li>
               {/each}
             </ul>
@@ -400,7 +401,7 @@
 
         <!-- Swap button -->
         <div class="flex justify-end -my-1">
-          <button class="pressable w-8 h-8 rounded-full surface-2 border border-base grid place-items-center" on:click={swap} aria-label="Zamenjaj">
+          <button class="pressable w-8 h-8 rounded-full surface-2 border border-base grid place-items-center" on:click={swap} aria-label={$t('Zamenjaj')}>
             <ArrowRightLeft size={14} />
           </button>
         </div>
@@ -414,14 +415,14 @@
               on:input={() => { if (toPlace) toPlace = null; }}
               on:blur={() => setTimeout(() => toFocus = false, 150)}
               class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
-              placeholder="Do — postaja ali naslov" />
+              placeholder={$t('Do — postaja ali naslov')} />
           </div>
           {#if toFocus && !toPlace && (toResults.length > 0 || toAddrResults.length > 0 || showToFavs)}
             <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
                  z overflow-y:auto in se je odrezal na robu lista (od 6 zadetkov vidnih 2,5). -->
             <ul class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
               {#if showToFavs}
-                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">Priljubljena</li>
+                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena')}</li>
                 {#each favList as s}
                   <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickTo(s)}>
                     <Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
@@ -433,14 +434,14 @@
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickTo(s)}>
                   <Flag size={14} color="var(--status-disrupt)" />
                   <span>{s.name}</span>
-                  <span class="ml-auto t-footnote text-muted">postaja</span>
+                  <span class="ml-auto t-footnote text-muted">{$t('postaja')}</span>
                 </button></li>
               {/each}
               {#each toAddrResults as p}
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickToAddr(p)}>
                   <Flag size={14} color="var(--text-muted)" />
                   <span class="truncate">{p.name}</span>
-                  <span class="ml-auto t-footnote text-muted">naslov</span>
+                  <span class="ml-auto t-footnote text-muted">{$t('naslov')}</span>
                 </button></li>
               {/each}
             </ul>
@@ -450,7 +451,7 @@
         <!-- Shranjene poti -->
         {#if $savedRoutes.length > 0 && candidates.length === 0}
           <div>
-            <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Shranjene poti</div>
+            <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">{$t('Shranjene poti')}</div>
             <ul class="space-y-2">
               {#each $savedRoutes as r}
                 <li class="surface-2 rounded-xl border border-base overflow-hidden flex items-stretch">
@@ -468,7 +469,7 @@
                   </button>
                   <button class="pressable w-11 min-h-[44px] grid place-items-center border-l border-base shrink-0"
                           on:click={() => removeSaved(r)}
-                          aria-label="Odstrani shranjeno pot {r.label}">
+                          aria-label={$t('Odstrani shranjeno pot {label}', { label: r.label })}>
                     <X size={16} />
                   </button>
                 </li>
@@ -489,7 +490,7 @@
           {#if timeExpanded}
             <div class="surface-2 rounded-xl border border-base mt-2 p-3 space-y-3">
               <div class="grid grid-cols-3 gap-1 surface rounded-lg p-1">
-                {#each [{id: 'now' as TimeMode, label: 'Zdaj'}, {id: 'depart' as TimeMode, label: 'Odhod ob'}, {id: 'arrive' as TimeMode, label: 'Prihod do'}] as opt}
+                {#each [{id: 'now' as TimeMode, label: $t('Zdaj')}, {id: 'depart' as TimeMode, label: $t('Odhod ob')}, {id: 'arrive' as TimeMode, label: $t('Prihod do')}] as opt}
                   {@const a = timeMode === opt.id}
                   <button class="pressable h-9 rounded-md t-footnote font-semibold"
                           style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
@@ -498,7 +499,7 @@
               </div>
               {#if timeMode !== 'now'}
                 <label class="flex items-center gap-3">
-                  <span class="t-callout">Čas:</span>
+                  <span class="t-callout">{$t('Čas:')}</span>
                   <input type="time" bind:value={timeStr}
                          class="flex-1 h-11 surface rounded-lg border border-base px-3 t-body tabular-nums" />
                 </label>
@@ -515,7 +516,7 @@
             <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.15s"></div>
             <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.3s"></div>
           {:else}
-            Poišči pot
+            {$t('Poišči pot')}
           {/if}
         </button>
 
@@ -532,7 +533,7 @@
 
         {#if candidates.length > 0}
           <div class="pt-1">
-            <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">Predlogi poti</div>
+            <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">{$t('Predlogi poti')}</div>
             <ul class="space-y-2">
               {#each candidates as p, i}
                 <li>
@@ -541,15 +542,14 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-baseline gap-2">
                         <div class="t-title3 font-semibold">{fmtDur(p.arrSec - p.depSec)}</div>
-                        <div class="t-footnote text-muted">prihod {fmtTime(p.arrSec)}</div>
+                        <div class="t-footnote text-muted">{$t('prihod {time}', { time: fmtTime(p.arrSec) })}</div>
                       </div>
                       <div class="t-footnote text-muted mb-1.5">
-                        {#if p.transfers === 0 && busLegs(p).length === 0}peš
-                        {:else if p.transfers === 0}brez prestopanja
-                        {:else if p.transfers === 1}1 prestop
-                        {:else}{p.transfers} prestopov
+                        {#if p.transfers === 0 && busLegs(p).length === 0}{$t('peš')}
+                        {:else if p.transfers === 0}{$t('brez prestopanja')}
+                        {:else}{p.transfers} {plural(p.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}
                         {/if}
-                        {#if p.walkMeters > 0} · {Math.round(p.walkMeters)} m peš{/if}
+                        {#if p.walkMeters > 0} · {$t('{m} m peš', { m: Math.round(p.walkMeters) })}{/if}
                       </div>
                       <div class="flex flex-wrap gap-1.5">
                         {#each busLegs(p) as bl}
@@ -558,7 +558,7 @@
                       </div>
                     </div>
                     {#if i === 0}
-                      <div class="shrink-0 t-footnote rounded-full px-2 py-0.5" style="background: var(--accent); color: white;">priporočeno</div>
+                      <div class="shrink-0 t-footnote rounded-full px-2 py-0.5" style="background: var(--accent); color: white;">{$t('priporočeno')}</div>
                     {/if}
                   </button>
                 </li>
@@ -568,6 +568,6 @@
         {/if}
       </div>
     </div>
-    <button class="flex-1" on:click={handleClose} aria-label="Zapri"></button>
+    <button class="flex-1" on:click={handleClose} aria-label={$t('Zapri')}></button>
   </div>
 {/if}

@@ -5,6 +5,46 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.20.0 — 2026-09-22
+
+### Angleščina
+- Ves vmesnik je preveden v angleščino (razen skritega zaslona s statistiko). Jezik se
+  izbere na prvi kartici vodiča ali v Nastavitvah → Izgled. Privzeto ostane slovenščina,
+  ne jezik telefona: veliko domačih uporabnikov ima telefon v angleščini.
+- Ključ prevoda je slovensko besedilo samo (`$t('Najbližja postajališča')`), manjkajoč
+  prevod zato pokaže slovenščino. Slovarji po zaslonih v `src/lib/i18n/en/`.
+  `npm run i18n:check` javi vsak `$t`/`tr` brez prevoda (ne vidi dinamičnih ključev,
+  npr. zapiskov v `release.ts` — ob novem vnosu dodaj prevod ročno).
+- Ob menjavi jezika se vmesnik izriše na novo (`{#key $lang}` v App.svelte); podatki
+  (GTFS, lokacija) se ne nalagajo znova.
+- Mimogrede popravljena slovenska množina: »2 prestopa« namesto »2 prestopov«,
+  »1 vozilo« namesto »1 vozil«, »2 postaji« namesto »2 postaje«.
+
+### MBajk na Karti
+- Postaje MBajk (42) z ikono kolesa in številom prostih koles od zooma 14,5. Tap odpre
+  kartico s prostimi kolesi in stojali, potjo do postaje in povezavo za registracijo.
+- Pri izbranem postajališču vrstica »MBajk v bližini« (najbližja delujoča postaja do 400 m).
+- Vir: javni GBFS `api.cyclocity.fr/contracts/maribor/gbfs/v2` (JCDecaux), brez ključa,
+  CORS odprt → brez našega Workerja. Stanje se osveži vsako minuto, samo dokler je Karta
+  odprta in sloj vklopljen (gumb levo zgoraj). Navedba vira v kartici in Nastavitvah.
+
+### Cene in vozovnice
+- Nov zaslon v Nastavitve → Pomoč: cenik Marproma (velja od 1. 6. 2026), prestop 75 min,
+  nakup na avtobusu z bančno kartico, aplikacija Marprom Shop, spletna prodaja, prodajna
+  mesta. Aplikacija vozovnic ne prodaja (Marprom nima javnega vmesnika).
+- Brezplačne vozovnice za starejše so navedene samo s povezavo na Marpromove pogoje —
+  uradna stran o tem ni bila potrjena.
+
+### Vodič za nove uporabnike
+- Tri kartice ob prvem zagonu (odhodi v živo, karta, planer) z izbiro jezika, večjega
+  besedila in dovoljenjem za lokacijo; en namig na Domu, Karti in pri postajališču.
+- Obstoječi uporabniki vodiča ob posodobitvi ne dobijo: `index.html` pred moduli preveri,
+  ali so v shrambi ključi `mm.*` (settings.ts jih sicer ob nalaganju zapiše takoj in bi
+  bil vsak nov uporabnik videti kot obstoječi).
+- Nastavitve → Pomoč → Vodnik po aplikaciji ga odpre znova.
+
+---
+
 ## Zaledje (Cloudflare Worker) — 2026-09-22
 
 Paket aplikacije ostaja 0.19.0 — spremenjen je samo Worker, ki se objavlja ločeno.

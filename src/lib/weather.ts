@@ -1,30 +1,35 @@
+import { tr } from './i18n';
+
 export type Weather = { tempC: number; code: number; emoji: string; label: string };
 
 // Open-Meteo: free, no key required. https://open-meteo.com/
 // WMO weather codes: https://open-meteo.com/en/docs
-const EMOJI_MAP: Record<number, [string, string]> = {
-  0: ['☀️', 'Jasno'],
-  1: ['🌤️', 'Pretežno jasno'],
-  2: ['⛅', 'Delno oblačno'],
-  3: ['☁️', 'Oblačno'],
-  45: ['🌫️', 'Megla'],
-  48: ['🌫️', 'Ivje'],
-  51: ['🌦️', 'Rosenje'],
-  53: ['🌦️', 'Rosenje'],
-  55: ['🌦️', 'Gosto rosenje'],
-  61: ['🌧️', 'Dež'],
-  63: ['🌧️', 'Dež'],
-  65: ['🌧️', 'Močan dež'],
-  71: ['🌨️', 'Sneg'],
-  73: ['🌨️', 'Sneg'],
-  75: ['❄️', 'Močan sneg'],
-  80: ['🌦️', 'Ploha'],
-  81: ['🌧️', 'Ploha'],
-  82: ['⛈️', 'Močna ploha'],
-  95: ['⛈️', 'Nevihta'],
-  96: ['⛈️', 'Nevihta s točo'],
-  99: ['⛈️', 'Močna nevihta'],
+// Opis je funkcija (tr ob klicu), objekti pa ga berejo prek getterja: vreme v App
+// preživi menjavo jezika, zato opis ne sme biti zamrznjen ob prenosu.
+const EMOJI_MAP: Record<number, [string, () => string]> = {
+  0: ['☀️', () => tr('Jasno')],
+  1: ['🌤️', () => tr('Pretežno jasno')],
+  2: ['⛅', () => tr('Delno oblačno')],
+  3: ['☁️', () => tr('Oblačno')],
+  45: ['🌫️', () => tr('Megla')],
+  48: ['🌫️', () => tr('Ivje')],
+  51: ['🌦️', () => tr('Rosenje')],
+  53: ['🌦️', () => tr('Rosenje')],
+  55: ['🌦️', () => tr('Gosto rosenje')],
+  61: ['🌧️', () => tr('Dež')],
+  63: ['🌧️', () => tr('Dež')],
+  65: ['🌧️', () => tr('Močan dež')],
+  71: ['🌨️', () => tr('Sneg')],
+  73: ['🌨️', () => tr('Sneg')],
+  75: ['❄️', () => tr('Močan sneg')],
+  80: ['🌦️', () => tr('Ploha')],
+  81: ['🌧️', () => tr('Ploha')],
+  82: ['⛈️', () => tr('Močna ploha')],
+  95: ['⛈️', () => tr('Nevihta')],
+  96: ['⛈️', () => tr('Nevihta s točo')],
+  99: ['⛈️', () => tr('Močna nevihta')],
 };
+const FALLBACK: [string, () => string] = ['🌡️', () => tr('Vreme')];
 
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
@@ -35,8 +40,8 @@ export async function fetchWeather(lat: number, lon: number): Promise<Weather | 
     const tempC = j.current?.temperature_2m;
     const code = j.current?.weather_code;
     if (tempC == null || code == null) return null;
-    const [emoji, label] = EMOJI_MAP[code] ?? ['🌡️', 'Vreme'];
-    return { tempC: Math.round(tempC), code, emoji, label };
+    const [emoji, label] = EMOJI_MAP[code] ?? FALLBACK;
+    return { tempC: Math.round(tempC), code, emoji, get label() { return label(); } };
   } catch {
     return null;
   }
@@ -63,7 +68,7 @@ export async function fetchDayWeather(lat: number, lon: number): Promise<DayWeat
     const j = await r.json();
     const tempC = Math.round(j.current?.temperature_2m ?? 0);
     const code = j.current?.weather_code ?? 0;
-    const [emoji, label] = EMOJI_MAP[code] ?? ['🌡️', 'Vreme'];
+    const [emoji, label] = EMOJI_MAP[code] ?? FALLBACK;
 
     const hours: string[] = j.hourly?.time ?? [];
     const hT: number[] = j.hourly?.temperature_2m ?? [];
@@ -79,13 +84,13 @@ export async function fetchDayWeather(lat: number, lon: number): Promise<DayWeat
       const t = hours[i];
       if (!t.startsWith(today)) continue;
       const h = parseInt(t.slice(11, 13), 10);
-      const [em, lab] = EMOJI_MAP[hC[i]] ?? ['🌡️', 'Vreme'];
-      hourly.push({ hour: h, tempC: Math.round(hT[i]), code: hC[i], emoji: em, label: lab, precipMm: hP[i] ?? 0 });
+      const [em, lab] = EMOJI_MAP[hC[i]] ?? FALLBACK;
+      hourly.push({ hour: h, tempC: Math.round(hT[i]), code: hC[i], emoji: em, get label() { return lab(); }, precipMm: hP[i] ?? 0 });
     }
 
     const fmtHM = (iso: string) => iso ? iso.slice(11, 16) : '';
     return {
-      tempC, code, emoji, label,
+      tempC, code, emoji, get label() { return label(); },
       tempMin: Math.round(j.daily?.temperature_2m_min?.[0] ?? tempC),
       tempMax: Math.round(j.daily?.temperature_2m_max?.[0] ?? tempC),
       sunrise: fmtHM(j.daily?.sunrise?.[0] ?? ''),

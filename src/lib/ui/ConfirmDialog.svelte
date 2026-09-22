@@ -1,14 +1,15 @@
 <script lang="ts">
   import { AlertTriangle } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
+  import { tr } from '../i18n';
 
   // Nadomešča domači confirm() — ta izstopa iz oblikovnega jezika in v PWA
   // standalone načinu izgleda kot sistemska napaka.
   export let open = false;
   export let title: string;
   export let body: string = '';
-  export let confirmLabel = 'Potrdi';
-  export let cancelLabel = 'Prekliči';
+  export let confirmLabel = tr('Potrdi');
+  export let cancelLabel = tr('Prekliči');
   export let destructive = false;
   export let onConfirm: () => void;
   export let onCancel: () => void;

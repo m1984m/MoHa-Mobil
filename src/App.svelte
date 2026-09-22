@@ -12,6 +12,10 @@
   import { alarms } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack } from './lib/backstack';
+  import { lang, t } from './lib/i18n';
+  import { onboardingDone } from './lib/onboarding';
+  import WelcomeModal from './lib/ui/WelcomeModal.svelte';
+  import FaresModal from './lib/screens/FaresModal.svelte';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
@@ -135,6 +139,13 @@
   } else if (!alarmsOpen && backAlarms) {
     const r = backAlarms; backAlarms = null; r();
   }
+  let faresOpen = false;
+  let backFares: (() => void) | null = null;
+  $: if (faresOpen && !backFares) {
+    backFares = pushBack(() => faresOpen = false);
+  } else if (!faresOpen && backFares) {
+    const r = backFares; backFares = null; r();
+  }
   let backStop: (() => void) | null = null;
   $: if (selectedStop && !backStop) {
     backStop = pushBack(() => selectedStop = null);
@@ -148,12 +159,12 @@
     const r = backPlan; backPlan = null; r();
   }
 
-  const tabs = [
-    { id: 'home',       label: 'Dom',         icon: Home },
-    { id: 'timetables', label: 'Vozni redi',  icon: CalendarClock },
-    { id: 'map',        label: 'Karta',       icon: MapIcon },
-    { id: 'fav',        label: 'Priljub.',    icon: Star },
-    { id: 'settings',   label: 'Nastav.',     icon: SettingsIcon },
+  $: tabs = [
+    { id: 'home',       label: $t('Dom'),         icon: Home },
+    { id: 'timetables', label: $t('Vozni redi'),  icon: CalendarClock },
+    { id: 'map',        label: $t('Karta'),       icon: MapIcon },
+    { id: 'fav',        label: $t('Priljub.'),    icon: Star },
+    { id: 'settings',   label: $t('Nastav.'),     icon: SettingsIcon },
   ];
 
   async function tryLoadGtfs() {
@@ -194,7 +205,9 @@
       if (gtfs) await tryDeepLinkPlan();
     })();
     (async () => {
-      await requestLocation();
+      // Nov uporabnik: sistemsko okno za lokacijo naj ne prekine prve kartice vodiča —
+      // lokacijo zahteva kartica 3 ali konec vodiča (reaktivni blok spodaj).
+      if (get(onboardingDone)) await requestLocation();
       await refreshWeather();
       weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
     })();
@@ -316,6 +329,16 @@
     );
   }
 
+  // Vodič je bil v tej seji odprt in je končan brez lokacije (preskočen ali gumb
+  // ni bil tapnjen): vprašaj enkrat zdaj. Obstoječi uporabnik gre skozi onMount.
+  let onboardingShown = !get(onboardingDone);
+  let askedAfterOnboarding = false;
+  $: if (!$onboardingDone) onboardingShown = true;
+  $: if ($onboardingDone && onboardingShown && !hasGeo && !askedAfterOnboarding) {
+    askedAfterOnboarding = true;
+    void requestLocation().then(refreshWeather);
+  }
+
   // Dinamično sledenje stikala v Nastavitvah — brez potrebe po reload-u.
   $: {
     if ($liveLocationWatch && hasGeo && !stopWatch) startWatch();
@@ -323,7 +346,8 @@
   }
   // Vsaka sprememba alarmov — in zagon, ko se GTFS naloži — osveži razpored zvonjenja
   // na strežniku. scheduleSync sam združi rafal sprememb v eno zahtevo.
-  $: scheduleSync(gtfs, $alarms);
+  // $lang: besedilo obvestil se sestavi na telefonu, zato ga ob menjavi jezika pošlji znova.
+  $: $lang, scheduleSync(gtfs, $alarms);
 
   async function refreshWeather() {
     weather = await fetchWeather(origin.lat, origin.lon);
@@ -372,6 +396,10 @@
   }
 </script>
 
+<!-- Ob menjavi jezika se vmesnik izriše na novo: besedila, ki jih moduli .ts sestavijo
+     ob klicu (tr(), time.ts), sicer ne bi sledila jeziku. Podatki (GTFS, lokacija)
+     živijo v tej komponenti in se ne naložijo znova. -->
+{#key $lang}
 <div class="fixed inset-0">
 
   {#if activeTab === 'home'}
@@ -400,7 +428,7 @@
         <div class="absolute inset-0 flex items-center justify-center surface">
           <div class="flex items-center gap-2 t-footnote text-muted" aria-live="polite">
             <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
-            Nalagam karto…
+            {$t('Nalagam karto…')}
           </div>
         </div>
       {/if}
@@ -413,7 +441,8 @@
   {:else if activeTab === 'settings'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
       <SettingsScreen {theme} onThemeChange={(t) => theme = t}
-        onOpenAlarms={() => alarmsOpen = true} onOpenStats={openStats} />
+        onOpenAlarms={() => alarmsOpen = true} onOpenStats={openStats}
+        onOpenFares={() => faresOpen = true} />
     </div>
   {/if}
 
@@ -430,6 +459,8 @@
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}
     onClose={() => weatherOpen = false} />
 
+  <FaresModal open={faresOpen} onClose={() => faresOpen = false} />
+
   <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false} />
 
   {#if StatsScreenComp}
@@ -444,7 +475,7 @@
          style="bottom: calc(var(--tabbar-space) + 2.5rem)">
       <div class="surface rounded-full border border-base shadow-elev px-4 h-10 flex items-center gap-2 t-footnote font-medium">
         <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
-        Iščem pot…
+        {$t('Iščem pot…')}
       </div>
     </div>
   {/if}
@@ -453,15 +484,21 @@
     <div class="fixed inset-0 z-[100] flex items-center justify-center surface px-6"
          style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);">
       <div class="max-w-sm w-full text-center space-y-4">
-        <div class="t-title2 font-semibold">Voznih redov ni bilo mogoče naložiti</div>
-        <div class="t-footnote text-muted">Preveri internetno povezavo in poskusi znova.</div>
+        <div class="t-title2 font-semibold">{$t('Voznih redov ni bilo mogoče naložiti')}</div>
+        <div class="t-footnote text-muted">{$t('Preveri internetno povezavo in poskusi znova.')}</div>
         <button class="pressable h-12 px-6 rounded-xl t-subhead font-semibold disabled:opacity-60"
                 style="background: var(--accent); color: #ffffff;"
                 disabled={gtfsRetrying}
                 on:click={retryGtfs}>
-          {gtfsRetrying ? 'Nalagam…' : 'Poskusi znova'}
+          {gtfsRetrying ? $t('Nalagam…') : $t('Poskusi znova')}
         </button>
       </div>
     </div>
   {/if}
 </div>
+{/key}
+
+<!-- Zunaj {#key}: ob izbiri jezika na prvi kartici se vodič ne sme zapreti ali vrniti na začetek. -->
+{#if !$onboardingDone && !gtfsError}
+  <WelcomeModal {hasGeo} onRequestLocation={async () => { await requestLocation(); await refreshWeather(); }} />
+{/if}

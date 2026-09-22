@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { toast } from '../toast';
+  import { t } from '../i18n';
 
   function undo() {
     const t = $toast;
@@ -22,7 +23,7 @@
           <button type="button"
                   class="pressable pointer-events-auto shrink-0 h-8 px-3 rounded-full t-footnote font-semibold"
                   style="background: var(--accent); color: #ffffff; touch-action: manipulation;"
-                  on:click={undo}>Razveljavi</button>
+                  on:click={undo}>{$t('Razveljavi')}</button>
         {/if}
       </div>
     </div>

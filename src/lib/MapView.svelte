@@ -3,6 +3,7 @@
   import maplibregl, { Map } from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import type { Stop, Shape } from './gtfs';
+  import type { BikeStation } from './bikes';
   import { MARIBOR } from './geo';
   import { mapLabelSize, mapLabelFactor } from './settings';
   import { get } from 'svelte/store';
@@ -22,6 +23,8 @@
   export let onMapLongPress: (lat: number, lon: number) => void = () => {};
   export let onVehicleTap: (idx: number) => void = () => {};
   export let onUserPan: () => void = () => {};
+  export let bikes: BikeStation[] = [];
+  export let onBikeTap: (b: BikeStation) => void = () => {};
 
   let el: HTMLDivElement;
   let map: Map;
@@ -208,6 +211,49 @@
     };
   }
 
+  // Barva MBajka je namenoma vijolična: zelena pomeni »točno«, modra je uporabnik,
+  // rdeča so postajališča — kolesa ne smejo biti zamenljiva z nobenim od teh.
+  const BIKE_COLOR = '#7C3AED';
+  function bikesFC(bs: BikeStation[]): any {
+    return {
+      type: 'FeatureCollection',
+      features: bs.map(b => ({
+        type: 'Feature',
+        properties: { id: b.id, n: String(b.bikes), icon: b.active ? 'mm-bike' : 'mm-bike-off' },
+        geometry: { type: 'Point', coordinates: [b.lon, b.lat] },
+      })),
+    };
+  }
+
+  // Ikona kolesa (pot iz Lucide »bike«, 24×24) na zaobljenem kvadratu, narisana v canvas —
+  // brez zunanje slike, ki bi jo moral SW predpomniti.
+  function bikeIcon(color: string): ImageData {
+    const S = 56, c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d')!;
+    // roundRect ima šele iOS 16 — starejši Safari dobi zaobljen pravokotnik iz arcTo.
+    const rr = (x: number, y: number, w: number, h: number, r: number) => {
+      g.beginPath();
+      g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
+      g.closePath();
+    };
+    g.fillStyle = '#ffffff';
+    rr(0, 0, S, S, 16); g.fill();
+    g.fillStyle = color;
+    rr(4, 4, S - 8, S - 8, 12); g.fill();
+    g.save();
+    g.translate(10, 9); g.scale(1.5, 1.5);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const d of ['M9 17.5a3.5 3.5 0 1 1-7 0a3.5 3.5 0 1 1 7 0', 'M22 17.5a3.5 3.5 0 1 1-7 0a3.5 3.5 0 1 1 7 0',
+                     'M12 17.5V14l-3-3 4-3 2 3h2']) g.stroke(new Path2D(d));
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(15, 5, 1.6, 0, Math.PI * 2); g.fill();
+    g.restore();
+    return g.getImageData(0, 0, S, S);
+  }
+
   function userFC(u: { lat: number; lon: number } | null): any {
     return {
       type: 'FeatureCollection',
@@ -245,6 +291,43 @@
         },
       });
     }
+
+    // MBajk — pod postajališči, da tap na postajališče ostane prednosten. Ikona je
+    // kvadrat s kolesom, ne krog: krogi so na karti že postajališča in busi, vijolična
+    // pa je tudi barva nekaterih linij (G2, P18).
+    // Napaka pri kolesih ne sme ustaviti slojev pod njo (postajališča, busi, uporabnik).
+    try {
+    for (const [name, color] of [['mm-bike', BIKE_COLOR], ['mm-bike-off', '#8E8E93']] as const) {
+      if (!map.hasImage(name)) map.addImage(name, bikeIcon(color), { pixelRatio: 2 });
+    }
+    if (!map.getSource('bikes')) {
+      map.addSource('bikes', { type: 'geojson', data: bikesFC(bikes) });
+      map.addLayer({
+        id: 'bikes-icon',
+        type: 'symbol',
+        source: 'bikes',
+        minzoom: 12,
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.55, 15, 0.8, 17, 1],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'text-field': ['get', 'n'],
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 11,
+          'text-offset': [0, 1.35],
+          'text-anchor': 'top',
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': BIKE_COLOR,
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+          'text-opacity': ['step', ['zoom'], 0, 14.5, 1],
+        },
+      });
+    }
+    } catch (e) { console.warn('[mbajk] sloj ni dodan', e); }
 
     // Stops
     if (!map.getSource('stops')) {
@@ -571,12 +654,26 @@
     // Base-map click (no stop under cursor) → emit lat/lon for origin update
     map.on('click', (e) => {
       if ((e.originalEvent as any)._stopConsumed) return;
-      const hits = map.queryRenderedFeatures(e.point, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot'] });
+      const hits = map.queryRenderedFeatures(e.point, { layers: ['stops-hit', 'nearby-hit', 'stops-circle', 'nearby-circle', 'selected-stop-dot', 'bikes-icon'].filter(l => map.getLayer(l)) });
       if (hits.length) return;
       onMapTap(e.lngLat.lat, e.lngLat.lng);
     });
     // Dvojni klik prepreči, da bi se ob zoomu sprožil še origin update.
     map.on('dblclick', (e) => { (e.originalEvent as any)._stopConsumed = true; });
+
+    // MBajk tap — samo če pod prstom ni postajališča (to ima prednost).
+    map.on('click', 'bikes-icon', (e: any) => {
+      if (e.originalEvent._stopConsumed) return;
+      // Avtobus nad ikono kolesa ima prednost (njegov handler je registriran pozneje).
+      if (map.getLayer('vehicles-dot') && map.queryRenderedFeatures(e.point, { layers: ['vehicles-dot'] }).length) return;
+      const f = e.features?.[0];
+      const b = f && bikes.find(x => x.id === f.properties.id);
+      if (!b) return;
+      e.originalEvent._stopConsumed = true;
+      onBikeTap(b);
+    });
+    map.on('mouseenter', 'bikes-icon', () => (map.getCanvas().style.cursor = 'pointer'));
+    map.on('mouseleave', 'bikes-icon', () => (map.getCanvas().style.cursor = ''));
 
     // Vehicle tap
     map.on('click', 'vehicles-dot', (e: any) => {
@@ -655,6 +752,9 @@
   }
   $: if (map && styleReady && map.getSource('endpoints')) {
     (map.getSource('endpoints') as any).setData(endpointsFC(planEndpoints));
+  }
+  $: if (map && styleReady && map.getSource('bikes')) {
+    (map.getSource('bikes') as any).setData(bikesFC(bikes));
   }
   $: if (map && styleReady && map.getSource('vehicles')) {
     (map.getSource('vehicles') as any).setData(vehiclesFC(vehicles));

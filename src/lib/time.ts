@@ -4,6 +4,9 @@
 // waitLabel v MapScreen pa ure (»Čez 4 h 47 min«), odštevalnik »Kreni« pa spet
 // surove minute — v ISTI kartici so bili trije formati. Vse pretvorbe so zdaj tu.
 
+import { get } from 'svelte/store';
+import { lang, tr } from './i18n';
+
 // Meji za kompakten prikaz v seznamih odhodov.
 const HOUR_FROM_MIN = 60;    // pod tem: samo minute
 const CLOCK_FROM_MIN = 180;  // nad tem: ura odhoda je uporabnejša od "4 h 56"
@@ -30,7 +33,7 @@ export type DepartureLabel = {
 //   60–179   → "2 h 15"
 //   ≥ 180    → "05:10" (ura odhoda — dejansko uporabna informacija)
 export function fmtDeparture(minutesFromNow: number, depSec: number): DepartureLabel {
-  if (minutesFromNow <= 0) return { value: 'zdaj', unit: null, now: true };
+  if (minutesFromNow <= 0) return { value: tr('zdaj'), unit: null, now: true };
   if (minutesFromNow < HOUR_FROM_MIN) return { value: String(minutesFromNow), unit: 'min', now: false };
   if (minutesFromNow < CLOCK_FROM_MIN) {
     const h = Math.floor(minutesFromNow / 60);
@@ -51,6 +54,12 @@ export function fmtDuration(minutes: number): string {
 
 // Polni stavek za kartico "Čakanje". Slovenska dvojina/množina.
 export function fmtWaitSentence(m: number | null): string {
+  if (get(lang) === 'en') {
+    if (m === null) return 'No more departures today';
+    if (m <= 0) return 'Bus arriving now';
+    if (m < 60) return m === 1 ? 'Next bus in 1 minute' : `Next bus in ${m} minutes`;
+    return `Next bus in ${fmtDuration(m)}`;
+  }
   if (m === null) return 'Danes ni več odhodov';
   if (m <= 0) return 'Avtobus prihaja zdaj';
   if (m === 1) return 'Naslednji avtobus čez 1 minuto';
@@ -78,12 +87,18 @@ const MONTHS_GENITIVE = [
   'julija', 'avgusta', 'septembra', 'oktobra', 'novembra', 'decembra',
 ];
 export function fmtMonthYearGenitive(d: Date): string {
+  if (get(lang) === 'en') return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   return `${MONTHS_GENITIVE[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 // Ime dneva za napoved prvega jutrišnjega odhoda ("jutri", "v ponedeljek", …).
 const DAY_NAMES = ['nedeljo', 'ponedeljek', 'torek', 'sredo', 'četrtek', 'petek', 'soboto'];
+const DAY_NAMES_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export function fmtDayOffset(offset: number, weekday: number): string {
+  if (get(lang) === 'en') {
+    if (offset === 1) return 'tomorrow';
+    return DAY_NAMES_EN[weekday] ? `on ${DAY_NAMES_EN[weekday]}` : 'in the coming days';
+  }
   if (offset === 1) return 'jutri';
   return `v ${DAY_NAMES[weekday] ?? 'naslednjih dneh'}`;
 }

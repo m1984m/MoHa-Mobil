@@ -2,7 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { Footprints, MapPin, Clock3, TriangleAlert } from 'lucide-svelte';
   import LineBadge from './LineBadge.svelte';
-  import { fmtClock, fmtDuration, fmtPlural } from '../time';
+  import { fmtClock, fmtDuration } from '../time';
+  import { t, plural } from '../i18n';
   import { splitHeadsign } from '../gtfs';
   import type { PlanLeg } from '../planner';
 
@@ -116,16 +117,16 @@
          class:mm-kreni-mimo={sekundDoOdhoda !== null && sekundDoOdhoda < -90}>
       {#if sekundDoOdhoda !== null && sekundDoOdhoda < -90}
         <TriangleAlert size={16} class="shrink-0" />
-        <span><b>Ta odhod je mimo.</b> Poišči novega.</span>
+        <span><b>{$t('Ta odhod je mimo.')}</b> {$t('Poišči novega.')}</span>
       {:else if sekundDoOdhoda !== null && sekundDoOdhoda <= 60}
         <Footprints size={16} class="shrink-0" />
-        <span><b>Kreni zdaj</b> · bus ob {fmtClock(prviOdhod ?? 0)}</span>
+        <span><b>{$t('Kreni zdaj')}</b> · {$t('bus ob {time}', { time: fmtClock(prviOdhod ?? 0) })}</span>
       {:else}
         <Footprints size={16} class="shrink-0" />
         <span>
-          <b>Kreni ob {fmtClock(krenitiSec)}</b>
-          {#if minutDoOdhoda !== null && minutDoOdhoda <= 90}· čez {minutDoOdhoda} min{/if}
-          {#if prihodSec != null}· na cilju ob {fmtClock(prihodSec)}{/if}
+          <b>{$t('Kreni ob {time}', { time: fmtClock(krenitiSec) })}</b>
+          {#if minutDoOdhoda !== null && minutDoOdhoda <= 90}· {$t('čez {n} min', { n: minutDoOdhoda })}{/if}
+          {#if prihodSec != null}· {$t('na cilju ob {time}', { time: fmtClock(prihodSec) })}{/if}
         </span>
       {/if}
     </div>
@@ -137,7 +138,7 @@
       {#if cak >= 60}
         <li class="mm-cakanje">
           <span class="mm-cakanje-znak"><Clock3 size={13} /></span>
-          <span class="t-footnote text-muted">Čakanje {min(cak)} min</span>
+          <span class="t-footnote text-muted">{$t('Čakanje {n} min', { n: min(cak) })}</span>
         </li>
       {/if}
 
@@ -151,18 +152,18 @@
           <span class="mm-vozlisce mm-vozlisce-hoja"><Footprints size={15} /></span>
           <div class="mm-vsebina">
             <div class="t-callout font-medium">
-              Hoja {min(leg.sec)} min
+              {$t('Hoja {n} min', { n: min(leg.sec) })}
               <span class="text-muted">· {Math.round(leg.meters)} m</span>
             </div>
             <div class="t-footnote text-muted">
               {#if leg.toStop && leg.fromStop}
                 {leg.fromStop.name} → {leg.toStop.name}
               {:else if leg.toStop}
-                do postaje {leg.toStop.name}
+                {$t('do postaje {stop}', { stop: leg.toStop.name })}
               {:else if leg.fromStop}
-                od postaje {leg.fromStop.name} do cilja
+                {$t('od postaje {stop} do cilja', { stop: leg.fromStop.name })}
               {:else}
-                do cilja
+                {$t('do cilja')}
               {/if}
             </div>
           </div>
@@ -172,17 +173,17 @@
           <span class="mm-vozlisce mm-vozlisce-bus"><LineBadge short={leg.route.short} routeId={leg.route.id} size="sm" /></span>
           <div class="mm-vsebina">
             <div class="t-callout font-medium">
-              Vstopi na {leg.from.name}
+              {$t('Vstopi na {stop}', { stop: leg.from.name })}
             </div>
             <div class="t-footnote text-muted">
-              Linija {leg.route.short} proti {cilj.dest}
-              {#if prek}<span class="mm-prek">· prek {prek}</span>{/if}
+              {$t('Linija {line} proti {dest}', { line: leg.route.short, dest: cilj.dest })}
+              {#if prek}<span class="mm-prek">· {$t('prek {via}', { via: prek })}</span>{/if}
             </div>
             <div class="mm-izstop t-footnote">
               <span class="mm-izstop-ura tabular-nums">{fmtClock(leg.arrSec)}</span>
-              Izstopi na <b>{leg.to.name}</b>
+              {$t('Izstopi na')} <b>{leg.to.name}</b>
               <span class="text-muted">
-                · {leg.stopCount} {fmtPlural(leg.stopCount, 'postaja', 'postaji', 'postaje', 'postaj')}
+                · {leg.stopCount} {plural(leg.stopCount, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}
                 · {fmtDuration((leg.arrSec - leg.depSec) / 60)}
               </span>
             </div>
@@ -197,7 +198,7 @@
         <span class="mm-ura t-footnote tabular-nums">{fmtClock(prihodSec)}</span>
         <span class="mm-vozlisce mm-vozlisce-cilj"><MapPin size={15} /></span>
         <div class="mm-vsebina">
-          <div class="t-callout font-medium">Prihod na cilj</div>
+          <div class="t-callout font-medium">{$t('Prihod na cilj')}</div>
           {#if ciljIme}<div class="t-footnote text-muted truncate">{ciljIme}</div>{/if}
         </div>
       </li>

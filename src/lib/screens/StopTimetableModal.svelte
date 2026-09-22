@@ -4,6 +4,7 @@
   import { allDeparturesForStop, dayKindToDate, type GTFS, type Stop, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
+  import { t } from '../i18n';
 
   export let open = false;
   export let gtfs: GTFS | null;
@@ -25,11 +26,11 @@
     return d === 0 ? 'sunday' : d === 6 ? 'saturday' : 'weekday';
   }
 
-  const days: { id: DayKind; label: string }[] = [
-    { id: 'weekday', label: 'Delavnik' },
-    { id: 'saturday', label: 'Sobota' },
-    { id: 'sunday', label: 'Nedelja' },
-  ];
+  $: days = [
+    { id: 'weekday', label: $t('Delavnik') },
+    { id: 'saturday', label: $t('Sobota') },
+    { id: 'sunday', label: $t('Nedelja') },
+  ] as { id: DayKind; label: string }[];
 
   $: rawDeps = gtfs && stop ? allDeparturesForStop(gtfs, stop.id, dayKindToDate(day)) : [];
   $: deps = filterRouteId != null
@@ -64,25 +65,25 @@
        role="presentation">
     <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
-         role="dialog" aria-modal="true" aria-label="Vozni red postaje {stop.name}" tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Vozni red postaje {postaja}', { postaja: stop.name })} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <div class="min-w-0 flex-1">
           <div class="t-footnote text-muted uppercase tracking-wide">
-            Vozni red{#if filterRouteId != null && filterHeadsign} · {filterHeadsign}{/if}
+            {$t('Vozni red')}{#if filterRouteId != null && filterHeadsign} · {filterHeadsign}{/if}
           </div>
           <div class="t-title2 truncate">{stop.name}</div>
         </div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={() => favStops.toggle(stop.id)}
-                aria-label={isFav ? 'Odstrani iz priljubljenih' : 'Dodaj med priljubljene'}
+                aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljene')}
                 aria-pressed={isFav}>
           <Star size={18}
                 color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'}
                 fill={isFav ? 'var(--status-delay)' : 'none'} />
         </button>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={onClose} aria-label="Zapri">
+                on:click={onClose} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
@@ -100,7 +101,7 @@
 
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         {#if deps.length === 0}
-          <div class="t-body text-muted text-center py-8">Ni odhodov za izbran dan.</div>
+          <div class="t-body text-muted text-center py-8">{$t('Ni odhodov za izbran dan.')}</div>
         {:else}
           <ul class="space-y-2">
             {#each grouped as [h, list]}
@@ -111,7 +112,7 @@
                     {#if onOpenLine}
                       <button class="pressable inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1"
                               on:click={() => onOpenLine!(d.route.id, d.trip.dir)}
-                              aria-label="Vozni red linije {d.route.short}">
+                              aria-label={$t('Vozni red linije {linija}', { linija: d.route.short })}>
                         <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
                         <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
                       </button>

@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import type { GTFS } from './gtfs';
 import { computeOccurrences } from './alarms';
 import type { Alarm, Occurrence } from './alarms';
+import { tr } from './i18n';
 
 // Potisna obvestila za alarme. Odjemalec samo naroči napravo in strežniku pove,
 // KDAJ naj zazvoni in KAJ naj piše (glej alarms.computeOccurrences); vse ostalo
@@ -157,28 +158,28 @@ export async function enablePush(occ: Occurrence[] = []): Promise<boolean> {
   patch({ busy: true, error: null });
   try {
     if (!pushSupported()) {
-      patch({ supported: false, error: 'Ta brskalnik ne podpira potisnih obvestil.' });
+      patch({ supported: false, error: tr('Ta brskalnik ne podpira potisnih obvestil.') });
       return false;
     }
     if (isIOS() && !isStandalone()) {
-      patch({ error: 'Na iPhonu in iPadu obvestila delujejo šele, ko aplikacijo dodaš na začetni zaslon: Deli → Dodaj na začetni zaslon, nato jo odpri s te ikone.' });
+      patch({ error: tr('Na iPhonu in iPadu obvestila delujejo šele, ko aplikacijo dodaš na začetni zaslon: Deli → Dodaj na začetni zaslon, nato jo odpri s te ikone.') });
       return false;
     }
     if (!VAPID) {
-      patch({ error: 'Strežniški ključ za obvestila ni nastavljen (VITE_VAPID_PUBLIC) — obvestil ni mogoče vklopiti.' });
+      patch({ error: tr('Strežniški ključ za obvestila ni nastavljen (VITE_VAPID_PUBLIC) — obvestil ni mogoče vklopiti.') });
       return false;
     }
 
     const perm = await Notification.requestPermission();
     patch({ permission: perm });
     if (perm !== 'granted') {
-      patch({ error: 'Dovoljenje za obvestila ni bilo dano. Vklopiš ga lahko v nastavitvah brskalnika za to stran.' });
+      patch({ error: tr('Dovoljenje za obvestila ni bilo dano. Vklopiš ga lahko v nastavitvah brskalnika za to stran.') });
       return false;
     }
 
     const reg = await getRegistration();
     if (!reg) {
-      patch({ error: 'Storitveni delavec ni na voljo — obvestila delujejo samo v nameščeni (objavljeni) različici aplikacije.' });
+      patch({ error: tr('Storitveni delavec ni na voljo — obvestila delujejo samo v nameščeni (objavljeni) različici aplikacije.') });
       return false;
     }
 
@@ -194,7 +195,7 @@ export async function enablePush(occ: Occurrence[] = []): Promise<boolean> {
     await syncAlarms(occ);
     return true;
   } catch (e: any) {
-    patch({ error: `Obvestil ni bilo mogoče vklopiti: ${e?.message ?? 'neznana napaka'}` });
+    patch({ error: tr('Obvestil ni bilo mogoče vklopiti: {msg}', { msg: e?.message ?? tr('neznana napaka') }) });
     return false;
   } finally {
     patch({ busy: false });
@@ -304,7 +305,7 @@ export async function syncAlarms(occ: Occurrence[]): Promise<void> {
     body: JSON.stringify({ subscription, occurrences: items }),
   });
   if (res === null) {
-    patch({ error: 'Alarmov ni bilo mogoče uskladiti s strežnikom. Poskusimo znova ob naslednjem zagonu.' });
+    patch({ error: tr('Alarmov ni bilo mogoče uskladiti s strežnikom. Poskusimo znova ob naslednjem zagonu.') });
     return;
   }
   const until = items.length > 0 ? items[items.length - 1].fireAt : null;
@@ -388,21 +389,22 @@ export async function showLocalTest(): Promise<boolean> {
     }
     const reg = await getRegistration();
     const opts: NotificationOptions = {
-      body: 'Tako bo videti alarm za odhod.',
+      body: tr('Tako bo videti alarm za odhod.'),
       tag: 'mm-test',
       icon: iconUrl('icon-192.svg'),
       badge: iconUrl('icon-maskable.svg'),
       data: { url: '/' },
     };
+    const title = tr('Preizkus obvestila');
     if (reg) {
-      await reg.showNotification('Preizkus obvestila', opts);
+      await reg.showNotification(title, opts);
       return true;
     }
     // Brez storitvenega delavca (razvoj v brskalniku) — navadno obvestilo.
-    new Notification('Preizkus obvestila', opts);
+    new Notification(title, opts);
     return true;
   } catch {
-    patch({ error: 'Preizkusnega obvestila ni bilo mogoče prikazati.' });
+    patch({ error: tr('Preizkusnega obvestila ni bilo mogoče prikazati.') });
     return false;
   }
 }

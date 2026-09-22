@@ -81,3 +81,7 @@ export function mapLabelFactor(v: MapLabelSize, kind: 'map' | 'satellite'): numb
 // odlocitev uporabnikova, ne nasa.
 export const analyticsEnabled = persisted<boolean>('mm.analytics.v1', true);
 
+
+// Postaje MBajk (izposoja koles) na Karti. Vklopljeno: kolo je del poti po mestu,
+// sloj pa se pokaže šele od zooma 12 in ne prekrije postajališč.
+export const showBikes = persisted<boolean>('mm.showBikes.v1', true);

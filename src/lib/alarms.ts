@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { allDeparturesForStop, feedCoversDate } from './gtfs';
 import type { GTFS } from './gtfs';
 import { fmtClock, fmtDuration } from './time';
+import { tr, locale } from './i18n';
 
 // Alarm za odhod avtobusa: "vsak delavnik med 6.00 in 8.00 me opozori 10 minut pred
 // prvim odhodom linije G1 s postaje Mlinska".
@@ -31,6 +32,7 @@ export type Occurrence = { alarmId: string; fireAt: number; depAt: number; title
 
 export type AlarmDraft = Omit<Alarm, 'id' | 'createdAt'>;
 
+// Ključi prevodov — prevedejo se ob izpisu (tr / $t), ne tu, da sledijo jeziku.
 export const DAY_SHORT = ['pon', 'tor', 'sre', 'čet', 'pet', 'sob', 'ned'];
 const DAY_IN = ['v pon', 'v tor', 'v sre', 'v čet', 'v pet', 'v sob', 'v ned'];
 
@@ -113,35 +115,39 @@ export function toggleAlarm(id: string): void {
 
 export function daysLabel(days: boolean[]): string {
   const on = days.map((v, i) => (v ? i : -1)).filter(i => i >= 0);
-  if (on.length === 0) return 'brez dni';
-  if (on.length === 7) return 'vsak dan';
-  if (on.length === 5 && on.every(i => i < 5)) return 'pon–pet';
-  if (on.length === 2 && on[0] === 5 && on[1] === 6) return 'vikend';
-  return on.map(i => DAY_SHORT[i]).join(', ');
+  if (on.length === 0) return tr('brez dni');
+  if (on.length === 7) return tr('vsak dan');
+  if (on.length === 5 && on.every(i => i < 5)) return tr('pon–pet');
+  if (on.length === 2 && on[0] === 5 && on[1] === 6) return tr('vikend');
+  return on.map(i => tr(DAY_SHORT[i])).join(', ');
 }
 
 // Enovrstični povzetek za seznam in za aria-label.
 export function alarmLabel(a: Alarm): string {
-  return `${a.routeShort} · ${a.stopName} · ${daysLabel(a.days)} ${fmtClock(a.fromMin * 60)}–${fmtClock(a.toMin * 60)} · ${a.leadMin} min prej`;
+  return `${a.routeShort} · ${a.stopName} · ${daysLabel(a.days)} ${fmtClock(a.fromMin * 60)}–${fmtClock(a.toMin * 60)} · ${tr('{n} min prej', { n: a.leadMin })}`;
 }
 
 // "v pon ob 06:30" — za vrstico "naslednjič …" v seznamu alarmov.
 export function nextRingLabel(o: Occurrence | null): string {
-  if (!o) return 'ni predvidenega zvonjenja';
+  if (!o) return tr('ni predvidenega zvonjenja');
   const d = new Date(o.fireAt);
   const wd = (d.getDay() + 6) % 7;
-  return `${DAY_IN[wd]} ob ${fmtClock(d.getHours() * 3600 + d.getMinutes() * 60)}`;
+  return tr('{day} ob {time}', { day: tr(DAY_IN[wd]), time: fmtClock(d.getHours() * 3600 + d.getMinutes() * 60) });
 }
 
+// Besedilo obvestila sestavi telefon v jeziku, izbranem ob izračunu, in ga pošlje
+// strežniku — ta ga le dostavi. Ob menjavi jezika se ob naslednji uskladitvi prepiše.
 function occurrenceTitle(a: Alarm): string {
-  if (a.leadMin <= 0) return `Kreni — ${a.routeShort} odhaja zdaj`;
-  return `Kreni — ${a.routeShort} čez ${fmtDuration(a.leadMin)}`;
+  if (a.leadMin <= 0) return tr('Kreni — {line} odhaja zdaj', { line: a.routeShort });
+  return tr('Kreni — {line} čez {time}', { line: a.routeShort, time: fmtDuration(a.leadMin) });
 }
 
 function occurrenceBody(a: Alarm, depSec: number, headsign: string): string {
   const smer = headsign || a.headsign;
-  const kam = smer ? ` (proti ${smer})` : '';
-  return `Odhod ob ${fmtClock(depSec)} s postaje ${a.stopName}${kam}.`;
+  const vars = { time: fmtClock(depSec), stop: a.stopName, dir: smer };
+  return smer
+    ? tr('Odhod ob {time} s postaje {stop} (proti {dir}).', vars)
+    : tr('Odhod ob {time} s postaje {stop}.', vars);
 }
 
 /**
@@ -224,7 +230,6 @@ export function coverageEnd(occ: Occurrence[]): number | null {
 export type AlarmWarning = { kind: 'feed-expired' | 'coverage-soon'; text: string };
 
 const SOON_MS = 14 * 24 * 3600 * 1000;
-const WARN_DATE_FMT = new Intl.DateTimeFormat('sl-SI', { day: 'numeric', month: 'long', year: 'numeric' });
 
 /**
  * Opozorilo, ko opomniki tiho ostanejo brez voznega reda. Septembra 2026 se je temu
@@ -235,14 +240,16 @@ export function alarmsCoverageWarning(gtfs: GTFS | null, list: Alarm[], now: Dat
   if (!gtfs) return null;
   if (!list.some(a => a.enabled && a.days.some(Boolean))) return null;
   if (!feedCoversDate(gtfs, now)) {
-    return { kind: 'feed-expired', text: 'Vozni red za danes ne velja več, zato opomniki ne bodo zazvonili. Posodobi podatke v aplikaciji.' };
+    return { kind: 'feed-expired', text: tr('Vozni red za danes ne velja več, zato opomniki ne bodo zazvonili. Posodobi podatke v aplikaciji.') };
   }
   const end = coverageEnd(computeOccurrences(gtfs, list, now));
   if (end === null) {
-    return { kind: 'coverage-soon', text: 'V voznem redu ni več odhodov za nastavljene opomnike.' };
+    return { kind: 'coverage-soon', text: tr('V voznem redu ni več odhodov za nastavljene opomnike.') };
   }
   if (end - now.getTime() < SOON_MS) {
-    return { kind: 'coverage-soon', text: `Vozni red se izteka — opomniki so pokriti samo še do ${WARN_DATE_FMT.format(new Date(end))}.` };
+    // Intl se ustvari ob klicu (ne na ravni modula), da sledi izbranemu jeziku.
+    const date = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(end));
+    return { kind: 'coverage-soon', text: tr('Vozni red se izteka — opomniki so pokriti samo še do {date}.', { date }) };
   }
   return null;
 }

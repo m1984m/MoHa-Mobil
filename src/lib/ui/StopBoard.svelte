@@ -25,6 +25,7 @@
   import { compactLists, seniorMode } from '../settings';
   import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
   import { fmtClock, fmtDayOffset } from '../time';
+  import { t } from '../i18n';
 
   // Skupna kartica postaje z odhodi. Prej sta bila na Domu dva identična bloka
   // (bližnje + priljubljene) — vsak popravek je bilo treba narediti dvakrat.
@@ -65,9 +66,9 @@
       <div class="min-w-0">
         <div class="t-title3 font-semibold truncate">{stop.name}</div>
         <div class="t-footnote text-muted truncate">
-          {#if distanceM != null}{Math.round(distanceM)} m stran{/if}
+          {#if distanceM != null}{$t('{m} m stran', { m: Math.round(distanceM) })}{/if}
           {#if distanceM != null && (directionHint || stop.code)}&nbsp;·&nbsp;{/if}
-          {#if directionHint}smer {directionHint}{:else if stop.code}{stop.code}{/if}
+          {#if directionHint}{$t('smer {smer}', { smer: directionHint })}{:else if stop.code}{stop.code}{/if}
         </div>
       </div>
     </div>
@@ -80,7 +81,7 @@
         <div class="flex items-center gap-2">
           <MoonStar size={15} color="var(--text-muted)" />
           <div class="t-footnote text-muted">
-            Danes ni več odhodov · prvi {fmtDayOffset(nextDay.dayOffset, nextDay.weekday)} ob
+            {$t('Danes ni več odhodov · prvi {dan} ob', { dan: fmtDayOffset(nextDay.dayOffset, nextDay.weekday) })}
             <span class="font-semibold tabular-nums" style="color: var(--text)">{fmtClock(nextDay.depSec)}</span>
           </div>
           <div class="ml-auto shrink-0">
@@ -88,7 +89,7 @@
           </div>
         </div>
       {:else}
-        <div class="t-footnote text-muted">Danes ni več odhodov</div>
+        <div class="t-footnote text-muted">{$t('Danes ni več odhodov')}</div>
       {/if}
     </div>
   {:else}
@@ -100,13 +101,13 @@
                   class="pressable w-full text-left px-4 {rowPad} flex items-center gap-3"
                   style="touch-action: manipulation; min-height: var(--row-min);"
                   on:click={() => onSelect(stop)}
-                  aria-label="{r.routeShort} proti {r.headsign}">
+                  aria-label={$t('{linija} proti {smer}', { linija: r.routeShort, smer: r.headsign })}>
             <LineBadge short={r.routeShort} routeId={r.routeId} size={badgeSize} />
             <div class="flex-1 min-w-0">
               {#if split}
                 <div class="{rowText} font-semibold">{split.dest}</div>
                 {#if split.via}
-                  <div class="t-footnote text-muted truncate mt-0.5">prek {split.via}</div>
+                  <div class="t-footnote text-muted truncate mt-0.5">{$t('prek {via}', { via: split.via })}</div>
                 {/if}
               {:else}
                 <div class="{rowText} font-medium truncate">{r.headsign}</div>
@@ -122,7 +123,7 @@
                   {d > 0 ? '+' : ''}{d} min
                 </span>
               {:else if r.delayKnown}
-                <span class="t-footnote" style="color: var(--status-ontime)">točno</span>
+                <span class="t-footnote" style="color: var(--status-ontime)">{$t('točno')}</span>
               {/if}
             </div>
           </button>

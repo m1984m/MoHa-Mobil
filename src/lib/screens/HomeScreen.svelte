@@ -17,6 +17,8 @@
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { fmtMonthYearGenitive } from '../time';
   import { track } from '../analytics';
+  import { t, tr } from '../i18n';
+  import Hint from '../ui/Hint.svelte';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -46,7 +48,7 @@
     if (m?.built) {
       const d = new Date(m.built);
       // Rodilnik ("julija"), ne Intl imenovalnik ("julij") — glej lib/time.ts.
-      if (!isNaN(d.getTime())) feedLabel = `Velja od ${fmtMonthYearGenitive(d)}`;
+      if (!isNaN(d.getTime())) feedLabel = tr('Velja od {mesec}', { mesec: fmtMonthYearGenitive(d) });
     }
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
@@ -214,15 +216,15 @@
   $: nearLive = anyLive(nearStops, liveByStop, tick);
   $: favLive = anyLive(favStopList, liveByStop, tick);
 
-  const CENTER_CHIPS: { id: CenterDir; label: string; icon: ComponentType }[] = [
-    { id: 'to', label: 'V center', icon: ArrowDownToDot },
-    { id: 'from', label: 'Iz centra', icon: ArrowUpFromDot },
-  ];
+  $: CENTER_CHIPS = [
+    { id: 'to', label: $t('V center'), icon: ArrowDownToDot },
+    { id: 'from', label: $t('Iz centra'), icon: ArrowUpFromDot },
+  ] as { id: CenterDir; label: string; icon: ComponentType }[];
   function toggleCenter(dir: CenterDir) {
     centerFilter = centerFilter === dir ? null : dir;
     track({ e: 'filter', d: [centerFilter === 'to' ? 'v-center' : centerFilter === 'from' ? 'iz-centra' : 'izklop'] });
   }
-  $: centerSuffix = centerFilter === 'to' ? ' · v center' : centerFilter === 'from' ? ' · iz centra' : '';
+  $: centerSuffix = centerFilter === 'to' ? ' · ' + $t('v center') : centerFilter === 'from' ? ' · ' + $t('iz centra') : '';
 
   async function refresh() {
     await onRequestLocation();
@@ -231,23 +233,23 @@
   }
 </script>
 
-<Screen title="Dom" onRefresh={refresh}>
+<Screen title={$t('Dom')} onRefresh={refresh}>
   <div class="px-4 pb-6 space-y-4 max-w-screen-sm mx-auto">
     <!-- Greeting / context strip -->
     <div class="flex items-start justify-between" class:mm-stack={$seniorMode}>
       <div class="min-w-0">
         <div class="t-subhead text-muted">
-          {#if hasGeo}Blizu tebe{:else}Središče Maribora{/if}
+          {#if hasGeo}{$t('Blizu tebe')}{:else}{$t('Središče Maribora')}{/if}
         </div>
         {#if feedExpired}
-          <div class="t-footnote mt-0.5" style="color: var(--status-delay)">Za danes ni voznega reda — vozni redi so zastareli</div>
+          <div class="t-footnote mt-0.5" style="color: var(--status-delay)">{$t('Za danes ni voznega reda — vozni redi so zastareli')}</div>
         {:else if feedLabel}
           <div class="t-footnote text-muted mt-0.5">{feedLabel}</div>
         {/if}
       </div>
       {#if weather}
         <button class="pressable t-subhead flex items-center gap-1.5 rounded-full px-2.5 py-1 -mr-1 surface-2 border border-base shrink-0"
-                on:click={onOpenWeather} aria-label="Podrobno vreme">
+                on:click={onOpenWeather} aria-label={$t('Podrobno vreme')}>
           <span>{weather.emoji}</span>
           <span class="font-semibold">{weather.tempC}°</span>
           <span class="text-muted">{weather.label}</span>
@@ -263,14 +265,14 @@
         <MapPinned size={22} strokeWidth={2} />
       </div>
       <div class="flex-1 min-w-0">
-        <div class="t-headline">Kam greš?</div>
-        <div class="t-footnote" style="opacity: 0.85">Načrtuj pot z avtobusom ali peš</div>
+        <div class="t-headline">{$t('Kam greš?')}</div>
+        <div class="t-footnote" style="opacity: 0.85">{$t('Načrtuj pot z avtobusom ali peš')}</div>
       </div>
     </button>
 
     <!-- Smer: pokaži samo postajališča, s katerih se pelje v center (Glavni trg
          ali Avtobusna postaja kot ena od naslednjih postaj) oziroma iz njega. -->
-    <div class="flex gap-2" role="group" aria-label="Smer vožnje">
+    <div class="flex gap-2" role="group" aria-label={$t('Smer vožnje')}>
       {#each CENTER_CHIPS as c (c.id)}
         {@const on = centerFilter === c.id}
         <button type="button"
@@ -299,26 +301,27 @@
         </div>
       {/each}
     {:else if !hasGeo}
-      <EmptyState icon={MapPinned} title="Dovoli lokacijo" body="Omogoči dostop do lokacije, da vidiš odhode iz najbližjih postajališč.">
+      <EmptyState icon={MapPinned} title={$t('Dovoli lokacijo')} body={$t('Omogoči dostop do lokacije, da vidiš odhode iz najbližjih postajališč.')}>
         <button class="pressable h-11 px-5 rounded-xl t-subhead font-semibold"
                 style="background: var(--accent); color: #ffffff;"
-                on:click={refresh}>Omogoči lokacijo</button>
+                on:click={refresh}>{$t('Omogoči lokacijo')}</button>
       </EmptyState>
     {:else if boards.length === 0 && centerFilter}
       <EmptyState icon={CloudOff}
-                  title={centerFilter === 'to' ? 'V bližini ni odhodov v center' : 'V bližini ni odhodov iz centra'}
-                  body="Ta smer se s postajališč v tvoji bližini zdaj ne pelje. Poglej vse odhode ali poskusi čez nekaj minut.">
+                  title={centerFilter === 'to' ? $t('V bližini ni odhodov v center') : $t('V bližini ni odhodov iz centra')}
+                  body={$t('Ta smer se s postajališč v tvoji bližini zdaj ne pelje. Poglej vse odhode ali poskusi čez nekaj minut.')}>
         <button class="pressable h-11 px-5 rounded-xl t-subhead font-semibold"
                 style="background: var(--accent); color: #ffffff;"
-                on:click={() => centerFilter = null}>Pokaži vse odhode</button>
+                on:click={() => centerFilter = null}>{$t('Pokaži vse odhode')}</button>
       </EmptyState>
     {:else if boards.length === 0}
-      <EmptyState icon={CloudOff} title="Ni postajališč v bližini" body="Premakni se bližje središču mesta." />
+      <EmptyState icon={CloudOff} title={$t('Ni postajališč v bližini')} body={$t('Premakni se bližje središču mesta.')} />
     {:else}
       <div class="flex items-center justify-between pt-1" class:mm-stack={$seniorMode}>
-        <h2 class="t-footnote text-muted uppercase tracking-wide">Najbližja postajališča{centerSuffix}</h2>
-        <LiveDot live={nearLive} label={nearLive ? 'V živo' : 'Po voznem redu'} />
+        <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Najbližja postajališča')}{centerSuffix}</h2>
+        <LiveDot live={nearLive} label={nearLive ? $t('V živo') : $t('Po voznem redu')} />
       </div>
+      <Hint id="home.stop" text={$t('Tapni ime postajališča za vse odhode in lego na karti.')} />
 
       {#each boards as b (b.stop.id)}
         <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.directionHint}
@@ -329,8 +332,8 @@
 
     {#if $homeShowFavs && favBoards.length > 0}
       <div class="flex items-center justify-between pt-2" class:mm-stack={$seniorMode}>
-        <h2 class="t-footnote text-muted uppercase tracking-wide">Priljubljena postajališča{centerSuffix}</h2>
-        <LiveDot live={favLive} label={favLive ? 'V živo' : 'Po voznem redu'} />
+        <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena postajališča')}{centerSuffix}</h2>
+        <LiveDot live={favLive} label={favLive ? $t('V živo') : $t('Po voznem redu')} />
       </div>
       {#each favBoards as b (b.stop.id)}
         <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.directionHint}

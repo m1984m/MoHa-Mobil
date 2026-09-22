@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { t } from '../i18n';
   export let minutes: number | null;
   export let size: 'md' | 'lg' = 'lg';
-  $: text = minutes == null ? '–' : minutes <= 0 ? 'zdaj' : `${minutes}`;
+  $: text = minutes == null ? '–' : minutes <= 0 ? $t('zdaj') : `${minutes}`;
   $: unit = minutes == null ? '' : minutes <= 0 ? '' : 'min';
   const cls = size === 'lg' ? 't-largeTitle' : 't-title2';
 </script>

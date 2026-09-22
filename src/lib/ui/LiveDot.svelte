@@ -1,5 +1,6 @@
 <script lang="ts">
-  export let label: string = 'V živo';
+  import { tr } from '../i18n';
+  export let label: string = tr('V živo');
   // Utripajoča zelena pika ob besedilu "Po voznem redu" je sporočala nasprotje
   // tega, kar piše. Ko podatki niso živi, je pika statična in nevtralna.
   export let live: boolean = true;
