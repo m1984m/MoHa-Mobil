@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.20.1 — 2026-09-22
+
+- Cene in vozovnice: nov razdelek Brezplačno. Starejši in upokojenci se vozijo brezplačno s kartico
+  IJPP (potrdil operater), s povezavo na obrazec za vlogo. Brezplačno se vozijo tudi invalidi s
+  prebivališčem v Mariboru.
+
 ## 0.20.0 — 2026-09-22
 
 ### Angleščina

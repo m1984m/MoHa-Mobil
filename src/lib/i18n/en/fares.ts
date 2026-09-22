@@ -32,8 +32,11 @@ export default {
   'Aplikacija Marprom Shop: nakup vozovnic in polnjenje kartice, plačilo z bančno kartico.': 'Marprom Shop app: buy tickets and top up your card, pay by bank card.',
   'Spletna prodaja: vozovnica za tisk ali polnjenje kartice Marprom.': 'Online shop: printable ticket or Marprom card top-up.',
   'Prodajna mesta: Avtobusna postaja (Mlinska 1), Center mobilnosti (Partizanska 21), TIC in trafike 3DVA. Kartica Marprom stane 3 €.': 'Ticket offices: bus station (Mlinska 1), Mobility Centre (Partizanska 21), tourist office and 3DVA kiosks. A Marprom card costs €3.',
-  'Brezplačne vozovnice (invalidi s prebivališčem v Mariboru, starejši in upokojenci po državnem programu) imajo posebne pogoje —': 'Free travel (disabled residents of Maribor, older people and pensioners under the national scheme) has its own conditions —',
-  'preveri jih pri Marpromu': 'check them with Marprom',
+  'Brezplačno': 'Free travel',
+  'Starejši in upokojenci': 'Older people and pensioners',
+  'Vozijo se brezplačno s kartico IJPP. Vlogo zanjo oddaš pri Marpromu.': 'They travel free with an IJPP card. Apply for it at Marprom.',
+  'Obrazci': 'Forms',
+  'Brezplačno se vozijo tudi invalidi s prebivališčem v Mariboru (z odločbo MOM).': 'Disabled residents of Maribor also travel free (with a City of Maribor decision).',
   'Cenik velja od {datum}. Cene se lahko spremenijo — velja': 'Fares valid from {datum}. Prices may change — the',
   'uradni cenik Marproma': 'official Marprom fare list applies',
 };

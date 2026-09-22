@@ -8,8 +8,8 @@
   //
   // Vir: https://www.marprom.si/ceniki-in-vozovnice/mestni-promet/ (»Velja od 1. junija
   // 2026«), preverjeno 22.09.2026. Subvencionirane šolske: dopolnitev cenika »Velja od
-  // 1. avgusta 2024«. Brezplačnih vozovnic za upokojence NE navajamo z zneski, ker Marpromova
-  // stran o tem ni potrjena (stara novica vrača 404) — le povezava na uradne pogoje.
+  // 1. avgusta 2024«. Brezplačen prevoz za starejše je potrdil operater (22.09.2026); vloga za
+  // vozovnico IJPP je na marprom.si/vloge-in-obrazci.
   // Ob spremembi cenika posodobi tabele in VALID_FROM.
   export let open = false;
   export let onClose: () => void;
@@ -123,11 +123,22 @@
           </ul>
         </section>
 
+        <section>
+          <h3 class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2 px-1">{$t('Brezplačno')}</h3>
+          <div class="surface-2 rounded-2xl px-4 py-3 space-y-1.5">
+            <div class="flex items-center gap-3">
+              <div class="flex-1 t-callout">{$t('Starejši in upokojenci')}</div>
+              <div class="t-callout font-semibold shrink-0" style="color: var(--status-ontime)">0,00 €</div>
+            </div>
+            <div class="t-footnote text-muted">
+              {$t('Vozijo se brezplačno s kartico IJPP. Vlogo zanjo oddaš pri Marpromu.')}
+              <a class="underline" href="https://www.marprom.si/vloge-in-obrazci/" target="_blank" rel="noopener">{$t('Obrazci')}</a>
+            </div>
+            <div class="t-footnote text-muted">{$t('Brezplačno se vozijo tudi invalidi s prebivališčem v Mariboru (z odločbo MOM).')}</div>
+          </div>
+        </section>
+
         <section class="t-footnote text-muted space-y-2 px-1">
-          <p>
-            {$t('Brezplačne vozovnice (invalidi s prebivališčem v Mariboru, starejši in upokojenci po državnem programu) imajo posebne pogoje —')}
-            <a class="underline" href="https://www.marprom.si/ceniki-in-vozovnice/elektronske-vozovnice/" target="_blank" rel="noopener">{$t('preveri jih pri Marpromu')}</a>.
-          </p>
           <p>
             {$t('Cenik velja od {datum}. Cene se lahko spremenijo — velja', { datum: VALID_FROM })}
             <a class="underline" href={SOURCE} target="_blank" rel="noopener">{$t('uradni cenik Marproma')}</a>.
