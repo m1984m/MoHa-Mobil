@@ -10,6 +10,11 @@
     // Ime končne postaje, kadar ga poznamo (odhod iz voznega reda). Uporabi ga
     // način za starejše, ki cel opis linije ne pokaže — glej splitHeadsign.
     destination?: string;
+    // Zamuda iz živega vira. `delayKnown` loči "vemo, da vozi točno" (0) od
+    // "zamude ne poznamo" (undefined) — brez tega bi vsak odhod po voznem redu
+    // izgledal kot točen.
+    delayMin?: number;
+    delayKnown?: boolean;
   };
 </script>
 
@@ -107,7 +112,19 @@
                 <div class="{rowText} font-medium truncate">{r.headsign}</div>
               {/if}
             </div>
-            <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
+            <div class="flex flex-col items-end gap-0.5 shrink-0">
+              <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
+              {#if r.delayKnown && Math.abs(r.delayMin ?? 0) >= 1}
+                {@const d = r.delayMin ?? 0}
+                {@const barva = Math.abs(d) > 5 ? 'var(--status-disrupt)' : Math.abs(d) >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}
+                <span class="px-1.5 rounded-full t-footnote font-semibold leading-tight"
+                      style="background: color-mix(in oklab, {barva} 16%, transparent); color: {barva}">
+                  {d > 0 ? '+' : ''}{d} min
+                </span>
+              {:else if r.delayKnown}
+                <span class="t-footnote" style="color: var(--status-ontime)">točno</span>
+              {/if}
+            </div>
           </button>
         </li>
       {/each}

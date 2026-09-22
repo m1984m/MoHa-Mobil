@@ -141,6 +141,8 @@
         headsign: a.headsign,
         minutesFromNow: a.etaMin,
         depSec: (hh || 0) * 3600 + (mm || 0) * 60,
+        delayMin: a.delayMin,
+        delayKnown: a.delayKnown,
       });
       if (out.length === maxRows) break;
     }

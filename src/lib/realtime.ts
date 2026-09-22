@@ -165,7 +165,16 @@ export type StopArrival = {
   arrivalTime: string; // "HH:MM" (ScheduledArrivalTime fallback)
   etaMin: number;
   busCode: string;
-  predicted: boolean;  // true = GPS vozilo; false = po voznem redu
+  // true = OBA je temu prihodu dodelil vozilo (BusCode), torej ETA in zamuda
+  // prihajata iz zivega vira. POZOR: GetArrivalsForStopPoint NIMA polja
+  // Predicted — to ima samo GetActiveDeviceDetails. Prej je bilo tu
+  // `!!a.Predicted`, kar je bilo VEDNO false, zato se znacka GPS ni nikoli
+  // prikazala in zamuda se ni nikoli izrisala (opazeno 22.09.2026: druga
+  // aplikacija je za isti prihod kazala "Zamuda: 4", nasa nic).
+  predicted: boolean;
+  // true = DelayMin je prisel iz API-ja; false = ocenili smo ga sami iz
+  // razlike med voznim redom in ETA, kar je pri prihodu brez vozila brez pomena.
+  delayKnown: boolean;
   delayMin: number;    // pozitivno = zamuda, negativno = prehitevanje; 0 = na voznem redu
 };
 
@@ -186,8 +195,9 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
     // Fallback kliče samo, če API ne vrne DelayMin (undefined/null), ne pa ko je 0.
     // Prej je imel bug: DelayMin === 0 je sprožil fallback, ki zaradi zaokroževanja
     // na minuto (nowMin, schedMin) lahko produciral ±1 min pri dejansko točnem busu.
+    const delayKnown = typeof a.DelayMin === 'number';
     let delayMin: number;
-    if (typeof a.DelayMin === 'number') {
+    if (delayKnown) {
       delayMin = a.DelayMin;
     } else {
       const schedMin = parseHHMMtoMin(a.ArrivalTime ?? '');
@@ -209,7 +219,8 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       arrivalTime: a.ArrivalTime ?? '',
       etaMin,
       busCode: String(a.BusCode ?? ''),
-      predicted: !!a.Predicted,
+      predicted: !!String(a.BusCode ?? '').trim(),
+      delayKnown,
       delayMin,
     });
   }

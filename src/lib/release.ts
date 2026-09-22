@@ -11,8 +11,8 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '22. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Pot po korakih je zdaj časovnica: zgoraj piše, kdaj moraš kreniti od doma',
-  'Pri vsakem avtobusu je jasno, kje vstopiš in kje izstopiš, ter ob kateri uri',
-  'Čakanje med prestopi je svoja vrstica — vidiš ga vnaprej',
-  'Namesto celega opisa linije je zapisan cilj, vmesne postaje so pod njim',
+  'Zamuda avtobusa je spet vidna — doslej se zaradi napake ni izrisala nikoli',
+  'Na Domu je ob odhodu zapisano »+4 min« ali »točno«, kadar vozilo poznamo',
+  'Živi prihodi so spet delovali po jutranjem izpadu posrednika',
+  'Oznaka »GPS/ocena« je zdaj »v živo/po redu« — pove, kaj v resnici pomeni',
 ];

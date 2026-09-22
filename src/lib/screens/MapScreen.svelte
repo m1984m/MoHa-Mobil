@@ -972,12 +972,12 @@
                       {#if a.busCode}<span>{$departureDisplay !== 'minutes' ? '· ' : ''}bus #{a.busCode}</span>{/if}
                       {#if a.predicted}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
-                              style="background: color-mix(in oklab, var(--status-ontime) 16%, transparent); color: var(--status-ontime)">GPS</span>
+                              style="background: color-mix(in oklab, var(--status-ontime) 16%, transparent); color: var(--status-ontime)">v živo</span>
                       {:else}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
-                              style="background: color-mix(in oklab, var(--text-muted) 16%, transparent); color: var(--text-muted)">ocena</span>
+                              style="background: color-mix(in oklab, var(--text-muted) 16%, transparent); color: var(--text-muted)">po redu</span>
                       {/if}
-                      {#if a.predicted && absDelay >= 1}
+                      {#if a.delayKnown && absDelay >= 1}
                         <span class="px-1.5 rounded-full text-[10px] font-semibold leading-[14px]"
                               style="background: color-mix(in oklab, {delayColor} 16%, transparent); color: {delayColor}">
                           {a.delayMin > 0 ? `+${a.delayMin}` : a.delayMin} min
@@ -991,7 +991,7 @@
                     {:else if a.etaMin <= 0}
                       <span class="{$compactLists ? 't-subhead' : 't-title3'} font-bold" style="color: var(--status-ontime)">zdaj</span>
                     {:else}
-                      <span class="{$compactLists ? 't-subhead' : 't-title1'} font-bold" style={a.predicted && absDelay > 5 ? 'color: var(--status-disrupt)' : a.predicted && absDelay >= 3 ? 'color: var(--status-delay)' : ''}>{a.etaMin}</span>
+                      <span class="{$compactLists ? 't-subhead' : 't-title1'} font-bold" style={a.delayKnown && absDelay > 5 ? 'color: var(--status-disrupt)' : a.delayKnown && absDelay >= 3 ? 'color: var(--status-delay)' : ''}>{a.etaMin}</span>
                       <span class="t-footnote text-muted ml-0.5">min</span>
                     {/if}
                   </div>
