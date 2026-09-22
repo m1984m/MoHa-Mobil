@@ -3,10 +3,10 @@
  *
  * Zakaj sploh: pot Cloudflare → vozniredi.marprom.si občasno visi (22.09.2026
  * izmerjeno: z roba uspe okoli četrtina klicev, isti hip neposredno 15/15).
- * Uporabnik zato vsake toliko ne dobi živih podatkov. Tu nihče ne čaka, zato si
- * cron lahko privošči več poskusov, razmaknjenih čez minuto — in ko eden uspe,
- * ima vsak uporabnik, ki v naslednjih ~2 minutah pogleda to postajališče,
- * zadetek v predpomnilniku namesto klica, ki lahko pade.
+ * Uporabnik zato vsake toliko ne dobi živih podatkov. Tu nihče ne čaka, zato je
+ * vsak uspešen klic čista pridobitev: ko uspe, ima vsak uporabnik, ki v
+ * naslednjih ~2 minutah pogleda to postajališče, zadetek v predpomnilniku
+ * namesto klica, ki lahko pade.
  *
  * Trije premisleki, ki oblikujejo to kodo:
  *
@@ -14,13 +14,22 @@
  *     statistike zadnjih 30 minut. Ponoči je prazen in cron ne naredi nič —
  *     Marproma ne obremenjujemo za postajališča, ki jih nihče ne gleda.
  *
- *  2. **Poskusi morajo biti razmaknjeni.** Izmerjeno je, da so poskusi znotraj
- *     enega klica Workerja med seboj korelirani: kadar prvi visi, visijo vsi.
- *     Zato so rundè razmaknjene za ~12 s; v eni rundi gredo klici vzporedno, da
- *     runda traja toliko kot en klic, ne osemkrat toliko.
+ *  2. **Najprej potipamo z eno samo postajališčem.** Izmerjeno je, da so izidi
+ *     klicev znotraj enega klica Workerja med seboj korelirani: kadar prvi visi,
+ *     visijo vsi. Zato prvi neuspeh pomeni konec — v slabi minuti odide en klic
+ *     namesto osmih, Marprom pa ni po nepotrebnem spraševan.
  *
- *  3. **Cron teče vsako minuto**, zato mora biti vse skupaj krajše od minute,
- *     sicer se klici prekrivajo.
+ *  3. **Cron teče vsako minuto**, zato mora biti vse skupaj krajše od minute;
+ *     preostala postajališča gredo zato vzporedno.
+ *
+ * **Znana omejitev (22.09.2026):** Cloudflare cron-a ne požene nujno v Evropi —
+ * izmerjeno je tekel iz **SIN (Singapur)**, od koder Marprom ni bil dosegljiv niti
+ * enkrat (0 od 120 klicev), medtem ko so klici uporabnikov iz evropskih lokacij v
+ * istih minutah uspevali. Smart Placement tega ne reši, ker po dokumentaciji
+ * velja samo za `fetch` in ne za `scheduled`. Zato gretje **ni glavni obrambni
+ * mehanizem** — to je osveževanje v ozadju na uporabnikovi poti (`handleOba`,
+ * `poskusiNavzgor` prek `waitUntil`), ki teče tam, kjer so uporabniki. Gretje je
+ * dodatek, ki se obnese takrat, ko Cloudflare cron postavi bliže.
  */
 
 import { OBA_HEADERS, OBA_METHODS, kljucPredpomnilnika, obaUrl, zaPredpomnilnik } from './oba.js';
@@ -29,15 +38,11 @@ import { zapisiGretje } from './analytics.js';
 const NABOR = 'moha_mobil';
 const KLJUC_KV = 'warm:postaje';
 
-const NAJVEC_POSTAJ = 8;        // zgornja meja klicev na rundo (in proti Marpromu)
+const NAJVEC_POSTAJ = 8;        // zgornja meja klicev proti Marpromu na minuto
 const OKNO_MIN = 30;            // katera postajališča so »v rabi«
 const SEZNAM_VELJA_MS = 5 * 60_000;
-const RUND = 3;
-const PAVZA_MS = 12_000;
 const CAS_KLICA_MS = 6000;      // nihče ne čaka, zato sme biti daljši od uporabnikovih 4 s
 const SE_SVEZE_S = 25;          // pod toliko sekund starosti postajališča ne grejemo
-
-const pocakaj = (ms) => new Promise(r => setTimeout(r, ms));
 
 /** Oznaka Cloudflarove lokacije, iz katere tece ta klic (npr. 'VIE'). '' ob napaki. */
 async function kjeTecem() {
@@ -84,28 +89,26 @@ async function postajeVRabi(env) {
   return ids;
 }
 
-/** Ena runda: vzporedno osveži vse postaje, ki še niso sveže. Vrne tiste, ki niso uspele. */
-async function runda(env, ids, cache, ttl, stanje) {
-  const izidi = await Promise.all(ids.map(async (id) => {
-    const kljuc = kljucPredpomnilnika('GetArrivalsForStopPoint', { stopPointId: id });
-    const hit = await cache.match(kljuc);
-    if (hit && (Number(hit.headers.get('Age') ?? 0) || 0) <= SE_SVEZE_S) return null;  // že sveže
+/**
+ * Osveži eno postajališče. Vrne true ob uspehu, false ob neuspehu in null,
+ * kadar je bilo že sveže in ga ni bilo treba spraševati.
+ */
+async function osvezi(id, cache, ttl) {
+  const kljuc = kljucPredpomnilnika('GetArrivalsForStopPoint', { stopPointId: id });
+  const hit = await cache.match(kljuc);
+  if (hit && (Number(hit.headers.get('Age') ?? 0) || 0) <= SE_SVEZE_S) return null;
 
-    stanje.klicev++;
-    try {
-      const res = await fetch(obaUrl('GetArrivalsForStopPoint', { stopPointId: id }), {
-        headers: OBA_HEADERS,
-        signal: AbortSignal.timeout(CAS_KLICA_MS),
-      });
-      if (!res.ok) return id;
-      await cache.put(kljuc, zaPredpomnilnik(await res.text(), ttl));
-      stanje.uspelo++;
-      return null;
-    } catch {
-      return id;
-    }
-  }));
-  return izidi.filter(Boolean);
+  try {
+    const res = await fetch(obaUrl('GetArrivalsForStopPoint', { stopPointId: id }), {
+      headers: OBA_HEADERS,
+      signal: AbortSignal.timeout(CAS_KLICA_MS),
+    });
+    if (!res.ok) return false;
+    await cache.put(kljuc, zaPredpomnilnik(await res.text(), ttl));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -132,29 +135,37 @@ export async function ogrejPredpomnilnik(env) {
 
   const cache = caches.default;
   const ttl = OBA_METHODS.GetArrivalsForStopPoint;
-  const stanje = { uspelo: 0, klicev: 0 };
-  let preostale = ids;
-  let rund = 0;
 
-  for (let r = 0; r < RUND && preostale.length; r++) {
-    if (r > 0) await pocakaj(PAVZA_MS);
-    rund = r + 1;
-    try {
-      preostale = await runda(env, preostale, cache, ttl, stanje);
-    } catch (e) {
-      console.log('gretje: runda ni uspela — ' + String(e && e.message ? e.message : e));
-      break;
+  // TIPANJE. Izmerjeno 22.09.2026: izidi klicev ZNOTRAJ enega klica Workerja so
+  // med seboj korelirani — kadar prvi visi, visijo vsi. Zato najprej poskusimo
+  // eno samo postajališče: če to ne gre, nima smisla spraševati Marproma še
+  // sedemkrat. Tako v slabi minuti odide en klic namesto osmih.
+  let uspelo = 0, klicev = 0;
+  let i = 0;
+  while (i < ids.length) {
+    const izidTipanja = await osvezi(ids[i], cache, ttl);
+    i++;
+    if (izidTipanja === null) continue;       // to je bilo že sveže, poskusimo naslednje
+    klicev++;
+    if (izidTipanja === false) {
+      const lokacija = await kjeTecem();
+      const prazen = { postaj: ids.length, uspelo: 0, klicev, rund: 1, lokacija };
+      zapisiGretje(env, prazen);
+      return prazen;
     }
+    uspelo++;
+    break;                                     // pot je prehodna, nadaljujemo z ostalimi
   }
 
-  // Kadar ni uspel NOBEN klic, pogledamo, iz katere Cloudflarove lokacije je cron
-  // sploh tekel. Klici uporabnikov v istem trenutku uspevajo, zato je vredno
-  // vedeti, ali cron vedno tece iz iste lokacije in ali je prav ta zavrnjena.
-  // Dodatni klic je samo ob neuspehu, torej najvec eden na minuto.
-  let lokacija = '';
-  if (stanje.uspelo === 0) lokacija = await kjeTecem();
+  // Ostala postajališča vzporedno: cron ima na voljo minuto, ne osemkrat šest sekund.
+  const izidi = await Promise.all(ids.slice(i).map(id => osvezi(id, cache, ttl)));
+  for (const x of izidi) {
+    if (x === null) continue;
+    klicev++;
+    if (x) uspelo++;
+  }
 
-  const izid = { postaj: ids.length, uspelo: stanje.uspelo, klicev: stanje.klicev, rund, lokacija };
+  const izid = { postaj: ids.length, uspelo, klicev, rund: 1, lokacija: '' };
   zapisiGretje(env, izid);
   return izid;
 }

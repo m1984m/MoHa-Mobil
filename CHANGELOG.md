@@ -38,6 +38,19 @@ preobremenjen. Zanimivo je tudi, da so ure z veliko prometa brez ene same napake
 - Brskalnik živih odgovorov ne hrani več (`no-store`) — popravek ETA se zgodi v
   Workerju in odgovor v brskalnikovem predpomnilniku bi se starašal brez njega.
 
+### Uporabnik ne čaka na klic, ki morda ne bo odgovoril
+- Kadar je v predpomnilniku star odgovor, dobi klic navzgor samo **0,7 sekunde
+  prednosti** — toliko, kolikor traja zdrav odgovor (izmerjeno 0,15–0,31 s). Če ne
+  odgovori, gre ven star odgovor, klic pa se dokonča v ozadju in napolni
+  predpomnilnik za naslednji vpogled. Čakanje štirih sekund tako odpade povsod,
+  kjer sploh kaj imamo.
+- Svež odgovor, ki je čez polovico življenjske dobe, sproži **osvežitev v ozadju**.
+  Aplikacija sprašuje vsakih 15 s, zato je vsak vpogled še ena priložnost, da klic
+  uspe — ne da bi kdo čakal.
+- Klic navzgor se v statistiki zabeleži po svojem pravem izidu tudi takrat, ko se
+  dokonča šele v ozadju. Števci še naprej kažejo, da je pot pokvarjena, čeprav
+  uporabnik tega ne čuti.
+
 ### Cron ogreva predpomnilnik
 - Ker uporabnik čaka, ponavljanje klica zanj ni rešitev — pri cron-u pa ne čaka nihče.
   Worker zato vsako minuto poskusi osvežiti **do 8 najbolj gledanih postajališč zadnjih
@@ -48,6 +61,12 @@ preobremenjen. Zanimivo je tudi, da so ure z veliko prometa brez ene same napake
   postajališčih, ki jih nihče ne gleda, in ne po tistih, ki so že sveža.
 - Gretje piše eno podatkovno točko na klic cron-a in z lastno oznako vira, zato
   števcev uporabe na zaslonu s statistiko ne napihne.
+- **Meritev je pokazala, da gretje ni rešitev, ampak dodatek.** Cloudflare cron-a
+  ne požene nujno v Evropi: tekel je iz **Singapurja** in od tam Marprom ni bil
+  dosegljiv niti enkrat (0 od 120 klicev), medtem ko so klici uporabnikov iz
+  evropskih lokacij v istih minutah uspevali (62 od 72). Zato gre zdaj najprej
+  tipanje z enim samim postajališčem — v slabi minuti odide en klic namesto osmih.
+  Glavni obrambni mehanizem je osveževanje v ozadju na uporabnikovi poti.
 
 ### Popravek dokumentacije
 - V README je pisalo, da Cloudflarov `caches.default` na `*.workers.dev` ne deluje.

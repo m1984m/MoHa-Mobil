@@ -84,6 +84,17 @@ const UPSTREAM_TIMEOUT_MS = 9000;
 const OBA_TIMEOUT_MS = 4000;
 const OBA_POSKUSI = 1;
 
+// Kadar imamo star odgovor, uporabnik ne čaka celega izteka: klic navzgor dobi
+// toliko prednosti, kolikor traja zdrav odgovor (izmerjeno 0,15–0,31 s), potem pa
+// gre ven zasilni, klic pa se dokonča v ozadju in napolni predpomnilnik.
+const CAKAJ_NA_SVEZE_MS = 700;
+
+const pocakaj = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Ključi, za katere v tem izolatu že teče osvežitev v ozadju — da deset zaporednih
+// vpogledov v isto postajališče ne sproži desetih klicev na Marprom.
+const vTeku = new Set();
+
 
 function allowedOrigins(env) {
   return String(env.ALLOWED_ORIGINS ?? '')
@@ -245,30 +256,24 @@ async function handleOba(request, env, ctx, path, cors) {
     },
   });
 
-  const mem = memBrani(cacheKeyUrl);
-  if (mem && !mem.potekel) {
-    stej('cache', 200, 'mem');
-    return postrezi(mem.body, mem.starost, 'HIT-MEM');
-  }
-
-  // Ista funkcija kot v warm.js — drugače bi cron polnil drug predal, kot ga
-  // uporabnik bere, in ogrevanje ne bi imelo učinka.
+  // ── Predpomnilnik ──────────────────────────────────────────────────────────
+  // Najprej pomnilnik izolata (hitra pot), nato rob (deljen med izolati). Rob
+  // hrani z daljšim max-age od našega TTL, zato svežino presodimo sami po glavi
+  // `Age` — `cache.match()` bi potekle vnose zavrgel in zasilnega ne bi bilo.
   const cacheKey = kljucPredpomnilnika(method, parametri);
   const cache = caches.default;
-  // Na rob shranjujemo z daljšim max-age od našega TTL (glej spodaj), zato tu
-  // sami presodimo, ali je odgovor še svež. Starost pove Cloudflare z glavo Age.
-  let rob = null;
-  const hit = await cache.match(cacheKey);
-  if (hit) {
-    const starost = Number(hit.headers.get('Age') ?? 0) || 0;
-    const telo = await hit.text();
-    if (starost <= ttl) {
-      stej('cache', 200, 'edge');
-      return postrezi(telo, starost, 'HIT');
+
+  let kandidat = memBrani(cacheKeyUrl);
+  if (!kandidat || kandidat.potekel) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const starost = Number(hit.headers.get('Age') ?? 0) || 0;
+      const zRoba = { body: await hit.text(), starost, potekel: starost > ttl, vir: 'edge' };
+      if (!kandidat || zRoba.starost < kandidat.starost) kandidat = zRoba;
     }
-    rob = { body: telo, starost };   // potekel, a še uporaben kot zasilni
   }
 
+  // ── Klic navzgor ───────────────────────────────────────────────────────────
   // Kljub posredniku ostane ključ predpomnilnika Marpromov naslov: ob menjavi ali
   // odstranitvi posrednika shranjeni odgovori ostanejo veljavni.
   const relay = String(env.OBA_RELAY ?? '').replace(/\/$/, '');
@@ -280,61 +285,70 @@ async function handleOba(request, env, ctx, path, cors) {
     fetchUrl = viaRelay.toString();
     fetchHeaders['x-relay-key'] = String(env.RELAY_KEY ?? '');
   }
-
   const preko = relay ? 'relay' : 'direct';
 
-  // Zasilni odgovor, kadar Marprom ne odgovori niti po vseh poskusih. Vrne se z
-  // 200, ker za aplikacijo to NI napaka — podatek ima, le star je, in to pove
-  // glava X-Proxy-Stale. V statistiki ostane zabelezen kot neuspel klic navzgor.
-  const zasilni = (izid, status) => {
-    // Pomnilnik izolata beremo znova (med poskusom je minil čas), rob pa je bil
-    // prebran zgoraj. Vzamemo svežjšega od obeh.
-    const m = memBrani(cacheKeyUrl);
-    const kandidat = (m && (!rob || m.starost < rob.starost)) ? m : rob;
-    if (!kandidat) return null;
-    stej(izid, status, preko);
+  // Poskus navzgor, ki sam zabeleži svoj izid in napolni oba predpomnilnika.
+  // Nikoli ne vrže: vrne telo ob uspehu in `null` ob neuspehu. Tako ga je mogoče
+  // enako uporabiti v ospredju (uporabnik čaka) kot v ozadju (ne čaka nihče).
+  const poskusiNavzgor = () => (async () => {
+    let res, poskus;
+    try {
+      ({ res, poskus } = await fetchUpstream(fetchUrl, { headers: fetchHeaders },
+        { timeoutMs: OBA_TIMEOUT_MS, poskusi: OBA_POSKUSI }));
+    } catch {
+      stej('nedosegljiv', 502, preko);
+      return null;
+    }
+    if (!res.ok) {
+      stej('napaka', res.status, preko);
+      return null;
+    }
+    const telo = await res.text();
+    stej('ok', 200, preko, poskus);
+    memPut(cacheKeyUrl, telo, ttl);
+    await cache.put(cacheKey, zaPredpomnilnik(telo, ttl));
+    return telo;
+  })();
+
+  // Svež zadetek gre ven takoj. Če je že čez polovico življenjske dobe, se v
+  // ozadju sproži osvežitev — uporabnik zanjo ne čaka, ob naslednjem vpogledu pa
+  // je podatek nov. Pri poti, ki vsak četrti klic spusti skozi, je vsak tak
+  // poskus ena priložnost več, ki nikogar nič ne stane.
+  if (kandidat && !kandidat.potekel) {
+    stej('cache', 200, kandidat.vir ?? 'mem');
+    if (kandidat.starost * 2 >= ttl && !vTeku.has(cacheKeyUrl)) {
+      vTeku.add(cacheKeyUrl);
+      ctx.waitUntil(poskusiNavzgor().finally(() => vTeku.delete(cacheKeyUrl)));
+    }
+    return postrezi(kandidat.body, kandidat.starost, kandidat.vir === 'edge' ? 'HIT' : 'HIT-MEM');
+  }
+
+  const naloga = poskusiNavzgor();
+
+  // Imamo star odgovor: potem uporabnik ne sme čakati štirih sekund. Damo klicu
+  // kratko prednost — kadar je pot zdrava, odgovori v ~0,2 s in uporabnik dobi
+  // sveže — sicer gre ven zasilni odgovor, klic pa se dokonča v ozadju in napolni
+  // predpomnilnik za naslednji vpogled.
+  if (kandidat) {
+    const telo = await Promise.race([naloga, pocakaj(CAKAJ_NA_SVEZE_MS)]);
+    if (telo) return postrezi(telo, 0, 'MISS');
+    ctx.waitUntil(naloga);
     return postrezi(kandidat.body, kandidat.starost, 'STALE');
-  };
-
-  let res, poskus;
-  try {
-    ({ res, poskus } = await fetchUpstream(fetchUrl, { headers: fetchHeaders },
-      { timeoutMs: OBA_TIMEOUT_MS, poskusi: OBA_POSKUSI }));
-  } catch (e) {
-    return zasilni('nedosegljiv', 502)
-      ?? json({ error: 'upstream unreachable', detail: String(e?.name ?? e), via: preko }, 502, cors);
-  }
-  if (!res.ok) {
-    return zasilni('napaka', res.status)
-      ?? json({ error: 'upstream ' + res.status, via: preko }, 502, cors);
   }
 
-  const body = await res.text();
+  // Nič v predpomnilniku — tu se čakanju ne da izogniti.
+  const telo = await naloga;
+  if (telo === null) {
+    return json({ error: 'upstream unreachable', via: preko }, 502, cors);
+  }
 
+  const out = postrezi(telo, 0, 'MISS');
   // Brskalnik živih metod ne sme hraniti: popravek ETA (popraviEta) se zgodi tu,
-  // odgovor v brskalnikovem predpomnilniku pa bi se staršal brez popravka in bi
+  // odgovor v brskalnikovem predpomnilniku pa bi se staral brez njega in bi
   // avtobus kazal dlje, kot je. GetLines je vozni red linij in se ne stara.
-  const zaOdjemalca = cas || method === 'GetActiveDeviceDetails'
+  out.headers.set('Cache-Control', cas || method === 'GetActiveDeviceDetails'
     ? 'no-store'
-    : `public, max-age=${ttl}`;
-
-  const out = new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': zaOdjemalca,
-      'X-Proxy-Cache': 'MISS',
-      'X-Proxy-Age': '0',
-    },
-  });
-  stej('ok', 200, preko, poskus);
-  memPut(cacheKeyUrl, body, ttl);
-
-  // Na rob shranimo z max-age = TTL + zasilno okno, da odgovor po izteku TTL
-  // ostane dosegljiv kot zasilni. Ali je še svež, odloči branje zgoraj po glavi
-  // Age — ne Cloudflare. Brez blokiranja odgovora uporabniku.
-  ctx.waitUntil(cache.put(cacheKey, zaPredpomnilnik(body, ttl)));
-  for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
+    : `public, max-age=${ttl}`);
   return out;
 }
 

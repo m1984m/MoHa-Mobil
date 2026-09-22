@@ -15,18 +15,29 @@ Ena majhna storitev na Cloudflaru, ki reši dve težavi hkrati:
 > odvisen prav od tega, da si shranjeni odgovor delijo vsi izolati. Poleg roba Worker
 > hrani še majhen predpomnilnik v pomnilniku izolata kot hitro pot.
 
-### Zasilni odgovor (»stale«)
+### Zasilni odgovor in osveževanje v ozadju
 
 Pot Cloudflare → `vozniredi.marprom.si` občasno visi (22.09.2026 izmerjeno: z roba
-uspe okoli četrtina klicev, isti hip neposredno 15/15). Zato Worker klic prekine po
-4 sekundah in postreže **zadnji znani odgovor**, če ni starejši od TTL + 90 s.
+uspe okoli četrtina klicev, isti hip neposredno 15/15). Worker zato ne postavlja
+uporabnika v vrsto za klic, ki morda ne bo nikoli odgovoril:
 
-Trije podatki, ki jih je pri tem treba poznati:
+| Stanje predpomnilnika | Kaj dobi uporabnik | Kaj se zgodi v ozadju |
+|---|---|---|
+| svež (pod TTL) | takoj | če je čez polovico TTL, se sproži osvežitev prek `waitUntil` |
+| potekel, a pod TTL + 90 s | klic dobi 0,7 s prednosti; če ne odgovori, gre ven star odgovor | klic se dokonča in napolni predpomnilnik za naslednji vpogled |
+| prazen | čaka na klic, največ 4 s | — |
 
-- Odgovor gre ven s statusom **200**, ker za aplikacijo to ni napaka — podatek ima.
-  Glava `X-Proxy-Cache: STALE` in `X-Proxy-Age` povesta, da je star.
-- V statistiki tak klic šteje kot **neuspel klic navzgor** (`nedosegljiv`), ker to
-  tudi je — sicer bi števci nehali kažati, da je pot pokvarjena.
+**To je glavni obrambni mehanizem**, ne gretje iz cron-a: teče tam, kjer so
+uporabniki, in vsak njihov vpogled je še ena priložnost, da klic uspe — ne da bi
+kdo čakal. Aplikacija sprašuje vsakih 15 s, zato je takih priložnosti dovolj.
+
+Trije podatki, ki jih je treba poznati:
+
+- Zasilni odgovor gre ven s statusom **200**, ker za aplikacijo to ni napaka —
+  podatek ima. Glava `X-Proxy-Cache: STALE` in `X-Proxy-Age` povesta, da je star.
+- V statistiki se **klic navzgor zabeleži po svojem pravem izidu** (`ok` /
+  `nedosegljiv` / `napaka`), tudi kadar se je dokončal šele v ozadju. Števci zato
+  še naprej kažejo, da je pot pokvarjena, čeprav uporabnik tega ne čuti.
 - **`ETAMin` se popravi za starost odgovora** (`popraviEta`). To je edino polje, ki
   se s stanjem pokvari: `ArrivalTime` je vozni red, `DelayMin` je zamuda, oboje ostane.
   Prihodi, ki so med čakanjem že minili, izpadejo. Brez tega bi predpomnilnik
@@ -38,29 +49,28 @@ Ponavljanje klica znotraj istega klica Workerja **ne pomaga** (izmerjeno: 3 posk
 
 ### Ogrevanje predpomnilnika iz cron-a (`warm.js`)
 
-Ker uporabnik čaka, ponavljanje zanj ni rešitev — pri cron-u pa **ne čaka nihče**.
-Zato cron vsako minuto poskusi osvežiti postajališča, ki so v rabi, in ko en poskus
-uspe, dobi vsak, ki v naslednjih ~2 minutah pogleda to postajališče, zadetek v
-predpomnilniku namesto klica, ki lahko pade.
+Cron vsako minuto poskusi osvežiti do 8 najbolj gledanih postajališč zadnjih 30
+minut. Seznam pride iz statistike in se shrani v KV za 5 minut; ponoči je prazen in
+cron ne naredi ničesar. Postajališča, mlajša od 25 s, se preskočijo.
 
-| Kaj | Vrednost | Zakaj tako |
-|---|---|---|
-| katera postajališča | do 8 najbolj gledanih v zadnjih 30 min | greje se samo tisto, kar kdo gleda; ponoči je seznam prazen in cron ne naredi nič |
-| od kod seznam | poizvedba v Analytics Engine, shranjena v KV za 5 min | branja so omejena na 10.000/dan — tako jih je 288 |
-| rundè | do 3, razmaknjene 12 s | poskusi v istem klicu Workerja so korelirani; razmik jim da ločeno možnost |
-| znotraj runde | vzporedno | runda traja toliko kot en klic, ne osemkrat toliko — vse mora biti krajše od minute |
-| čas klica | 6 s | daljši od uporabnikovih 4 s, ker tu nihče ne čaka |
-| preskok | postajališče s starostjo pod 25 s | že sveže, Marproma ne sprašujemo po nepotrebnem |
+Najprej gre **tipanje z enim samim postajališčem**: ker so izidi klicev znotraj enega
+klica Workerja korelirani, prvi neuspeh pomeni konec — v slabi minuti odide en klic
+namesto osmih. Preostala gredo vzporedno.
 
-Rundè se ustavijo takoj, ko so vsa postajališča sveža, zato je v normalnem stanju
-to 8 klicev na minuto, ne 24.
+> **Znana omejitev:** Cloudflare cron-a ne požene nujno v Evropi. 22.09.2026 je tekel
+> iz **SIN (Singapur)** in od tam Marprom ni bil dosegljiv **niti enkrat** (0 od 120
+> klicev), medtem ko so klici uporabnikov iz evropskih lokacij v istih minutah
+> uspevali. Smart Placement tega ne reši — po dokumentaciji velja samo za `fetch`,
+> ne za `scheduled`. Zato je gretje dodatek, ne rešitev; obnese se takrat, ko
+> Cloudflare cron postavi bliže.
 
 Gretje piše **eno podatkovno točko na klic cron-a** z `blob1 = 'cron'` (ne `'srv'`),
-zato števcev uporabe na zaslonu s statistiko ne napihne. Pogled:
+zato števcev uporabe na zaslonu s statistiko ne napihne. Ob popolnem neuspehu se
+zapiše še Cloudflarova lokacija. Pogled:
 
 ```sql
 SELECT toStartOfInterval(timestamp, INTERVAL '1' MINUTE) AS minuta,
-       double1 AS postaj, double2 AS uspelo, double3 AS klicev, double4 AS rund
+       double1 AS postaj, double2 AS uspelo, double3 AS klicev, blob3 AS lokacija
 FROM moha_mobil WHERE blob1 = 'cron' AND blob2 = 'gretje'
   AND timestamp > NOW() - INTERVAL '2' HOUR ORDER BY minuta FORMAT JSON
 ```
@@ -68,15 +78,6 @@ FROM moha_mobil WHERE blob1 = 'cron' AND blob2 = 'gretje'
 > **Pozor pri spreminjanju:** ključ predpomnilnika gradi `kljucPredpomnilnika()` v
 > `oba.js`, ki ga uporabljata **oba** — pot za uporabnika in cron. Če bi se razsla,
 > bi cron polnil en predal, uporabnik pa bral iz drugega in gretje ne bi imelo učinka.
-
-Worker **ni splošen odprt proxy**: pusti skozi samo tri OBA metode in dva ORS
-endpointa, preveri izvor zahteve in omeji velikost ORS zahteve. Brez teh omejitev
-bi ga lahko kdorkoli uporabil za poljubne klice na tvoj račun in tvojo kvoto.
-
-Poraba je znotraj brezplačnega paketa Cloudflara (100.000 zahtev/dan); pri
-predvidenem obsegu uporabe je to red velikosti pod mejo.
-
----
 
 ## Namestitev — 6 korakov
 
