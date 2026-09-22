@@ -174,6 +174,17 @@ async function enObhod(nastavitve) {
   const stevec = await prestrezi(stran, scenarij);
   await nastavi(stran, nastavitve);
 
+  // Počakamo, da aplikacija prvič vpraša za žive prihode.
+  //
+  // Dom jih zahteva šele, ko je naložen vozni red, in šele nato pokaže odhode;
+  // do takrat riše vozni red. Brez tega čakanja je obhod posnel zaslon prezgodaj
+  // in ponarejeno stanje se sploh ni videlo — kar je izgledalo kot napaka
+  // aplikacije, pa je bila napaka obhoda.
+  if (SCENARIJI[scenarij].odgovori) {
+    for (let i = 0; i < 40 && stevec.n === 0; i++) await pocakaj(500);
+    await pocakaj(1500);   // da se odhodi še izrišejo
+  }
+
   const zasloni = [];
   let zap = 1;
   for (const z of ZAVIHKI) {

@@ -30,18 +30,21 @@ const PRIHODI = vzorec('Arrivals-406.json');
 function odhodi(opisi) {
   const p = PRIHODI.ArrivalsForStopPoints[0];
   const zdaj = new Date();
-  return opisi.map((o, i) => {
+  return opisi.map((o) => {
+    const linija = LINIJE.Lines.find(l => String(l.Code).trim() === o.koda);
+    if (!linija) throw new Error('linije ' + o.koda + ' ni v GetLines.json');
     const cas = new Date(zdaj.getTime() + (o.cez + (o.zamuda ?? 0)) * 60000);
+    const ura = String(cas.getHours()).padStart(2, '0') + ':' + String(cas.getMinutes()).padStart(2, '0');
     return {
       ...p,
-      Description: `${o.koda} ${o.smer}`,
-      LineId: 70 + i,
+      Description: o.koda + ' ' + (o.smer ?? linija.Description),
+      LineId: linija.LineId,
       LineCode: o.koda,
-      LineDescription: o.smer,
-      ArrivalTime: `${String(cas.getHours()).padStart(2, '0')}:${String(cas.getMinutes()).padStart(2, '0')}`,
+      LineDescription: o.smer ?? linija.Description,
+      ArrivalTime: ura,
       ETAMin: o.cez,
       ...(o.zamuda === undefined ? {} : { DelayMin: o.zamuda }),
-      BusCode: o.vozilo === false ? '' : String(100 + i),
+      BusCode: o.vozilo === false ? '' : String(100 + linija.LineId),
     };
   });
 }
@@ -60,12 +63,15 @@ function poPostaji(seznam, url) {
   return zavrten.map((o, i) => ({ ...o, ETAMin: o.ETAMin + (id % 4) + i }));
 }
 
+// Kode in oznake linij MORAJO biti prave. Dom odhod, ki ga ne zna povezati z
+// linijo iz voznega reda, tiho zavrže in pade nazaj na vozni red — izmišljena
+// koda torej ne pomeni »napaka v aplikaciji«, ampak »napaka v vzorcu«.
 const MESANO = odhodi([
-  { koda: '6',   smer: 'Razvanje - Pobrežje', cez: 2,  zamuda: 0 },
-  { koda: '3',   smer: 'Center - Studenci - Limbuš - Pekre', cez: 7, zamuda: 12 },
-  { koda: 'P13', smer: 'Poštni center Tezno - Avtobusna postaja', cez: 14, zamuda: -3 },
-  { koda: '20',  smer: 'Vinarje - Melje - Center - Nova vas', cez: 23, vozilo: false },
-  { koda: '2',   smer: 'Dogoše - Center - Tabor', cez: 41, vozilo: false },
+  { koda: 'G5',  cez: 2,  zamuda: 0 },
+  { koda: 'G1',  cez: 7,  zamuda: 12 },
+  { koda: 'P13', cez: 14, zamuda: -3 },
+  { koda: 'G3',  cez: 23, vozilo: false },
+  { koda: 'P7',  cez: 41, vozilo: false },
 ]);
 
 /**
@@ -118,7 +124,7 @@ export const SCENARIJI = {
         status: 200,
         telo: OVOJ(poPostaji(odhodi([
           { koda: 'P13', smer: 'Poštni center Tezno - Ptujska - Titova - Partizanska - Avtobusna postaja', cez: 3, zamuda: 17 },
-          { koda: '21',  smer: 'Zgornje Radvanje - Studenci - Center - Pobrežje - Dogoše - Malečnik', cez: 11, zamuda: 0 },
+          { koda: 'G4',  smer: 'Zgornje Radvanje - Studenci - Center - Pobrežje - Dogoše - Malečnik', cez: 11, zamuda: 0 },
         ]), url)),
       }),
     },
