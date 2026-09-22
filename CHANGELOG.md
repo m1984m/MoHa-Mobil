@@ -5,6 +5,50 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.19.0 — 2026-09-22
+
+Zamuda avtobusa je spet vidna, živi prihodi pa spet delujejo po jutranjem izpadu. Obe stvari sta prišli na dan iz primerjave posnetkov ob 07:26: druga aplikacija je kazala »Zamuda: 4«, naša pa »Offline · po voznem redu«.
+
+### Izpad živih prihodov (22.09., od ~07:00 do 08:40)
+- Posrednik na Deno Deploy se je ustavil sam: brezplačni paket je prekoračil kvoto in vračal `503 Service Unavailable (USAGE_EXCEEDED)`. Aplikacija je pravilno padla nazaj na vozni red in to tudi napisala, a živih podatkov in zamud ni bilo.
+- **Novi števci zaledja so izpad ujeli prvi dan delovanja:** 222 neuspelih klicev OBA 22.09. proti 0 dan prej, mediana odziva 35 ms (hitre zavrnitve).
+- **Ugotovitev pri odpravi:** Cloudflare od 22.09. spet pride do `vozniredi.marprom.si` neposredno (12/12 klicev 200, `GetLines` v 0,74 s). Posrednik je zato odstranjen — `OBA_RELAY` je zakomentiran, `/health` javlja `obaVia: "direct"`. Veriga je spet dvočlenska namesto tričlenske.
+
+### Zamuda se ni izrisala nikoli (napaka od uvedbe)
+- `GetArrivalsForStopPoint` **nima polja `Predicted`** — to ima samo `GetActiveDeviceDetails`. Koda je brala `!!a.Predicted`, kar je bilo vedno `false`, zato pogoj `a.predicted && absDelay >= 1` ni nikoli sprožil izrisa, značka pa je vedno pisala »ocena«.
+- V surovem odgovoru je bil `DelayMin: 4` ves čas prisoten.
+- Popravek: `predicted` se izpelje iz dodeljenega vozila (`BusCode`), zamuda pa se pokaže, kadar jo API pozna — novo polje `delayKnown`. S tem se loči »vemo, da vozi točno« od »zamude ne poznamo«.
+
+### Kaj je zdaj vidno
+- **Na karti, v listu postaje:** značka »v živo« ali »po redu« namesto »GPS«/»ocena«, poleg nje »+4 min« v barvi po resnosti, ETA pa obarvan pri zamudi nad 3 oziroma 5 minut.
+- **Na Domu:** ob vsakem živem odhodu »+4 min« ali »točno«. Doslej Dom zamude sploh ni prikazoval.
+
+---
+
+## 0.18.1 — 2026-09-22
+
+- »Ta odhod je mimo« se pokaže šele, ko je odhod res mimo (90 s); v oknu od −90 do +60 s piše »Kreni zdaj«. Prej je opozorilo skočilo že ob nekaj sekundah zamika.
+- Hoja pod 30 m ni korak — vrstica »Hoja 1 min · 0 m« je bila samo šum. Čas se kljub temu upošteva, ker se računa iz odhoda avtobusa.
+- »prek …« ne ponavlja več postaje vstopa in izstopa.
+
+---
+
+## 0.18.0 — 2026-09-22
+
+Kartica s potjo je predelana v časovnico.
+
+Prej je naštela »Hoja · 350 m«, »→ cel opis linije«, »5×« in čas ob strani. Trije podatki, ki jih potnik v resnici potrebuje — kdaj mora oditi, kje vstopi in kje izstopi — so bili razmetani med vsem ostalim.
+
+- Zgoraj vodilo **»Kreni ob 07:12 · čez 4 min · na cilju ob 07:48«**, ki se osvežuje vsakih 15 s in pordeči ob zamujenem odhodu.
+- Pod njim časovnica z uro na levi in hrbtenico skozi vozlišča.
+- Pri avtobusu piše **»Vstopi na ‹postaja›«**, pod tem linija in cilj (namesto celega opisa linije; vmesne postaje so v drobnejši vrstici), izstop pa je poudarjen podblok z uro in imenom postaje.
+- **Čakanje med prestopi je svoja vrstica** — vidiš ga vnaprej.
+- Zadnje vozlišče je prihod na cilj.
+
+Vse mere se množijo z `--ui-scale`, zato časovnica deluje tudi v načinu za starejše.
+
+---
+
 ## 0.17.1 — 2026-09-22
 
 - Časovnica z eno samo meritvijo ni več skoraj prazen graf: pokaže vrednost kot številko in pove, da je za črto potreben vsaj drugi dan. En dan ni časovnica.
