@@ -145,6 +145,33 @@ export function recordUpstream(env, { storitev, metoda, izid, status, preko, drz
 
 
 /**
+ * Povzetek ene runde ogrevanja predpomnilnika iz cron-a (warm.js).
+ *
+ * Zapiše se EN podatkovni točka na klic cron-a, ne ena na postajališče — sicer bi
+ * gretje samo po sebi pojedlo dnevno kvoto zapisov in zameglilo statistiko.
+ *
+ * `vir` je 'cron' in ne 'srv' namenoma: vse poizvedbe na zaslonu s statistiko
+ * filtrirajo po `blob1 = 'srv'`, zato gretje števcev uporabe ne napihne.
+ */
+export function zapisiGretje(env, { postaj, uspelo, klicev, rund, lokacija }) {
+  const ds = env && env.ANALYTICS;
+  if (!ds || typeof ds.writeDataPoint !== 'function') return false;
+  try {
+    ds.writeDataPoint({
+      // blob3 je Cloudflarova lokacija, in zapise se SAMO ob popolnem neuspehu:
+      // sluzi odgovoru na vprasanje, ali cron vedno tece iz iste lokacije in ali
+      // je prav ta pri Marpromu zavrnjena.
+      blobs: ['cron', 'gretje', ocisti(lokacija ?? '')],
+      doubles: [postaj, uspelo, klicev, rund],
+      indexes: ['gretje'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * POST /ev — dogodki iz aplikacije.
  * Izvor je preverjen že v usmerjevalniku (isAllowedOrigin), zato tu skrbimo
  * samo za obliko, velikost in pogostost.

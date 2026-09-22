@@ -38,6 +38,17 @@ preobremenjen. Zanimivo je tudi, da so ure z veliko prometa brez ene same napake
 - Brskalnik živih odgovorov ne hrani več (`no-store`) — popravek ETA se zgodi v
   Workerju in odgovor v brskalnikovem predpomnilniku bi se starašal brez njega.
 
+### Cron ogreva predpomnilnik
+- Ker uporabnik čaka, ponavljanje klica zanj ni rešitev — pri cron-u pa ne čaka nihče.
+  Worker zato vsako minuto poskusi osvežiti **do 8 najbolj gledanih postajališč zadnjih
+  30 minut**, v treh rundah, razmaknjenih 12 s. Ko en poskus uspe, dobi vsak, ki v
+  naslednjih ~2 minutah pogleda to postajališče, zadetek v predpomnilniku.
+- Greje se **samo tisto, kar kdo gleda**: seznam pride iz statistike zadnjih 30 minut,
+  zato je ponoči prazen in cron ne naredi ničesar. Marproma ne sprašujemo po
+  postajališčih, ki jih nihče ne gleda, in ne po tistih, ki so že sveža.
+- Gretje piše eno podatkovno točko na klic cron-a in z lastno oznako vira, zato
+  števcev uporabe na zaslonu s statistiko ne napihne.
+
 ### Popravek dokumentacije
 - V README je pisalo, da Cloudflarov `caches.default` na `*.workers.dev` ne deluje.
   **To ne drži** (preverjeno: `X-Proxy-Cache: HIT`). Ni bilo nepomembno: zasilni

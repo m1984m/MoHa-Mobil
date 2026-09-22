@@ -35,6 +35,8 @@ import { sendPush } from './push.js';
 import { recordUpstream, handleEvent } from './analytics.js';
 import { handleStat } from './stat.js';
 import { processDue } from './due.js';
+import { OBA_BASE, OBA_METHODS, STALE_MAX_MS, OBA_HEADERS, kljucPredpomnilnika, zaPredpomnilnik } from './oba.js';
+import { ogrejPredpomnilnik } from './warm.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
 // Pot Cloudflare → vozniredi.marprom.si je NEZANESLJIVA in to niha po urah.
@@ -49,7 +51,7 @@ import { processDue } from './due.js';
 // znani odgovor iz predpomnilnika. Ko Marprom odblokira Cloudflare, je oboje le
 // še varovalka in ne škoduje. Posrednika na Deno Deploy ni več (odstranjen
 // 22.09.2026, brezplačni paket je prekoračil kvoto), glej relay/README.md.
-const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
+// OBA_BASE, OBA_METHODS in STALE_MAX_MS so v oba.js, ker jih uporablja tudi cron.
 const ORS_BASE = 'https://api.openrouteservice.org/v2';
 
 // Dovoljene OBA metode in koliko sekund sme odgovor ležati v predpomnilniku.
@@ -58,11 +60,6 @@ const ORS_BASE = 'https://api.openrouteservice.org/v2';
 // klic, ki ne more pasti — zato sta živi metodi na zgornjem robu tistega, kar je
 // še sveže. Prihodi se v aplikaciji osvežujejo na 15 s; 40 s star ETA zgreši
 // kvečjemu za minuto, neuspel klic pa ne pokaže ničesar.
-const OBA_METHODS = {
-  GetLines: 21600,                 // 6 h
-  GetActiveDeviceDetails: 30,
-  GetArrivalsForStopPoint: 40,
-};
 
 // Dovoljeni ORS endpointi (natančno tisti, ki ju kliče aplikacija).
 const ORS_PATHS = new Set([
@@ -87,11 +84,6 @@ const UPSTREAM_TIMEOUT_MS = 9000;
 const OBA_TIMEOUT_MS = 4000;
 const OBA_POSKUSI = 1;
 
-// Kako dolgo po izteku TTL se sme odgovor uporabiti kot zasilni. Velja SAMO
-// takrat, ko upstream ne odgovori — sicer gre vedno po svežega. Pri
-// prihodih to pomeni skupaj do 130 s, kar je po popravku ETA (glej popraviEta)
-// natančno na minuto — dlje ne gremo, ker bi obljubljali avtobus, ki je že šel.
-const STALE_MAX_MS = 90_000;
 
 function allowedOrigins(env) {
   return String(env.ALLOWED_ORIGINS ?? '')
@@ -226,12 +218,14 @@ async function handleOba(request, env, ctx, path, cors) {
 
   const inUrl = new URL(request.url);
   const upstream = new URL(`${OBA_BASE}/${method}`);
+  const parametri = {};
 
   // Prepišemo samo pričakovane parametre — nič drugega ne gre naprej.
   if (method === 'GetArrivalsForStopPoint') {
     const id = inUrl.searchParams.get('stopPointId');
     if (!/^\d{1,7}$/.test(id ?? '')) return json({ error: 'bad stopPointId' }, 400, cors);
     upstream.searchParams.set('stopPointId', id);
+    parametri.stopPointId = id;
     postaja = id;
   }
 
@@ -257,7 +251,9 @@ async function handleOba(request, env, ctx, path, cors) {
     return postrezi(mem.body, mem.starost, 'HIT-MEM');
   }
 
-  const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
+  // Ista funkcija kot v warm.js — drugače bi cron polnil drug predal, kot ga
+  // uporabnik bere, in ogrevanje ne bi imelo učinka.
+  const cacheKey = kljucPredpomnilnika(method, parametri);
   const cache = caches.default;
   // Na rob shranjujemo z daljšim max-age od našega TTL (glej spodaj), zato tu
   // sami presodimo, ali je odgovor še svež. Starost pove Cloudflare z glavo Age.
@@ -277,10 +273,7 @@ async function handleOba(request, env, ctx, path, cors) {
   // odstranitvi posrednika shranjeni odgovori ostanejo veljavni.
   const relay = String(env.OBA_RELAY ?? '').replace(/\/$/, '');
   let fetchUrl = upstream.toString();
-  const fetchHeaders = {
-    'Accept': 'application/json',
-    'User-Agent': 'MoHaMobil/1.0 (+github.com/m1984m/MoHa-Mobil)',
-  };
+  const fetchHeaders = { ...OBA_HEADERS };
   if (relay) {
     const viaRelay = new URL(relay + '/oba/' + method);
     for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
@@ -340,14 +333,7 @@ async function handleOba(request, env, ctx, path, cors) {
   // Na rob shranimo z max-age = TTL + zasilno okno, da odgovor po izteku TTL
   // ostane dosegljiv kot zasilni. Ali je še svež, odloči branje zgoraj po glavi
   // Age — ne Cloudflare. Brez blokiranja odgovora uporabniku.
-  const zaRob = new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `public, max-age=${ttl + Math.round(STALE_MAX_MS / 1000)}`,
-    },
-  });
-  ctx.waitUntil(cache.put(cacheKey, zaRob));
+  ctx.waitUntil(cache.put(cacheKey, zaPredpomnilnik(body, ttl)));
   for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
   return out;
 }
@@ -869,9 +855,15 @@ export default {
   // obvestila. Delo gre v `waitUntil`, ker sme izvajanje teči tudi po vrnitvi
   // iz `scheduled`; `await` istega obljubka poskrbi, da napaka ne izgine tiho.
   async scheduled(event, env, ctx) {
-    const work = runDueAlarms(env).catch(e => {
+    const zvonjenja = runDueAlarms(env).catch(e => {
       console.log('alarms cron: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
     });
+    // Ogrevanje teče vzporedno z zvonjenji in ju ne sme podreti; traja do ~40 s
+    // (tri rundè, razmaknjene za 12 s), zato mora biti v istem klicu cron-a.
+    const gretje = ogrejPredpomnilnik(env).catch(e => {
+      console.log('gretje: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
+    });
+    const work = Promise.all([zvonjenja, gretje]);
     ctx.waitUntil(work);
     await work;
   },

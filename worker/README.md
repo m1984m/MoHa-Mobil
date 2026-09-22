@@ -36,6 +36,39 @@ Ponavljanje klica znotraj istega klica Workerja **ne pomaga** (izmerjeno: 3 posk
 = 2 uspeha od 21, en sam poskus = 3 od 15). Kadar prvi poskus visi, visijo vsi;
 šele nov klic Workerja ima spet svojo možnost. Zato `OBA_POSKUSI = 1`.
 
+### Ogrevanje predpomnilnika iz cron-a (`warm.js`)
+
+Ker uporabnik čaka, ponavljanje zanj ni rešitev — pri cron-u pa **ne čaka nihče**.
+Zato cron vsako minuto poskusi osvežiti postajališča, ki so v rabi, in ko en poskus
+uspe, dobi vsak, ki v naslednjih ~2 minutah pogleda to postajališče, zadetek v
+predpomnilniku namesto klica, ki lahko pade.
+
+| Kaj | Vrednost | Zakaj tako |
+|---|---|---|
+| katera postajališča | do 8 najbolj gledanih v zadnjih 30 min | greje se samo tisto, kar kdo gleda; ponoči je seznam prazen in cron ne naredi nič |
+| od kod seznam | poizvedba v Analytics Engine, shranjena v KV za 5 min | branja so omejena na 10.000/dan — tako jih je 288 |
+| rundè | do 3, razmaknjene 12 s | poskusi v istem klicu Workerja so korelirani; razmik jim da ločeno možnost |
+| znotraj runde | vzporedno | runda traja toliko kot en klic, ne osemkrat toliko — vse mora biti krajše od minute |
+| čas klica | 6 s | daljši od uporabnikovih 4 s, ker tu nihče ne čaka |
+| preskok | postajališče s starostjo pod 25 s | že sveže, Marproma ne sprašujemo po nepotrebnem |
+
+Rundè se ustavijo takoj, ko so vsa postajališča sveža, zato je v normalnem stanju
+to 8 klicev na minuto, ne 24.
+
+Gretje piše **eno podatkovno točko na klic cron-a** z `blob1 = 'cron'` (ne `'srv'`),
+zato števcev uporabe na zaslonu s statistiko ne napihne. Pogled:
+
+```sql
+SELECT toStartOfInterval(timestamp, INTERVAL '1' MINUTE) AS minuta,
+       double1 AS postaj, double2 AS uspelo, double3 AS klicev, double4 AS rund
+FROM moha_mobil WHERE blob1 = 'cron' AND blob2 = 'gretje'
+  AND timestamp > NOW() - INTERVAL '2' HOUR ORDER BY minuta FORMAT JSON
+```
+
+> **Pozor pri spreminjanju:** ključ predpomnilnika gradi `kljucPredpomnilnika()` v
+> `oba.js`, ki ga uporabljata **oba** — pot za uporabnika in cron. Če bi se razsla,
+> bi cron polnil en predal, uporabnik pa bral iz drugega in gretje ne bi imelo učinka.
+
 Worker **ni splošen odprt proxy**: pusti skozi samo tri OBA metode in dva ORS
 endpointa, preveri izvor zahteve in omeji velikost ORS zahteve. Brez teh omejitev
 bi ga lahko kdorkoli uporabil za poljubne klice na tvoj račun in tvojo kvoto.
@@ -315,8 +348,10 @@ neznane poti ne pišejo nič. Če bo naprav več, je naslednji korak Durable Obj
 
 ### Kaj počne cron
 
-Sproži se **vsako minuto** (`[triggers] crons = ["* * * * *"]`) in za vsako
-naročnino pogleda njena zvonjenja:
+Sproži se **vsako minuto** (`[triggers] crons = ["* * * * *"]`) in počne dvoje
+vzporedno: ogreva predpomnilnik prihodov (opisano zgoraj) in za vsako naročnino
+pogleda njena zvonjenja. Eno drugega ne sme podreti, zato sta obe veji lovljeni
+ločeno:
 
 | Stanje zvonjenja | Kaj se zgodi |
 |---|---|
