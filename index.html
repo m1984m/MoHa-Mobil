@@ -19,6 +19,16 @@
     <meta name="apple-mobile-web-app-title" content="MoHa Mobil" />
     <title>MoHa Mobil</title>
     <script>
+      // Ali je to obstoječi uporabnik? Prebrati je treba PRED moduli aplikacije:
+      // settings.ts ob nalaganju takoj zapiše privzete vrednosti mm.* v shrambo, zato
+      // bi pozneje vsak nov uporabnik izgledal kot obstoječi (glej lib/onboarding.ts).
+      try {
+        window.__mmReturning = Object.keys(localStorage).some(function (k) {
+          return k.indexOf('mm.') === 0 && k !== 'mm.lang.v1' && k.indexOf('mm.onboarding') !== 0 && k.indexOf('mm.hints') !== 0;
+        });
+      } catch (e) { window.__mmReturning = false; }
+    </script>
+    <script>
       // GitHub Pages SPA redirect decode — obnovi originalno pot iz ?p=/...
       (function () {
         var q = window.location.search;
@@ -29,19 +39,20 @@
         }
       })();
     </script>
-    <script type="module" crossorigin src="/MoHa-Mobil/assets/index-DjHbv_8e.js"></script>
+    <script type="module" crossorigin src="/MoHa-Mobil/assets/index-COZNKUWc.js"></script>
     <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/preload-helper-qqDCGPBO.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/runtime-D4AasKNK.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/legacy-AGA8iesh.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/focusTrap-CNuF-5T_.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/triangle-alert-Bnbu9Qc8.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/settings-1PVas1B6.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/runtime-DwhyA08n.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/legacy-LehzqSVo.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/focusTrap-B_Ip87RX.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/triangle-alert-pznA_ytZ.js">
     <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/chunk-DECur_0Z.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/settings-C3T979XQ.js">
     <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/gtfs-djLqoX-x.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/toast-DbJJSRst.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/Skeleton--yU7ZnqQ.js">
-    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/LineTimetableModal-BmcY5qU_.js">
-    <link rel="stylesheet" crossorigin href="/MoHa-Mobil/assets/index-BwyYfhsy.css">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/toast-Dh9nkw8r.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/Skeleton-BwxBk4FT.js">
+    <link rel="modulepreload" crossorigin href="/MoHa-Mobil/assets/LineTimetableModal-DIcGfbEv.js">
+    <link rel="stylesheet" crossorigin href="/MoHa-Mobil/assets/LineTimetableModal-hrIV_nJZ.css">
+    <link rel="stylesheet" crossorigin href="/MoHa-Mobil/assets/index-BfqKzSuz.css">
   </head>
   <body>
     <div id="app"></div>
