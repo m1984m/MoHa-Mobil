@@ -101,3 +101,38 @@ Workerja 0,35 do 0,83 s, v aplikaciji na GitHub Pages 11 klicev OBA in vsi 200.
 Odstrani `OBA_RELAY` iz `worker/wrangler.toml`, objavi Worker in ugasni aplikacijo
 `moha-oba` na Deno Deploy. Druge spremembe niso potrebne — ključ predpomnilnika v Workerju
 je ves čas Marpromov naslov, ne naslov posrednika.
+
+## Odločitev 22.09.2026: posrednik je ukinjen, naprej Cloudflare
+
+Marprom je Cloudflare spet odblokiral — Worker od 22.09. kliče
+`vozniredi.marprom.si` **neposredno** (12/12 klicev 200, `GetLines` v 0,74 s).
+`OBA_RELAY` je v `worker/wrangler.toml` zakomentiran, `/health` javlja
+`obaVia: "direct"`.
+
+Zakaj je posrednik sploh padel: brezplačni paket Deno Deploy je 22.09. okoli
+07:00 prekoračil kvoto in aplikacijo suspendiral (`503 USAGE_EXCEEDED`). Živi
+prihodi so v aplikaciji utihnili, dokler tega nisva opazila.
+
+**Sklep: brezplačni Deno Deploy ni primeren za stalno posredovanje prometa.**
+Naprej se uporabi Cloudflare.
+
+**Pomembna omejitev tega sklepa:** posrednik je obstajal prav zato, ker
+Cloudflare do Marproma ni prišel. Če bi se blokada kdaj ponovila, posrednik
+**na Cloudflaru po definiciji ne bi pomagal** — takrat bi bilo treba gostitelja
+zunaj Cloudflarovega omrežja (izmerjeno 20.09.: Google Cloud do Marproma pride).
+Za tak primer ostaja koda v tej mapi, odkomentira se `OBA_RELAY` in postavi
+skrivnost `RELAY_KEY`.
+
+### Brisanje projekta na Deno Deploy
+
+```bash
+cd relay
+node pocisti-projekt.mjs                     # izpis projektov
+node pocisti-projekt.mjs --izbrisi moha-oba  # izbris
+```
+
+Žeton v `relay/.deno-token` je **preklican** (API vrača 401 `invalidToken`),
+zato je za izbris potreben nov: console.deno.com → Settings → Access Tokens.
+Paziti je treba na dve generaciji: stari »classic« (dash.deno.com, `*.deno.dev`,
+žetoni `ddp_…`) in novi (console.deno.com, `*.deno.net`, API `api.deno.com/v1`).
+Naš projekt je bil na novem.
