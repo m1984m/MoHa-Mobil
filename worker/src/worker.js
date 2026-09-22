@@ -246,10 +246,19 @@ async function handleOba(request, env, ctx, path, cors) {
 
   // Popravek ETA velja samo za prihode; druge metode nimajo relativnega časa.
   const cas = method === 'GetArrivalsForStopPoint';
+
+  // Brskalnik živih metod ne sme hraniti: popravek ETA (popraviEta) se zgodi tu,
+  // odgovor v brskalnikovem predpomnilniku pa bi se staral brez njega in bi
+  // avtobus kazal dlje, kot je. GetLines je vozni red linij in se ne stara.
+  const zaOdjemalca = cas || method === 'GetActiveDeviceDetails'
+    ? 'no-store'
+    : `public, max-age=${ttl}`;
+
   const postrezi = (body, starost, oznaka) => new Response(cas ? popraviEta(body, starost) : body, {
     status: 200,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': zaOdjemalca,
       'X-Proxy-Cache': oznaka,
       'X-Proxy-Age': String(starost),
       ...cors,
@@ -342,14 +351,7 @@ async function handleOba(request, env, ctx, path, cors) {
     return json({ error: 'upstream unreachable', via: preko }, 502, cors);
   }
 
-  const out = postrezi(telo, 0, 'MISS');
-  // Brskalnik živih metod ne sme hraniti: popravek ETA (popraviEta) se zgodi tu,
-  // odgovor v brskalnikovem predpomnilniku pa bi se staral brez njega in bi
-  // avtobus kazal dlje, kot je. GetLines je vozni red linij in se ne stara.
-  out.headers.set('Cache-Control', cas || method === 'GetActiveDeviceDetails'
-    ? 'no-store'
-    : `public, max-age=${ttl}`);
-  return out;
+  return postrezi(telo, 0, 'MISS');
 }
 
 // ── ORS ───────────────────────────────────────────────────────────────────────
