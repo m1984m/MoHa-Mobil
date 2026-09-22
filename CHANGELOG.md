@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.20.2 — 2026-09-22
+
+- Cene in vozovnice: brezplačen prestop v 75 minutah velja po uradnem ceniku samo za vozovnice
+  iz predprodaje (1 in 10 voženj, otroške), ne za vožnjo, plačano pri vozniku. Prej je stran
+  trdila, da velja za vsako vozovnico. Vožnja pri vozniku in v predprodaji sta zdaj ločeni vrstici.
+
 ## 0.20.1 — 2026-09-22
 
 - Cene in vozovnice: nov razdelek Brezplačno. Starejši in upokojenci se vozijo brezplačno s kartico

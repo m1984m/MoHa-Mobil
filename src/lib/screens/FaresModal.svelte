@@ -20,10 +20,11 @@
   type Row = { label: string; note?: string; price: string };
 
   $: single = [
-    { label: $t('Ena vožnja'), note: $t('z bančno kartico na avtobusu ali vnaprej'), price: '1,50 €' },
-    { label: $t('Ena vožnja, otroci 6–14 let'), price: '1,00 €' },
-    { label: $t('10 voženj'), price: '13,00 €' },
-    { label: $t('10 voženj, otroci 6–14 let'), price: '4,00 €' },
+    { label: $t('Ena vožnja pri vozniku'), note: $t('z bančno kartico, brez prestopa'), price: '1,50 €' },
+    { label: $t('Ena vožnja v predprodaji'), note: $t('s prestopom v 75 minutah'), price: '1,50 €' },
+    { label: $t('Ena vožnja, otroci 6–14 let'), note: $t('s prestopom v 75 minutah'), price: '1,00 €' },
+    { label: $t('10 voženj'), note: $t('s prestopom v 75 minutah'), price: '13,00 €' },
+    { label: $t('10 voženj, otroci 6–14 let'), note: $t('s prestopom v 75 minutah'), price: '4,00 €' },
   ] as Row[];
   $: days = [
     { label: $t('Dnevna'), note: $t('neomejeno število voženj'), price: '6,00 €' },
@@ -69,7 +70,7 @@
       <div class="overflow-y-auto px-5 pb-6 space-y-5">
         <div class="rounded-2xl px-4 py-3 t-callout"
              style="background: color-mix(in oklab, var(--accent) 9%, var(--surface));">
-          {$t('Z eno vozovnico lahko v 75 minutah brezplačno prestopiš na drug avtobus. Gotovine na avtobusu ne sprejemajo.')}
+          {$t('Če vozovnico kupiš vnaprej, lahko v 75 minutah brezplačno prestopiš na drug avtobus. Na avtobusu plačaš samo z bančno kartico, gotovine ne sprejemajo.')}
         </div>
 
         {#each groups as { title, rows }}

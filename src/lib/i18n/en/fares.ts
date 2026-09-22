@@ -1,8 +1,10 @@
 // FaresModal — cenik Marprom
 export default {
   'Cene in vozovnice': 'Fares & tickets',
-  'Ena vožnja': 'Single ride',
-  'z bančno kartico na avtobusu ali vnaprej': 'bank card on board or bought in advance',
+  'Ena vožnja pri vozniku': 'Single ride on board',
+  'z bančno kartico, brez prestopa': 'bank card, no transfer',
+  'Ena vožnja v predprodaji': 'Single ride, bought in advance',
+  's prestopom v 75 minutah': 'free transfer within 75 minutes',
   'Ena vožnja, otroci 6–14 let': 'Single ride, children 6–14',
   '10 voženj': '10 rides',
   '10 voženj, otroci 6–14 let': '10 rides, children 6–14',
@@ -23,7 +25,7 @@ export default {
   'za šolsko leto': 'for the school year',
   'P+R mesečna': 'P+R monthly',
   'parkiranje + avtobus; ob središču / na obrobju': 'parking + bus; near centre / outskirts',
-  'Z eno vozovnico lahko v 75 minutah brezplačno prestopiš na drug avtobus. Gotovine na avtobusu ne sprejemajo.': 'One ticket lets you change to another bus free of charge within 75 minutes. Cash is not accepted on board.',
+  'Če vozovnico kupiš vnaprej, lahko v 75 minutah brezplačno prestopiš na drug avtobus. Na avtobusu plačaš samo z bančno kartico, gotovine ne sprejemajo.': 'Tickets bought in advance include a free transfer to another bus within 75 minutes. On board you can only pay by bank card; cash is not accepted.',
   'Posamične vožnje': 'Single rides',
   'Dnevne vozovnice': 'Day tickets',
   'Terminske vozovnice': 'Passes',
