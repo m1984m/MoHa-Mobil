@@ -11,6 +11,12 @@
  * Shrani ga v `relay/.deno-token` (mapa je v .gitignore) ali podaj prek
  * spremenljivke okolja DENO_DEPLOY_TOKEN.
  *
+ * POZOR: osebni žeton (`ddp_`) tu dobi 401 INVALID_TOKEN, čeprav ga CLI
+ * (`deno deploy whoami`) sprejme. Za REST je najverjetneje potreben
+ * ORGANIZACIJSKI žeton (`ddo_`), ki se naredi v nastavitvah organizacije.
+ * Za en sam izbris je hitrejša spletna konzola: console.deno.com → aplikacija
+ * → Settings → Delete.
+ *
  * Žeton narediš na https://console.deno.com/account/access-tokens.
  * Osebni žetoni se začnejo z `ddp_`, organizacijski z `ddo_` — predpona NE
  * pove, za katero generacijo gre. Shranjeni žeton v `.deno-token` vrača 401

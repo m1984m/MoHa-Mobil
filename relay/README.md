@@ -123,20 +123,31 @@ zunaj Cloudflarovega omrežja (izmerjeno 20.09.: Google Cloud do Marproma pride)
 Za tak primer ostaja koda v tej mapi, odkomentira se `OBA_RELAY` in postavi
 skrivnost `RELAY_KEY`.
 
-### Brisanje projekta na Deno Deploy
+### Brisanje aplikacije na Deno Deploy
+
+**Ugotovljeno 22.09.2026 (in popravek prejšnjega zapisa):** žeton v
+`relay/.deno-token` je **veljaven**. Prejšnja trditev, da je preklican, je bila
+napačna — napaka je bila v mojem skriptu, ki je klical napačen API.
+
+Kaj dela in kaj ne:
 
 ```bash
-cd relay
-node pocisti-projekt.mjs                     # izpis projektov
-node pocisti-projekt.mjs --izbrisi moha-oba  # izbris
+# deluje — preveri žeton in izpiše organizacije
+DENO_DEPLOY_TOKEN=$(cat .deno-token) deno run -A jsr:@deno/deploy whoami --json --non-interactive
+
+# deluje — izpiše aplikacije
+DENO_DEPLOY_TOKEN=$(cat .deno-token) deno run -A jsr:@deno/deploy apps list --json --non-interactive --org m1984m
 ```
 
-Žeton v `relay/.deno-token` je **preklican** (API vrača 401 `invalidToken`),
-zato je za izbris potreben nov:
-**https://console.deno.com/account/access-tokens** → New token.
+- `deno deploy apps` pozna samo `list` in `get` — **ukaza za brisanje v CLI ni**.
+- REST API ima `DELETE /v2/apps/{app}` (glej `https://api.deno.com/v2/openapi.json`),
+  a **osebni žeton (`ddp_`) tam dobi 401 `INVALID_TOKEN`**, čeprav ga CLI sprejme.
+  Najverjetneje je potreben **organizacijski žeton (`ddo_`)** — dokumentacija
+  pravi, da mora biti žeton »scoped to your organization«.
 
-Popravek prvotnega zapisa: predpona `ddp_` **ne** pomeni starega »classic«
-Deploya — tako se začnejo osebni žetoni tudi na novi platformi (organizacijski
-se začnejo `ddo_`). Shranjeni žeton torej ni napačne vrste, ampak je preprosto
-neveljaven. Deno Deploy Classic je bil sicer ukinjen 20.07.2026, zato
-`dash.deno.com` danes tako ali tako ne pride v poštev.
+**Najhitrejša pot je zato spletna konzola:** console.deno.com → aplikacija →
+Settings → Delete. Skript `pocisti-projekt.mjs` ostane za primer, ko bo na voljo
+organizacijski žeton; takrat deluje `node pocisti-projekt.mjs --izbrisi moha-oba`.
+
+Aplikaciji, ki nista več potrebni: **`moha-oba`** (suspendirana, prekoračena
+kvota) in **`moha-oba-relay`** (stara, gradnja ni uspela).
