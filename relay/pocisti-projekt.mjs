@@ -11,11 +11,11 @@
  * Shrani ga v `relay/.deno-token` (mapa je v .gitignore) ali podaj prek
  * spremenljivke okolja DENO_DEPLOY_TOKEN.
  *
- * POZOR na dve generaciji Deno Deploya:
- *   - stari "classic" (dash.deno.com, domene *.deno.dev) — žetoni `ddp_…`,
- *   - novi (console.deno.com, domene *.deno.net) — API api.deno.com/v1.
- * Naš posrednik je tekel na NOVEM (moha-oba.m1984m.deno.net), zato star žeton
- * iz `.deno-token` tu ne deluje (vrne 401 invalidToken).
+ * Žeton narediš na https://console.deno.com/account/access-tokens.
+ * Osebni žetoni se začnejo z `ddp_`, organizacijski z `ddo_` — predpona NE
+ * pove, za katero generacijo gre. Shranjeni žeton v `.deno-token` vrača 401
+ * invalidToken, ker je preklican, ne ker bi bil napačne vrste.
+ * (Deno Deploy Classic je bil ukinjen 20.07.2026.)
  */
 
 import { readFileSync } from 'node:fs';

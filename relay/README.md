@@ -132,7 +132,11 @@ node pocisti-projekt.mjs --izbrisi moha-oba  # izbris
 ```
 
 Žeton v `relay/.deno-token` je **preklican** (API vrača 401 `invalidToken`),
-zato je za izbris potreben nov: console.deno.com → Settings → Access Tokens.
-Paziti je treba na dve generaciji: stari »classic« (dash.deno.com, `*.deno.dev`,
-žetoni `ddp_…`) in novi (console.deno.com, `*.deno.net`, API `api.deno.com/v1`).
-Naš projekt je bil na novem.
+zato je za izbris potreben nov:
+**https://console.deno.com/account/access-tokens** → New token.
+
+Popravek prvotnega zapisa: predpona `ddp_` **ne** pomeni starega »classic«
+Deploya — tako se začnejo osebni žetoni tudi na novi platformi (organizacijski
+se začnejo `ddo_`). Shranjeni žeton torej ni napačne vrste, ampak je preprosto
+neveljaven. Deno Deploy Classic je bil sicer ukinjen 20.07.2026, zato
+`dash.deno.com` danes tako ali tako ne pride v poštev.
