@@ -103,13 +103,17 @@ function veljavna(ime, i, v) {
 // Zapis v Analytics Engine. Kadar vezava ni nastavljena (lokalni razvoj ali
 // Worker brez nje), tiho ne naredi nič — analitika ne sme nikoli podreti poti,
 // po kateri tečejo vozni redi.
-export function zapisi(env, { vir, dogodek, dims = [], ms = 0 }) {
+export function zapisi(env, { vir, dogodek, dims = [], ms = 0, poskusi = 1 }) {
   const ds = env && env.ANALYTICS;
   if (!ds || typeof ds.writeDataPoint !== 'function') return false;
   try {
     ds.writeDataPoint({
       blobs: [vir, dogodek, ...dims.map(d => ocisti(d))].slice(0, 20),
-      doubles: [Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : 0, 1],
+      // double3 je stevilo porabljenih poskusov navzgor. Brez tega se ne da
+      // izmeriti, ali ponavljanje klicev (OBA_POSKUSI) sploh kaj prinese:
+      // povprecje nad 1 pomeni, da prvi poskus pogosto visi.
+      doubles: [Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : 0, 1,
+                Number.isFinite(poskusi) ? Math.max(1, Math.round(poskusi)) : 1],
       indexes: [dogodek.slice(0, 96)],
     });
     return true;
@@ -125,9 +129,10 @@ const BELEZI_POSTAJO = true;
  * Štetje na strežniku. Kliče se iz poti /oba in /ors.
  * `izid` je 'ok' | 'cache' | 'napaka', `preko` pa 'relay' | 'direct'.
  */
-export function recordUpstream(env, { storitev, metoda, izid, status, preko, drzava, ms, postaja }) {
+export function recordUpstream(env, { storitev, metoda, izid, status, preko, drzava, ms, postaja, poskusi }) {
   return zapisi(env, {
     vir: 'srv',
+    poskusi,
     dogodek: storitev,                       // 'oba' | 'ors'
     // blob8 je id postajalisca, in to SAMO pri GetArrivalsForStopPoint. Iz tega
     // se na zaslonu s statistiko izrise karta najbolj gledanih postajalisc.

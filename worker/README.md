@@ -6,13 +6,35 @@ Ena majhna storitev na Cloudflaru, ki reši dve težavi hkrati:
 |---|---|
 | Marpromov OBA (živa vozila, prihodi) nima CORS glav → aplikacija je klice preusmerjala prek `corsproxy.io` / `allorigins` | Worker doda CORS glavo sam; javna posrednika odpadeta |
 | Ključ za openrouteservice se je ob gradnji vstavil kot besedilo v JS paket in je bil na javni strani berljiv | Ključ živi kot skrivnost v Workerju; v paket ne gre nikoli |
-| Vsak uporabnik je pošiljal svoje zahteve na Marprom | Odgovori se predpomnijo (`GetLines` 6 h, pozicije 20 s, prihodi 10 s) — ob 50 hkratnih uporabnikih Marprom dobi eno zahtevo namesto petdeset |
+| Vsak uporabnik je pošiljal svoje zahteve na Marprom | Odgovori se predpomnijo (`GetLines` 6 h, pozicije 30 s, prihodi 40 s) — ob 50 hkratnih uporabnikih Marprom dobi eno zahtevo namesto petdeset |
+| Pot Cloudflare → Marprom občasno visi in uporabnik je čakal 9 s v prazno | Klic se prekine po 4 s, nato se postreže zadnji znani odgovor (»zasilni«, s popravljenim ETA) |
 
-> **Opomba o predpomnjenju:** Cloudflarov `caches.default` na domenah `*.workers.dev`
-> **ne deluje** (dokumentirana omejitev). Worker zato hrani še lasten predpomnilnik v
-> pomnilniku, ki deluje povsod — sunke združi, a ga ne delijo vse Cloudflarove lokacije.
-> Če boš kdaj Workerju pripel lastno domeno, se polno predpomnjenje vklopi samo od sebe,
-> brez spremembe kode.
+> **Opomba o predpomnjenju:** Cloudflarov `caches.default` na `*.workers.dev`
+> **deluje** — preverjeno 22.09.2026 (odgovori z `X-Proxy-Cache: HIT`). V README je
+> prej pisalo nasprotno; to ni držalo in ni bilo nepomembno, ker je zasilni odgovor
+> odvisen prav od tega, da si shranjeni odgovor delijo vsi izolati. Poleg roba Worker
+> hrani še majhen predpomnilnik v pomnilniku izolata kot hitro pot.
+
+### Zasilni odgovor (»stale«)
+
+Pot Cloudflare → `vozniredi.marprom.si` občasno visi (22.09.2026 izmerjeno: z roba
+uspe okoli četrtina klicev, isti hip neposredno 15/15). Zato Worker klic prekine po
+4 sekundah in postreže **zadnji znani odgovor**, če ni starejši od TTL + 90 s.
+
+Trije podatki, ki jih je pri tem treba poznati:
+
+- Odgovor gre ven s statusom **200**, ker za aplikacijo to ni napaka — podatek ima.
+  Glava `X-Proxy-Cache: STALE` in `X-Proxy-Age` povesta, da je star.
+- V statistiki tak klic šteje kot **neuspel klic navzgor** (`nedosegljiv`), ker to
+  tudi je — sicer bi števci nehali kažati, da je pot pokvarjena.
+- **`ETAMin` se popravi za starost odgovora** (`popraviEta`). To je edino polje, ki
+  se s stanjem pokvari: `ArrivalTime` je vozni red, `DelayMin` je zamuda, oboje ostane.
+  Prihodi, ki so med čakanjem že minili, izpadejo. Brez tega bi predpomnilnik
+  avtobus kazal dlje, kot je — ravno v nevarno smer.
+
+Ponavljanje klica znotraj istega klica Workerja **ne pomaga** (izmerjeno: 3 poskusi
+= 2 uspeha od 21, en sam poskus = 3 od 15). Kadar prvi poskus visi, visijo vsi;
+šele nov klic Workerja ima spet svojo možnost. Zato `OBA_POSKUSI = 1`.
 
 Worker **ni splošen odprt proxy**: pusti skozi samo tri OBA metode in dva ORS
 endpointa, preveri izvor zahteve in omeji velikost ORS zahteve. Brez teh omejitev
@@ -408,7 +430,8 @@ vrne na javna posrednika in vgrajen ključ.
 | `/alarms/status` | GET | ne | neobvezen parameter `endpoint` |
 | `/health` | GET | ne | edina pot brez preverjanja izvora |
 
-Vse drugo vrne 404, tuj izvor vrne 403, zahteva navzgor se prekine po 9 sekundah.
+Vse drugo vrne 404, tuj izvor vrne 403. Zahteva navzgor se prekine po 4 sekundah
+pri OBA (nato zasilni odgovor) in po 9 sekundah pri ORS.
 
 ## Analitika (Workers Analytics Engine)
 
@@ -416,8 +439,8 @@ Worker piše dogodke v nabor `moha_mobil` prek vezave `ANALYTICS`
 (`wrangler.toml`). Dva vira:
 
 - **strežniško štetje** — vsak klic `/oba/*` in `/ors/*`: metoda, izid
-  (`ok` / `cache` / `napaka` / `nedosegljiv`), odzivni čas, `relay` ali
-  `direct`, oznaka države. Brez podatka o uporabniku.
+  (`ok` / `cache` / `napaka` / `nedosegljiv`), odzivni čas, število poskusov,
+  `relay` ali `direct`, oznaka države. Brez podatka o uporabniku.
 - **`POST /ev`** — dogodki iz aplikacije. Sprejmejo se samo znana imena in
   znane vrednosti razsežnosti; prosto besedilo se zavrže. Telo do 4 kB,
   največ 20 dogodkov na zahtevo, zavora 600 dogodkov na minuto na izolat.

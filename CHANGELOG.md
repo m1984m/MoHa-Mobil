@@ -5,6 +5,46 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## Zaledje (Cloudflare Worker) — 2026-09-22
+
+Paket aplikacije ostaja 0.19.0 — spremenjen je samo Worker, ki se objavlja ločeno.
+
+Povod: na zaslonu s statistiko je bilo v sedmih dneh 413 neuspelih klicev zaledja.
+Razpadejo na dvoje. 224-krat `503` je bil jutranji izpad posrednika na Deno Deploy
+(opisan pri 0.19.0). Preostalih 195 `502` pa je nekaj drugega: **pot Cloudflare →
+`vozniredi.marprom.si` občasno visi.** Izmerjeno istega popoldneva, hkratno
+primerjalno: z roba 3 uspehi od 15, neposredno z računalnika 15 od 15 v ~0,15 s.
+Ni kriv naš `User-Agent` (neposredno z istim 10/10) in Marpromov strežnik ni
+preobremenjen. Zanimivo je tudi, da so ure z veliko prometa brez ene same napake.
+
+### Uporabnik ne čaka več 9 sekund v prazno
+- Klic navzgor se prekine po **4 s** namesto 9 s. Najpočasnejši izmerjeni **uspešen**
+  klic je trajal 3,15 s, vsi ostali pod 0,8 s — nižja meja bi rezala zdrave odgovore.
+- Preizkušeno je bilo tudi ponavljanje klica, a **ne deluje**: trije poskusi so dali
+  2 uspeha od 21, en sam 3 od 15. Kadar prvi poskus visi, visijo vsi trije; šele nov
+  klic Workerja ima spet svojo možnost. Zato ostane en sam, kratek poskus.
+
+### Zasilni odgovor namesto praznega zaslona
+- Kadar Marprom ne odgovori, Worker postreže **zadnji znani odgovor**, če ni starejši
+  od TTL + 90 s. Aplikacija dobi 200 in podatek; glavi `X-Proxy-Cache: STALE` in
+  `X-Proxy-Age` povesta, kako star je. V statistiki tak klic šteje kot neuspel klic
+  navzgor — sicer bi števci nehali kažati, da je pot pokvarjena.
+- **`ETAMin` se popravi za starost odgovora.** To je edino polje, ki se s stanjem
+  pokvari (`ArrivalTime` je vozni red, `DelayMin` zamuda). Brez popravka bi star
+  odgovor avtobus kazal dlje, kot je — ravno v nevarno smer. Prihodi, ki so med tem
+  že minili, izpadejo.
+- Predpomnilnik živih metod je zato podaljšan: prihodi 10 s → **40 s**, pozicije
+  vozil 20 s → **30 s**. Vsak zadetek je klic, ki ne more pasti.
+- Brskalnik živih odgovorov ne hrani več (`no-store`) — popravek ETA se zgodi v
+  Workerju in odgovor v brskalnikovem predpomnilniku bi se starašal brez njega.
+
+### Popravek dokumentacije
+- V README je pisalo, da Cloudflarov `caches.default` na `*.workers.dev` ne deluje.
+  **To ne drži** (preverjeno: `X-Proxy-Cache: HIT`). Ni bilo nepomembno: zasilni
+  odgovor je odvisen prav od tega, da si shranjeni odgovor delijo vsi izolati.
+
+---
+
 ## 0.19.0 — 2026-09-22
 
 Zamuda avtobusa je spet vidna, živi prihodi pa spet delujejo po jutranjem izpadu. Obe stvari sta prišli na dan iz primerjave posnetkov ob 07:26: druga aplikacija je kazala »Zamuda: 4«, naša pa »Offline · po voznem redu«.

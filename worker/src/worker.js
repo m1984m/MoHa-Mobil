@@ -37,22 +37,31 @@ import { handleStat } from './stat.js';
 import { processDue } from './due.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
-// Od 16.09.2026 pozna Cloudflare do tega gostitelja samo tiho zavržene pakete
-// (izmerjeno 20.09.2026: z domačega omrežja 200 v 0,11 s, s Cloudflarovega roba 522
-// po 19,5 s, enako na vratih 80; gov.si in nap.si s Cloudflara delujeta, Google Cloud
-// pa do Marproma pride). Zato gre OBA skozi posrednik na Deno Deploy, glej relay/.
-// Ko Marprom odblokira Cloudflare, odstrani spremenljivko OBA_RELAY in vse teče spet
-// neposredno — druge spremembe niso potrebne.
+// Pot Cloudflare → vozniredi.marprom.si je NEZANESLJIVA in to niha po urah.
+// 16.09.2026 je bila blokada popolna (s Cloudflarovega roba 522 po 19,5 s, z
+// domačega omrežja 200 v 0,11 s), 22.09. pa delna: izmerjenih 15 klicev z roba
+// = 3 uspehi in 12 iztekov časa, isti trenutek neposredno 15/15 v ~0,15 s.
+// Vmes so ure brez ene same napake (11.–13. ura istega dne, 999 klicev).
+// Ni kriv naš User-Agent (neposredno z istim 10/10) in ni Marpromov strežnik
+// preobremenjen (neposredno odgovarja sproti) — gre za omrežno pot.
+//
+// Zato ta Worker klice OBA ponovi (OBA_POSKUSI) in ob neuspehu postreže zadnji
+// znani odgovor iz predpomnilnika. Ko Marprom odblokira Cloudflare, je oboje le
+// še varovalka in ne škoduje. Posrednika na Deno Deploy ni več (odstranjen
+// 22.09.2026, brezplačni paket je prekoračil kvoto), glej relay/README.md.
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const ORS_BASE = 'https://api.openrouteservice.org/v2';
 
 // Dovoljene OBA metode in koliko sekund sme odgovor ležati v predpomnilniku.
-// GetLines se spremeni nekajkrat letno; pozicije vozil se osvežujejo ~1×/min,
-// zato 20 s pokrije hkratne uporabnike, ne da bi podatek postal zastarel.
+// GetLines se spremeni nekajkrat letno, pozicije vozil pa se osvežujejo ~1×/min.
+// Ob 80-odstotnem osipu na poti do Marproma je vsak zadetek v predpomnilniku
+// klic, ki ne more pasti — zato sta živi metodi na zgornjem robu tistega, kar je
+// še sveže. Prihodi se v aplikaciji osvežujejo na 15 s; 40 s star ETA zgreši
+// kvečjemu za minuto, neuspel klic pa ne pokaže ničesar.
 const OBA_METHODS = {
   GetLines: 21600,                 // 6 h
-  GetActiveDeviceDetails: 20,
-  GetArrivalsForStopPoint: 10,
+  GetActiveDeviceDetails: 30,
+  GetArrivalsForStopPoint: 40,
 };
 
 // Dovoljeni ORS endpointi (natančno tisti, ki ju kliče aplikacija).
@@ -64,6 +73,25 @@ const ORS_PATHS = new Set([
 const MAX_ORS_COORDS = 30;      // matrix pošlje izhodišče + do 25 postaj
 const MAX_ORS_BODY = 8 * 1024;  // 8 kB je za te zahteve več kot dovolj
 const UPSTREAM_TIMEOUT_MS = 9000;
+
+// IZMERJENO 22.09.2026: ponavljanje klica ZNOTRAJ istega klica Workerja ne
+// pomaga. Ob 3 poskusih so uspeli 2 klica od 21, ob enem samem 3 od 15 — če bi
+// bili poskusi neodvisni, bi trije dali okoli 50 %. Kadar prvi poskus visi,
+// visijo vsi trije; nov klic Workerja pa ima spet svojo možnost. Zato je tu en
+// sam poskus, in ta je kratek: aplikacija tako hitro dobi zasilni ali vozni red,
+// namesto da bi čakala 9 s. (Konstanta OBA_POSKUSI ostaja, ker se z njo brez
+// posega v kodo preveri, ali se Cloudflare kdaj obnaša drugače.)
+//
+// 4 s: najpočasnejši izmerjeni USPEŠEN klic je trajal 3,15 s, vsi ostali pod
+// 0,8 s. Nižja meja bi začela rezati zdrave odgovore.
+const OBA_TIMEOUT_MS = 4000;
+const OBA_POSKUSI = 1;
+
+// Kako dolgo po izteku TTL se sme odgovor uporabiti kot zasilni. Velja SAMO
+// takrat, ko upstream ne odgovori — sicer gre vedno po svežega. Pri
+// prihodih to pomeni skupaj do 130 s, kar je po popravku ETA (glej popraviEta)
+// natančno na minuto — dlje ne gremo, ker bi obljubljali avtobus, ki je že šel.
+const STALE_MAX_MS = 90_000;
 
 function allowedOrigins(env) {
   return String(env.ALLOWED_ORIGINS ?? '')
@@ -103,27 +131,82 @@ function isAllowedOrigin(request, env) {
   return allowedOrigins(env).includes(origin);
 }
 
-// Predpomnilnik v pomnilniku izolata. Cloudflare Cache API (`caches.default`) na
-// domenah *.workers.dev NE deluje — to je dokumentirana omejitev. Ta Map zato
-// poskrbi za združevanje sunkov tudi brez lastne domene; z lastno domeno pa
-// spodnji Cache API prevzame delo med izolati in med lokacijami.
-const memCache = new Map(); // url -> { body, exp }
+// Predpomnilnik v pomnilniku izolata — hitra pot za zaporedne klice istega
+// izolata. Glavni predpomnilnik je Cloudflarov `caches.default` spodaj: ta je
+// skupen vsem izolatom iste lokacije in 22.09.2026 je IZMERJENO, da na
+// *.workers.dev deluje (X-Proxy-Cache: HIT). Prej je tu pisalo, da ne deluje;
+// to ne drži več in je pomembno, ker je zasilni odgovor odvisen prav od njega
+// (odgovor, ki ga je prinesel en izolat, mora biti na voljo vsem).
+const memCache = new Map(); // url -> { body, ob, exp }
 
-function memGet(key) {
+// Vrne shranjeni odgovor skupaj z njegovo starostjo in podatkom, ali mu je TTL
+// že potekel. Potekli vnos se ne zavrže takoj: dokler ni starejši od
+// STALE_MAX_MS, je še vedno boljsi od prazne postaje, kadar Marprom ne odgovori.
+function memBrani(key) {
   const hit = memCache.get(key);
   if (!hit) return null;
-  if (Date.now() > hit.exp) { memCache.delete(key); return null; }
-  return hit.body;
+  const zdaj = Date.now();
+  if (zdaj > hit.exp + STALE_MAX_MS) { memCache.delete(key); return null; }
+  return {
+    body: hit.body,
+    starost: Math.round((zdaj - hit.ob) / 1000),
+    potekel: zdaj > hit.exp,
+  };
+}
+
+/**
+ * Popravi ETAMin za starost odgovora.
+ *
+ * `ETAMin` je število minut DO prihoda, merjeno v trenutku, ko je Marprom
+ * odgovor sestavil — torej edino polje, ki se s stanjem v predpomnilniku
+ * pokvari. `ArrivalTime` (vozni red) in `DelayMin` (zamuda) ostaneta veljavna.
+ *
+ * Brez tega popravka bi 40-sekundni predpomnilnik avtobus kazal dlje, kot je
+ * v resnici, kar je ravno nevarna smer napake: potnik misli, da ima še čas.
+ * Prihodi, ki so med čakanjem v predpomnilniku že minili, izpadejo.
+ */
+function popraviEta(body, starostSek) {
+  const minute = Math.round(starostSek / 60);
+  if (minute < 1) return body;
+  let j;
+  try { j = JSON.parse(body); } catch { return body; }
+  const seznam = j && j.ArrivalsForStopPoints;
+  if (!Array.isArray(seznam)) return body;
+  j.ArrivalsForStopPoints = seznam
+    .map(a => (typeof a.ETAMin === 'number' ? { ...a, ETAMin: a.ETAMin - minute } : a))
+    .filter(a => typeof a.ETAMin !== 'number' || a.ETAMin >= 0);
+  return JSON.stringify(j);
 }
 
 function memPut(key, body, ttlSec) {
   // Zgornja meja vnosov, da izolat ne raste v nedogled (postaj je ~460).
   if (memCache.size > 600) memCache.clear();
-  memCache.set(key, { body, exp: Date.now() + ttlSec * 1000 });
+  const zdaj = Date.now();
+  memCache.set(key, { body, ob: zdaj, exp: zdaj + ttlSec * 1000 });
 }
 
-async function fetchUpstream(url, init = {}) {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+/**
+ * Klic navzgor z omejenim časom in po želji več poskusi.
+ *
+ * Ponovi se SAMO, kadar fetch vrže — torej ob izteku časa ali prekinjeni
+ * povezavi. Kadar streznik odgovori s status kodo (tudi 500), se ta vrne
+ * nespremenjena: ponavljanje tam ne bi pomagalo, bi pa Marprom po nepotrebnem
+ * dobil trikratni promet.
+ *
+ * Vrne tudi število porabljenih poskusov, da se v statistiki vidi, ali
+ * ponavljanje sploh kaj prinese.
+ */
+async function fetchUpstream(url, init = {}, { timeoutMs = UPSTREAM_TIMEOUT_MS, poskusi = 1 } = {}) {
+  let zadnja;
+  for (let i = 1; i <= poskusi; i++) {
+    try {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      return { res, poskus: i };
+    } catch (e) {
+      zadnja = e;
+    }
+  }
+  throw zadnja;
 }
 
 // ── OBA ───────────────────────────────────────────────────────────────────────
@@ -136,8 +219,9 @@ async function handleOba(request, env, ctx, path, cors) {
   const zacetek = Date.now();
   const drzava = (request.cf && request.cf.country) || '';
   let postaja = '';   // samo pri GetArrivalsForStopPoint; napolni se spodaj
-  const stej = (izid, status, preko) => recordUpstream(env, {
-    storitev: 'oba', metoda: method, izid, status, preko, drzava, ms: Date.now() - zacetek, postaja,
+  const stej = (izid, status, preko, poskusi = 1) => recordUpstream(env, {
+    storitev: 'oba', metoda: method, izid, status, preko, drzava,
+    ms: Date.now() - zacetek, postaja, poskusi,
   });
 
   const inUrl = new URL(request.url);
@@ -155,24 +239,38 @@ async function handleOba(request, env, ctx, path, cors) {
   // ob 50 hkratnih uporabnikih Marprom dobi 1 zahtevo na 20 s namesto 50.
   const cacheKeyUrl = upstream.toString();
 
-  const mem = memGet(cacheKeyUrl);
-  if (mem !== null) {
+  // Popravek ETA velja samo za prihode; druge metode nimajo relativnega časa.
+  const cas = method === 'GetArrivalsForStopPoint';
+  const postrezi = (body, starost, oznaka) => new Response(cas ? popraviEta(body, starost) : body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Proxy-Cache': oznaka,
+      'X-Proxy-Age': String(starost),
+      ...cors,
+    },
+  });
+
+  const mem = memBrani(cacheKeyUrl);
+  if (mem && !mem.potekel) {
     stej('cache', 200, 'mem');
-    return new Response(mem, {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Proxy-Cache': 'HIT-MEM', ...cors },
-    });
+    return postrezi(mem.body, mem.starost, 'HIT-MEM');
   }
 
   const cacheKey = new Request(cacheKeyUrl, { method: 'GET' });
   const cache = caches.default;
+  // Na rob shranjujemo z daljšim max-age od našega TTL (glej spodaj), zato tu
+  // sami presodimo, ali je odgovor še svež. Starost pove Cloudflare z glavo Age.
+  let rob = null;
   const hit = await cache.match(cacheKey);
   if (hit) {
-    stej('cache', 200, 'edge');
-    const r = new Response(hit.body, hit);
-    r.headers.set('X-Proxy-Cache', 'HIT');
-    for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
-    return r;
+    const starost = Number(hit.headers.get('Age') ?? 0) || 0;
+    const telo = await hit.text();
+    if (starost <= ttl) {
+      stej('cache', 200, 'edge');
+      return postrezi(telo, starost, 'HIT');
+    }
+    rob = { body: telo, starost };   // potekel, a še uporaben kot zasilni
   }
 
   // Kljub posredniku ostane ključ predpomnilnika Marpromov naslov: ob menjavi ali
@@ -190,32 +288,66 @@ async function handleOba(request, env, ctx, path, cors) {
     fetchHeaders['x-relay-key'] = String(env.RELAY_KEY ?? '');
   }
 
-  let res;
+  const preko = relay ? 'relay' : 'direct';
+
+  // Zasilni odgovor, kadar Marprom ne odgovori niti po vseh poskusih. Vrne se z
+  // 200, ker za aplikacijo to NI napaka — podatek ima, le star je, in to pove
+  // glava X-Proxy-Stale. V statistiki ostane zabelezen kot neuspel klic navzgor.
+  const zasilni = (izid, status) => {
+    // Pomnilnik izolata beremo znova (med poskusom je minil čas), rob pa je bil
+    // prebran zgoraj. Vzamemo svežjšega od obeh.
+    const m = memBrani(cacheKeyUrl);
+    const kandidat = (m && (!rob || m.starost < rob.starost)) ? m : rob;
+    if (!kandidat) return null;
+    stej(izid, status, preko);
+    return postrezi(kandidat.body, kandidat.starost, 'STALE');
+  };
+
+  let res, poskus;
   try {
-    res = await fetchUpstream(fetchUrl, { headers: fetchHeaders });
+    ({ res, poskus } = await fetchUpstream(fetchUrl, { headers: fetchHeaders },
+      { timeoutMs: OBA_TIMEOUT_MS, poskusi: OBA_POSKUSI }));
   } catch (e) {
-    stej('nedosegljiv', 502, relay ? 'relay' : 'direct');
-    return json({ error: 'upstream unreachable', detail: String(e?.name ?? e), via: relay ? 'relay' : 'direct' }, 502, cors);
+    return zasilni('nedosegljiv', 502)
+      ?? json({ error: 'upstream unreachable', detail: String(e?.name ?? e), via: preko }, 502, cors);
   }
   if (!res.ok) {
-    stej('napaka', res.status, relay ? 'relay' : 'direct');
-    return json({ error: 'upstream ' + res.status, via: relay ? 'relay' : 'direct' }, 502, cors);
+    return zasilni('napaka', res.status)
+      ?? json({ error: 'upstream ' + res.status, via: preko }, 502, cors);
   }
 
   const body = await res.text();
+
+  // Brskalnik živih metod ne sme hraniti: popravek ETA (popraviEta) se zgodi tu,
+  // odgovor v brskalnikovem predpomnilniku pa bi se staršal brez popravka in bi
+  // avtobus kazal dlje, kot je. GetLines je vozni red linij in se ne stara.
+  const zaOdjemalca = cas || method === 'GetActiveDeviceDetails'
+    ? 'no-store'
+    : `public, max-age=${ttl}`;
+
   const out = new Response(body, {
     status: 200,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `public, max-age=${ttl}`,
+      'Cache-Control': zaOdjemalca,
       'X-Proxy-Cache': 'MISS',
+      'X-Proxy-Age': '0',
     },
   });
-  stej('ok', 200, relay ? 'relay' : 'direct');
+  stej('ok', 200, preko, poskus);
   memPut(cacheKeyUrl, body, ttl);
-  // Shrani v predpomnilnik brez blokiranja odgovora uporabniku. Na *.workers.dev
-  // je to tiho brez učinka (glej opombo pri memCache) — zato zgornji memPut.
-  ctx.waitUntil(cache.put(cacheKey, out.clone()));
+
+  // Na rob shranimo z max-age = TTL + zasilno okno, da odgovor po izteku TTL
+  // ostane dosegljiv kot zasilni. Ali je še svež, odloči branje zgoraj po glavi
+  // Age — ne Cloudflare. Brez blokiranja odgovora uporabniku.
+  const zaRob = new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': `public, max-age=${ttl + Math.round(STALE_MAX_MS / 1000)}`,
+    },
+  });
+  ctx.waitUntil(cache.put(cacheKey, zaRob));
   for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
   return out;
 }
@@ -255,7 +387,7 @@ async function handleOrs(request, env, ctx, path, cors) {
 
   let res;
   try {
-    res = await fetchUpstream(`${ORS_BASE}${sub}`, {
+    ({ res } = await fetchUpstream(`${ORS_BASE}${sub}`, {
       method: 'POST',
       headers: {
         'Authorization': env.ORS_KEY,   // ključ ostane tu, v paket ne gre nikoli
@@ -263,7 +395,7 @@ async function handleOrs(request, env, ctx, path, cors) {
         'Accept': 'application/json, application/geo+json',
       },
       body: JSON.stringify(payload),
-    });
+    }));
   } catch (e) {
     stejOrs('nedosegljiv', 502);
     return json({ error: 'upstream unreachable', detail: String(e?.name ?? e) }, 502, cors);
