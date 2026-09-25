@@ -2,6 +2,9 @@
 // Stavki za odhode s postajališča so v simple.ts.
 export default {
   '{h} in {m}': '{h} and {m}',
+  'Dobro jutro': 'Good morning',
+  'Dober dan': 'Hello',
+  'Dober večer': 'Good evening',
   'Danes ni več odhodov. Prvi {day} ob {time}, linija {line}.': 'No more departures today. The first one is {day} at {time}, line {line}.',
 
   // Avtobus

@@ -5,8 +5,9 @@
 
   // Predstavitev glasu Petra: ena kartica, uporabljena v vodiču ob prvem zagonu
   // (WelcomeModal) in enkrat po posodobitvi za obstoječe uporabnike (PetraCard).
-  // Gumb "Poslušaj Petro" pusti, da se predstavi sama — zapis je stalen, zato ga
-  // Worker po prvem klicu streže iz predpomnilnika in ne porabi kvote.
+  // Gumb "Poslušaj Petro" pusti, da se predstavi sama; pozdrav po uri dneva doda
+  // speak(). Zapis je stalen (tri različice), zato ga Worker po prvem klicu streže
+  // iz predpomnilnika in ne porabi kvote.
 </script>
 
 <div class="mm-pi-icon"><Volume2 size={40} strokeWidth={1.75} /></div>
@@ -19,7 +20,7 @@
 </p>
 <div class="w-full max-w-sm mt-2">
   <ReadAloud variant="big" wide caption={$t('Poslušaj Petro')}
-             text={() => tr('Živjo, jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.')} />
+             text={() => tr('Jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.')} />
 </div>
 
 <style>

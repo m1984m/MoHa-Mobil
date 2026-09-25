@@ -29,8 +29,8 @@ export default {
   'Gumb z zvočnikom je na vseh oknih z odhodi. Brez povezave bere glas tvojega telefona.':
     'The speaker button is on every screen with departures. With the app in English or offline, your phone’s voice reads instead.',
   'Poslušaj Petro': 'Listen to Petra',
-  'Živjo, jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.':
-    'Hi, I’m Petra. Tap Read aloud and I’ll tell you when your bus arrives, how to get to your destination and what a ticket costs.',
+  'Jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.':
+    'I’m Petra. Tap Read aloud and I’ll tell you when your bus arrives, how to get to your destination and what a ticket costs.',
   'Novo': 'New',
   'V redu': 'OK',
   'Tapni ime postajališča za vse odhode in lego na karti.': 'Tap a stop name to see all departures and its place on the map.',

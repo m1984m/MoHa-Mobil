@@ -5,6 +5,11 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.1 — 2026-09-26
+
+- Vsako branje (Petra in glas telefona) se začne s pozdravom po uri na telefonu: 4–10 h »Dobro jutro«,
+  10–18 h »Dober dan«, sicer »Dober večer« (Matej). Predstavitev: »Dober dan. Jaz sem Petra. …« namesto »Živjo«.
+
 ## 0.23.0 — 2026-09-26
 
 ### Spoznaj Petro
