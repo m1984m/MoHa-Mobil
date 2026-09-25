@@ -3,7 +3,8 @@
   import { focusTrap } from '../focusTrap';
   import { lang, t, type Lang } from '../i18n';
   import { simpleView } from '../simple';
-  import { onboardingDone } from '../onboarding';
+  import { onboardingDone, markIntro } from '../onboarding';
+  import PetraIntro from './PetraIntro.svelte';
 
   // Pozdrav ob prvem zagonu: tri kartice za tri naloge, zaradi katerih potnik
   // aplikacijo odpre (kdaj pride moj bus → kje je zdaj → kako do cilja).
@@ -13,7 +14,7 @@
 
   let trackEl: HTMLDivElement;
   let index = 0;
-  const COUNT = 3;
+  const COUNT = 4;
   let locating = false;
   let denied = false;
 
@@ -27,6 +28,9 @@
   }
 
   function finish() {
+    // Najprej označi predstavitev Petre kot videno — sicer bi App za trenutek
+    // pokazal še kartico z novostjo (PetraCard).
+    markIntro('petra');
     onboardingDone.set(true);
   }
 
@@ -64,7 +68,7 @@
 
     <!-- 1: odhodi v živo + jezik in velikost besedila (to mora biti izbrano,
          preden uporabnik prebere karkoli drugega) -->
-    <section class="mm-wl-slide" aria-label="1 / 3" inert={index !== 0} aria-hidden={index !== 0}>
+    <section class="mm-wl-slide" aria-label="1 / 4" inert={index !== 0} aria-hidden={index !== 0}>
       <div class="mm-wl-icon"><Clock size={40} strokeWidth={1.75} /></div>
       <h1 class="t-title1 font-bold text-center">{$t('Kdaj pride moj avtobus?')}</h1>
       <p class="t-body text-muted text-center max-w-sm">
@@ -85,8 +89,13 @@
       </div>
     </section>
 
-    <!-- 2: karta -->
-    <section class="mm-wl-slide" aria-label="2 / 3" inert={index !== 1} aria-hidden={index !== 1}>
+    <!-- 2: glas Petra (prebere odhode, pot, vozni red) -->
+    <section class="mm-wl-slide" aria-label="2 / 4" inert={index !== 1} aria-hidden={index !== 1}>
+      <PetraIntro />
+    </section>
+
+    <!-- 3: karta -->
+    <section class="mm-wl-slide" aria-label="3 / 4" inert={index !== 2} aria-hidden={index !== 2}>
       <div class="mm-wl-icon"><Bus size={40} strokeWidth={1.75} /></div>
       <h1 class="t-title1 font-bold text-center">{$t('Kje je avtobus zdaj?')}</h1>
       <p class="t-body text-muted text-center max-w-sm">
@@ -94,8 +103,8 @@
       </p>
     </section>
 
-    <!-- 3: planer + lokacija -->
-    <section class="mm-wl-slide" aria-label="3 / 3" inert={index !== 2} aria-hidden={index !== 2}>
+    <!-- 4: planer + lokacija -->
+    <section class="mm-wl-slide" aria-label="4 / 4" inert={index !== 3} aria-hidden={index !== 3}>
       <div class="mm-wl-icon"><Route size={40} strokeWidth={1.75} /></div>
       <h1 class="t-title1 font-bold text-center">{$t('Kako pridem do cilja?')}</h1>
       <p class="t-body text-muted text-center max-w-sm">

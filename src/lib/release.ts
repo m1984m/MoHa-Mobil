@@ -15,6 +15,6 @@ export const RELEASE_DATE = '25. 9. 2026';
 export const RELEASE_NOTES: readonly string[] = [
   'Nov Preprost pogled: velik tisk in samo najpomembnejše na enem zaslonu — vklopiš ga na vrhu Nastavitev',
   'V Preprostem pogledu te en dotik pripelje domov ali do shranjenega kraja, pot je opisana po korakih',
-  'Preberi na glas je zdaj na vseh oknih z odhodi, potmi, voznimi redi, vremenom in ceniki, z naravnejšim slovenskim glasom',
+  'Spoznaj Petro: naš novi glas ti na vseh oknih prebere odhode, pot, vozni red in cene',
   'V Preprostem pogledu dodaš postajališče z iskanjem po imenu; vsa shranjena so pod »Moja postajališča«',
 ];

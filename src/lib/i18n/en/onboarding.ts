@@ -21,6 +21,18 @@ export default {
   'Znova pokaži uvodne kartice in namige': 'Show the intro cards and tips again',
   'Kolesa: MBajk / JCDecaux.': 'Bikes: MBajk / JCDecaux.',
   'Glas za branje: Microsoft Azure.': 'Read-aloud voice: Microsoft Azure.',
+
+  // PetraIntro, PetraCard
+  'Spoznaj Petro': 'Meet Petra',
+  'Petra je naš novi glas. Ko pritisneš »Preberi na glas«, ti v naravni slovenščini prebere prihode avtobusov, pot po korakih, vozni red in cene.':
+    'Petra is our new voice. Tap “Read aloud” and she reads bus arrivals, route steps, timetables and fares in natural Slovenian.',
+  'Gumb z zvočnikom je na vseh oknih z odhodi. Brez povezave bere glas tvojega telefona.':
+    'The speaker button is on every screen with departures. With the app in English or offline, your phone’s voice reads instead.',
+  'Poslušaj Petro': 'Listen to Petra',
+  'Živjo, jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.':
+    'Hi, I’m Petra. Tap Read aloud and I’ll tell you when your bus arrives, how to get to your destination and what a ticket costs.',
+  'Novo': 'New',
+  'V redu': 'OK',
   'Tapni ime postajališča za vse odhode in lego na karti.': 'Tap a stop name to see all departures and its place on the map.',
   'Za pot do poljubne točke tapni rdeči gumb z bucikom, premakni karto pod buciko in potrdi.': 'To get directions to any place, tap the red pin button, move the map under the pin and confirm.',
   'Z zvezdico shraniš postajališče med priljubljene — njegovi odhodi so potem vedno na Domu.': 'Tap the star to save this stop — its departures will then always be on Home.',

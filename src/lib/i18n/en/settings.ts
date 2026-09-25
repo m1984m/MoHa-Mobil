@@ -27,7 +27,7 @@ export default {
   // SettingsScreen — izbire
   'Nov Preprost pogled: velik tisk in samo najpomembnejše na enem zaslonu — vklopiš ga na vrhu Nastavitev': 'New Simple view: large print and only the essentials on one screen — switch it on at the top of Settings',
   'V Preprostem pogledu te en dotik pripelje domov ali do shranjenega kraja, pot je opisana po korakih': 'In Simple view one tap takes you home or to a saved place, with the route described step by step',
-  'Preberi na glas je zdaj na vseh oknih z odhodi, potmi, voznimi redi, vremenom in ceniki, z naravnejšim slovenskim glasom': 'Read aloud is now on every screen with departures, routes, timetables, weather and fares, with a more natural Slovenian voice',
+  'Spoznaj Petro: naš novi glas ti na vseh oknih prebere odhode, pot, vozni red in cene': 'Meet Petra: our new voice reads departures, routes, timetables and fares on every screen',
   'V Preprostem pogledu dodaš postajališče z iskanjem po imenu; vsa shranjena so pod »Moja postajališča«': 'In Simple view you can add a stop by searching its name; all saved stops are under “My stops”',
   'Svetla': 'Light',
   'Temna': 'Dark',

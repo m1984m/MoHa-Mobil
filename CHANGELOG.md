@@ -5,6 +5,14 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.0 — 2026-09-26
+
+### Spoznaj Petro
+- Nova kartica »Spoznaj Petro«: obstoječi uporabnik jo ob prvem odprtju po posodobitvi vidi enkrat (`introSeen`
+  v onboarding.ts, ključ `mm.introSeen.v1`), novi jo dobi kot 2. kartico vodiča (vodič je zdaj 4 kartice).
+- Gumb »Poslušaj Petro«: Petra se predstavi sama (stalno besedilo, po prvem klicu iz predpomnilnika Workerja).
+- Zapre se z »V redu«, s sistemskim nazaj ali Esc; branje ob zaprtju utihne.
+
 ## 0.22.9 — 2026-09-26
 
 - Izgovorjava (Matej): »UK Gosp.« → Štuk Gosposvetska, »GH« → Garažna hiša (GH Lent), »Koš. dol« → Košaški dol.

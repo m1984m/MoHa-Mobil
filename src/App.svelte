@@ -14,8 +14,9 @@
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack, type BackRelease } from './lib/backstack';
   import { lang, t, tr } from './lib/i18n';
-  import { onboardingDone } from './lib/onboarding';
+  import { onboardingDone, introSeen } from './lib/onboarding';
   import WelcomeModal from './lib/ui/WelcomeModal.svelte';
+  import PetraCard from './lib/ui/PetraCard.svelte';
   import FaresModal from './lib/screens/FaresModal.svelte';
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
@@ -719,6 +720,11 @@
 {/key}
 
 <!-- Zunaj {#key}: ob izbiri jezika na prvi kartici se vodič ne sme zapreti ali vrniti na začetek. -->
+<!-- Novost po posodobitvi: predstavitev Petre, enkrat, samo za obstoječe uporabnike. -->
+{#if $onboardingDone && !$introSeen.petra && !gtfsError}
+  <PetraCard />
+{/if}
+
 {#if !$onboardingDone && !gtfsError}
   <WelcomeModal {hasGeo} onRequestLocation={async () => { await requestLocation(); await refreshWeather(); }} />
 {/if}

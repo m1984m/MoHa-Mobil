@@ -20,6 +20,8 @@
   export let wide = false;
   // Kaj bere, za bralnik zaslona, kadar je na zaslonu več gumbov (Dom ima dva).
   export let label = '';
+  // Samo 'big': napis namesto "Preberi na glas" (npr. "Poslušaj Petro").
+  export let caption = '';
 
   const me = {};
   $: mine = $speakingOwner === me;
@@ -43,7 +45,7 @@
   {#if variant === 'big'}
     <button type="button" class="pressable mm-ra-big" class:mm-ra-wide={wide} on:click={toggle}>
       {#if mine}<Square size={22} strokeWidth={2.25} /> {$t('Ustavi branje')}
-      {:else}<Volume2 size={24} strokeWidth={2} /> {$t('Preberi na glas')}{/if}
+      {:else}<Volume2 size={24} strokeWidth={2} /> {caption || $t('Preberi na glas')}{/if}
     </button>
   {:else}
     <button type="button" class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0 mm-ra-icon"
