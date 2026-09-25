@@ -8,7 +8,7 @@
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = '0.22.5-c1a9106';
+const VERSION = '0.22.6-59c5c84';
 // Alarmi: SW nima dostopa do import.meta.env, zato vrednosti vstavi build-sw.mjs
 // (iz process.env ob gradnji). Če nista nastavljeni, ostaneta prazna niza in
 // obnovitev naročnine spodaj se tiho preskoči.
