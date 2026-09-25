@@ -12,6 +12,10 @@ import type { DayWeather } from './weather';
 // 3 minute, 5 minut); ure kot 14:35. Imena postaj in smeri so v imenovalniku
 // ("smer Kamnica"), ker jih ne znamo zanesljivo sklanjati.
 
+// Koliko prihodov na postajališče se prebere (Matej: prve tri). Zaslon pokaže več;
+// branje je krajše, ker poslušalec zapomni prve odhode, in porabi manj kvote glasu.
+export const MAX_READ = 3;
+
 function word(n: number, sl: [string, string, string, string], en: [string, string]): string {
   return `${n} ${plural(n, sl, en)}`;
 }
@@ -66,7 +70,7 @@ export type StopSpeech = { name: string; rows: DepartureRow[]; empty?: string };
 
 export function departuresSpeech(stops: StopSpeech[]): string {
   return stops.map(st => {
-    const body = st.rows.length ? st.rows.map(rowSentence).join(' ') : (st.empty ?? noMoreToday());
+    const body = st.rows.length ? st.rows.slice(0, MAX_READ).map(rowSentence).join(' ') : (st.empty ?? noMoreToday());
     return tr('Postajališče {stop}.', { stop: st.name }) + ' ' + body;
   }).join(' ');
 }
@@ -178,7 +182,7 @@ export function stopTimetableSpeech(stop: string, day: string, deps: Dep[], nowS
   if (deps.length === 0) return s + ' ' + tr('Ni odhodov za izbrani dan.');
   const sorted = [...deps].sort((a, b) => a.depSec - b.depSec);
   if (nowSec != null) {
-    const next = sorted.filter(d => d.depSec >= nowSec).slice(0, 6);
+    const next = sorted.filter(d => d.depSec >= nowSec).slice(0, MAX_READ);
     if (next.length) {
       return s + ' ' + tr('Naslednji odhodi: {list}.', {
         list: next.map(d => tr('linija {line} ob {time}', { line: d.route.short, time: fmtClock(d.depSec) })).join(', '),
@@ -204,7 +208,7 @@ export function lineTimetableSpeech(o: {
   const times = [...o.times].sort((a, b) => a - b);
   if (times.length === 0) { parts.push(tr('Ni voženj za izbrani dan.')); return parts.join(' '); }
   if (o.nowSec != null) {
-    const next = times.filter(x => x >= o.nowSec!).slice(0, 6);
+    const next = times.filter(x => x >= o.nowSec!).slice(0, MAX_READ);
     if (next.length) parts.push(tr('Naslednji odhodi ob {list}.', { list: next.map(fmtClock).join(', ') }));
     else parts.push(tr('Danes ni več odhodov') + '.');
   }

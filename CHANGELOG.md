@@ -5,6 +5,11 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.5 — 2026-09-26
+
+- Glasno branje prebere največ prve tri prihode na postajališče in prve tri odhode v voznih redih (prej do 6);
+  zaslon pokaže več kot prej. Krajše branje in manj porabe kvote glasu (Matej). Nastavitev `MAX_READ` v readAloud.ts.
+
 ## 0.22.4 — 2026-09-25
 
 - Statistika: ploščica »Glas Petra ta mesec« — porabljeni znaki proti kvoti Azure F0 (500.000/mesec), merilnik,
