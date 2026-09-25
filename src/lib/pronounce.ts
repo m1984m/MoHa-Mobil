@@ -86,6 +86,23 @@ export function numWords(n: number): string {
   return r ? `${sto} ${numWords(r)}` : sto;
 }
 
+// Število pred minutami ali urami z besedo. Petra ga sicer sklanja sama in se zmoti
+// ("Pojdi peš 12 minut" → "dvanajstih minut"). Ženski spol: ena/eno, dve.
+function timeCount(n: number, unit: string): string {
+  const r = n % 100;
+  const head = n - r;                      // stotice ("sto", "dvesto" …) ostanejo
+  const pre = head ? numWords(head) + ' ' : '';
+  if (r === 1) return pre + (unit.endsWith('o') ? 'eno' : 'ena');
+  if (r === 2) return pre + 'dve';
+  return numWords(n);
+}
+
+// Ura dneva je vrstilni števnik v rodilniku: "od devete do trinajste ure".
+const URA = ['ničte', 'prve', 'druge', 'tretje', 'četrte', 'pete', 'šeste', 'sedme', 'osme', 'devete',
+  'desete', 'enajste', 'dvanajste', 'trinajste', 'štirinajste', 'petnajste', 'šestnajste', 'sedemnajste',
+  'osemnajste', 'devetnajste', 'dvajsete', 'enaindvajsete', 'dvaindvajsete', 'triindvajsete', 'štiriindvajsete'];
+const ura = (h: string) => URA[Number(h)] ?? h;
+
 // Slovenska oblika ob številu: 1 evro, 2 evra, 3 evri, 5 evrov.
 function form(n: number, f: [string, string, string, string]): string {
   const r = Math.abs(n) % 100;
@@ -109,10 +126,15 @@ const NUMBER_RULES: [RegExp, (...m: string[]) => string][] = [
   [/(\d+),(\d{2})\s*€/g, (_m, e, c) => euros(e, c)],
   // "3 €" → "3 evri"
   [/(\d+)\s*€/g, (_m, e) => euros(e)],
+  // "9–13 h" → "od devete do trinajste ure" (pred splošnim razponom)
+  [/(\d{1,2})\s*[–-]\s*(\d{1,2})\s*h(?![\p{L}])/gu, (_m, a, b) => `od ${ura(a)} do ${ura(b)} ure`],
   // "6–14" ali "9-13" (ne ura 14:35 in ne datum) → "od 6 do 14"
   [/(^|[^\d:.,])(\d{1,3})\s*[–-]\s*(\d{1,3})(?![\d:])/g, (_m, pre, a, b) => `${pre}od ${a} do ${b}`],
-  // "13 h" → "13 ure"
-  [/(\d{1,2}) h(?![\p{L}])/gu, (_m, h) => `${h} ure`],
+  // "od 17 h dalje" → "od sedemnajste ure dalje"
+  [/(\d{1,2})\s*h(?![\p{L}])/gu, (_m, h) => `${ura(h)} ure`],
+  // "12 minut" → "dvanajst minut", "1 minuto" → "eno minuto", "2 minuti" → "dve minuti"
+  [/(^|[^\p{L}\p{N},.:])(\d{1,3}) (minuto|minuti|minute|minut|minuta|uro|uri|ure|ur|ura)(?![\p{L}])/gu,
+    (_m, pre, n, unit) => `${pre}${timeCount(Number(n), unit)} ${unit}`],
   // Oznaka linije ali postaje: "P15" je glas prebral po števkah ("pe ena pet"),
   // "pe 15" pa kot vrstilni števnik ("pe petnajsti"). Pravilno je "pe petnajst"
   // (Matej), zato število z besedo; enako "S31" → "es enaintrideset".

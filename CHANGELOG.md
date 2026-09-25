@@ -5,6 +5,14 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.6 — 2026-09-26
+
+- Izgovorjava: število pred minutami in urami z besedo v pravi obliki — »Pojdi peš 12 minut« je Petra brala
+  »dvanajstih minut«; zdaj dvanajst minut, eno minuto, dve minuti, tri minute, eno uro. Ura dneva kot vrstilni
+  števnik: »9–13 h« → od devete do trinajste ure, »od 17 h dalje« → od sedemnajste ure dalje.
+- »Preberi na glas« na vrhu: v poti preprostega pogleda nad koraki (prej pod njimi), v listu postajališča na
+  preprosti karti prvi gumb (kot pri avtobusu).
+
 ## 0.22.5 — 2026-09-26
 
 - Glasno branje prebere največ prve tri prihode na postajališče in prve tri odhode v voznih redih (prej do 6);

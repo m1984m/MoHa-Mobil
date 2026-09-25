@@ -1061,6 +1061,8 @@
           {#if simple}
             <!-- Preprost pogled: gumbi z napisi (ikona sama ni razumljiva), 64 px, v dveh stolpcih. -->
             <div class="grid grid-cols-2 gap-2 mt-3">
+              <!-- Preberi na glas prvi (zgoraj levo), kot v listu avtobusa. -->
+              <ReadAloud variant="big" wide resetKey={selectedStop.id} text={stopText} />
               <button type="button" class="pressable mm-ms-act mm-ms-act-accent" on:click={() => onPlanToStop(selectedStop!)}>
                 <Navigation size={22} /> {$t('Pot do postaje')}
               </button>
@@ -1068,7 +1070,6 @@
                 <Star size={22} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'currentColor'} />
                 {isFav ? $t('Shranjeno med moje') : $t('Shrani med moje')}
               </button>
-              <ReadAloud variant="big" wide resetKey={selectedStop.id} text={stopText} />
               <button type="button" class="pressable mm-ms-act" on:click={() => onStopChange(null)}>
                 <X size={22} /> {$t('Zapri')}
               </button>
