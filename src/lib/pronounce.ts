@@ -69,6 +69,23 @@ const RULES = WORDS.map(([from, to]) => ({
   to,
 }));
 
+// Glavni števnik z besedo (0–999): 15 → "petnajst", 31 → "enaintrideset".
+const ENICE = ['nič', 'ena', 'dva', 'tri', 'štiri', 'pet', 'šest', 'sedem', 'osem', 'devet',
+  'deset', 'enajst', 'dvanajst', 'trinajst', 'štirinajst', 'petnajst', 'šestnajst', 'sedemnajst',
+  'osemnajst', 'devetnajst'];
+const DESETICE = ['', '', 'dvajset', 'trideset', 'štirideset', 'petdeset', 'šestdeset', 'sedemdeset',
+  'osemdeset', 'devetdeset'];
+export function numWords(n: number): string {
+  if (n < 20) return ENICE[n];
+  if (n < 100) {
+    const e = n % 10, d = Math.floor(n / 10);
+    return e ? `${ENICE[e]}in${DESETICE[d]}` : DESETICE[d];
+  }
+  const st = Math.floor(n / 100), r = n % 100;
+  const sto = st === 1 ? 'sto' : st === 2 ? 'dvesto' : `${ENICE[st]}sto`;
+  return r ? `${sto} ${numWords(r)}` : sto;
+}
+
 // Slovenska oblika ob številu: 1 evro, 2 evra, 3 evri, 5 evrov.
 function form(n: number, f: [string, string, string, string]): string {
   const r = Math.abs(n) % 100;
@@ -97,8 +114,9 @@ const NUMBER_RULES: [RegExp, (...m: string[]) => string][] = [
   // "13 h" → "13 ure"
   [/(\d{1,2}) h(?![\p{L}])/gu, (_m, h) => `${h} ure`],
   // Oznaka linije ali postaje: "P15" je glas prebral po števkah ("pe ena pet"),
-  // pravilno je "pe petnajst" (Matej); enako "S31" → "es enaintrideset".
-  [/(^|[^\p{L}\p{N}])([A-ZČŠŽ])(\d{1,3})(?![\p{L}\p{N}])/gu, (_m, pre, l, n) => `${pre}${LETTER[l] ?? l} ${n}`],
+  // "pe 15" pa kot vrstilni števnik ("pe petnajsti"). Pravilno je "pe petnajst"
+  // (Matej), zato število z besedo; enako "S31" → "es enaintrideset".
+  [/(^|[^\p{L}\p{N}])([A-ZČŠŽ])(\d{1,3})(?![\p{L}\p{N}])/gu, (_m, pre, l, n) => `${pre}${LETTER[l] ?? l} ${numWords(Number(n))}`],
 ];
 
 export function forSpeech(text: string): string {

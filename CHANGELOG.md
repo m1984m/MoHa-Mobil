@@ -5,6 +5,11 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.3 — 2026-09-25
+
+- Oznake linij: Petra je »P15« prebrala kot »pe petnajsti« (vrstilni števnik). Število v oznaki je zdaj
+  z besedo: pe petnajst, ge šest, es enaintrideset (`numWords` v pronounce.ts, 0–999).
+
 ## 0.22.2 — 2026-09-25
 
 ### Petra prebere dolgo besedilo do konca
