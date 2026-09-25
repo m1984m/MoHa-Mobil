@@ -5,6 +5,10 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.8 — 2026-09-26
+
+- Izgovorjava: »UKC« → Univerzitetni klinični center (Matej).
+
 ## 0.22.7 — 2026-09-26
 
 - Oznake linij: črka ostane črka (Petra jo izgovori pravilno sama), število z besedo — »G šest«, »P petnajst«,

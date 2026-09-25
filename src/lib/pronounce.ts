@@ -37,6 +37,7 @@ const WORDS: [string, string][] = [
   ['AP', 'avtobusna postaja'],
   ['OŠ', 'osnovna šola'],
   ['MČ', 'mestna četrt'],
+  ['UKC', 'Univerzitetni klinični center'],
   ['TŠC', 'Tehniški šolski center'],
   ['TC', 'trgovski center'],
   ['ZD', 'zdravstveni dom'],
