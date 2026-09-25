@@ -5,6 +5,11 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.7 — 2026-09-26
+
+- Oznake linij: črka ostane črka (Petra jo izgovori pravilno sama), število z besedo — »G šest«, »P petnajst«,
+  »S enaintrideset«. Zapis »ge šest« je pokvaril izgovor črke G (Matej).
+
 ## 0.22.6 — 2026-09-26
 
 - Izgovorjava: število pred minutami in urami z besedo v pravi obliki — »Pojdi peš 12 minut« je Petra brala

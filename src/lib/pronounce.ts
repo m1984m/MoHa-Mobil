@@ -53,13 +53,6 @@ const WORDS: [string, string][] = [
   ['3DVA', 'Tri dva'],
 ];
 
-// Slovenska imena črk za oznake "črka + število" (linije P7–P19, postaja S31).
-const LETTER: Record<string, string> = {
-  A: 'a', B: 'be', C: 'ce', Č: 'če', D: 'de', E: 'e', F: 'ef', G: 'ge', H: 'ha', I: 'i', J: 'jot',
-  K: 'ka', L: 'el', M: 'em', N: 'en', O: 'o', P: 'pe', R: 'er', S: 'es', Š: 'eš', T: 'te', U: 'u',
-  V: 've', Z: 'ze', Ž: 'že',
-};
-
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Meja besede brez lookbehind (starejši Safari ga ne pozna in bi ob nalaganju
@@ -135,10 +128,10 @@ const NUMBER_RULES: [RegExp, (...m: string[]) => string][] = [
   // "12 minut" → "dvanajst minut", "1 minuto" → "eno minuto", "2 minuti" → "dve minuti"
   [/(^|[^\p{L}\p{N},.:])(\d{1,3}) (minuto|minuti|minute|minut|minuta|uro|uri|ure|ur|ura)(?![\p{L}])/gu,
     (_m, pre, n, unit) => `${pre}${timeCount(Number(n), unit)} ${unit}`],
-  // Oznaka linije ali postaje: "P15" je glas prebral po števkah ("pe ena pet"),
-  // "pe 15" pa kot vrstilni števnik ("pe petnajsti"). Pravilno je "pe petnajst"
-  // (Matej), zato število z besedo; enako "S31" → "es enaintrideset".
-  [/(^|[^\p{L}\p{N}])([A-ZČŠŽ])(\d{1,3})(?![\p{L}\p{N}])/gu, (_m, pre, l, n) => `${pre}${LETTER[l] ?? l} ${numWords(Number(n))}`],
+  // Oznaka linije ali postaje: "P15" je Petra brala po števkah, "pe 15" kot vrstilni
+  // števnik ("petnajsti"), "ge" pa je pokvarilo izgovor črke. Pravilno (Matej): črka
+  // ostane črka, število z besedo — "G šest", "P petnajst", "S enaintrideset".
+  [/(^|[^\p{L}\p{N}])([A-ZČŠŽ])(\d{1,3})(?![\p{L}\p{N}])/gu, (_m, pre, l, n) => `${pre}${l} ${numWords(Number(n))}`],
 ];
 
 export function forSpeech(text: string): string {
