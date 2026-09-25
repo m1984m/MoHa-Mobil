@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { onMount } from 'svelte';
   import { X, Sunrise, Sunset, Wind, Droplets, Sun } from 'lucide-svelte';
   import { fetchDayWeather, type DayWeather } from '../weather';
@@ -28,14 +29,14 @@
 </script>
 
 {#if open}
-  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={close}
        on:keydown={(e) => { if (e.key === 'Escape') close(); }}
        role="dialog"
        aria-modal="true"
        tabindex="-1">
-    <div class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float overflow-hidden"
+    <div in:sheet out:sheet={{ out: true }} class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float overflow-hidden"
          style="padding-bottom: env(safe-area-inset-bottom);">
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
         <div class="t-title2">{$t('Vreme danes')}</div>

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert, Bike } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert, Bike, Plus, Minus } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
@@ -15,7 +16,7 @@
   import { liveVehicles, smoothedVehicles, liveStaleSec, startPolling, stopPolling, fetchArrivalsForStopPoint, type LiveVehicle, type StopArrival } from '../realtime';
   import { mapStyleKind, departureDisplay, compactLists, getWalkMps, showBikes } from '../settings';
   import { bikeStations, bikesError, startBikes, nearestBikeStation, type BikeStation } from '../bikes';
-  import { pushBack } from '../backstack';
+  import { pushBack, type BackRelease } from '../backstack';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import { savedRoutes } from '../savedRoutes';
   import { focusTrap } from '../focusTrap';
@@ -37,6 +38,10 @@
   export let onLongPressDest: (lat: number, lon: number) => void;
   export let onPlanToStop: (s: Stop) => void;
   export let hasAlternatives: boolean = false;
+  // Preprost pogled: brez iskanja, MBajk, bucike in gumba Načrtuj; namesto njih velik
+  // gumb Nazaj in gumba +/−, ker povečava z dvema prstoma starejšim pogosto ne uspe.
+  export let simple: boolean = false;
+  export let onBack: (() => void) | null = null;
 
   let mapRef: any;
   let sheetRef: any;
@@ -79,7 +84,7 @@
   $: bikesWanted = $showBikes && !activePlan;
   $: if (bikesWanted && !stopBikes) stopBikes = startBikes();
   $: if (!bikesWanted && stopBikes) { stopBikes(); stopBikes = null; selectedBike = null; }
-  let backBike: (() => void) | null = null;
+  let backBike: BackRelease | null = null;
   $: if (selectedBike && !backBike) {
     backBike = pushBack(() => selectedBike = null);
   } else if (!selectedBike && backBike) {
@@ -99,25 +104,25 @@
   // Sistemski "nazaj" zapira poglede tega zaslona (bus detail, vozni redi, share)
   // namesto izhoda iz aplikacije. Vzorec: ob odprtju pushBack(close), ob ročnem
   // zaprtju release(); če je zaprl back gumb, je release no-op.
-  let backVehicle: (() => void) | null = null;
+  let backVehicle: BackRelease | null = null;
   $: if (selectedVehicle && !backVehicle) {
     backVehicle = pushBack(() => backToStop());
   } else if (!selectedVehicle && backVehicle) {
     const r = backVehicle; backVehicle = null; r();
   }
-  let backStopTt: (() => void) | null = null;
+  let backStopTt: BackRelease | null = null;
   $: if (stopTimetableOpen && !backStopTt) {
     backStopTt = pushBack(() => stopTimetableOpen = false);
   } else if (!stopTimetableOpen && backStopTt) {
     const r = backStopTt; backStopTt = null; r();
   }
-  let backLineTt: (() => void) | null = null;
+  let backLineTt: BackRelease | null = null;
   $: if (lineTimetableOpen && !backLineTt) {
     backLineTt = pushBack(() => lineTimetableOpen = false);
   } else if (!lineTimetableOpen && backLineTt) {
     const r = backLineTt; backLineTt = null; r();
   }
-  let backShare: (() => void) | null = null;
+  let backShare: BackRelease | null = null;
   $: if (shareDialogOpen && !backShare) {
     backShare = pushBack(() => shareDialogOpen = false);
   } else if (!shareDialogOpen && backShare) {
@@ -159,6 +164,14 @@
     if (vehicleArrivalTimer) clearInterval(vehicleArrivalTimer);
     stopPolling();
     stopBikes?.();
+    // Karta se zapre, medtem ko je odprt bus, vozni red ali iskanje (preprost pogled
+    // ima svoj gumb Nazaj): brez tega bi njihovi vnosi v zgodovini ostali in bi
+    // sistemski "nazaj" nekajkrat ne naredil ničesar. Od najnovejšega navzdol, da
+    // je vsak ob sprostitvi na vrhu.
+    [backSearch, backShare, backLineTt, backStopTt, backVehicle, backBike]
+      .filter((r): r is BackRelease => !!r)
+      .sort((a, b) => b.id - a.id)
+      .forEach(r => r());
   });
 
   // Ko user izbere živ bus, potegnemo arrivals za njegov nextStopPointId in najdemo
@@ -570,7 +583,7 @@
         .slice(0, 20)
     : [];
 
-  let backSearch: (() => void) | null = null;
+  let backSearch: BackRelease | null = null;
   $: if (stopSearchOpen && !backSearch) {
     backSearch = pushBack(() => stopSearchOpen = false);
   } else if (!stopSearchOpen && backSearch) {
@@ -660,7 +673,7 @@
   else if (shareDialogOpen) shareDialogOpen = false;
 }} />
 
-<div class="absolute inset-0">
+<div class="absolute inset-0" class:mm-ms-simple={simple}>
   <MapView bind:this={mapRef}
     stops={visibleStops}
     user={hasGeo ? origin : null}
@@ -686,7 +699,7 @@
   <!-- Active plan floating card (expands inline) -->
   {#if activePlan}
     <div class="absolute left-0 right-0 px-4 z-30"
-         style="top: calc(env(safe-area-inset-top) + 0.75rem); max-height: calc(100dvh - env(safe-area-inset-top) - 6.5rem);">
+         style="top: calc(env(safe-area-inset-top) + {simple ? '6rem' : '0.75rem'}); max-height: calc(100dvh - env(safe-area-inset-top) - 6.5rem);">
       <div class="surface rounded-2xl border border-base shadow-elev overflow-hidden max-w-screen-sm mx-auto flex flex-col"
            style="max-height: calc(100dvh - env(safe-area-inset-top) - 6.5rem);">
         <div class="flex items-stretch shrink-0">
@@ -730,7 +743,7 @@
               {/each}
             </div>
           </div>
-          <div class="flex flex-col border-l border-base shrink-0 w-12" style="touch-action: manipulation;">
+          <div class="flex flex-col border-l border-base shrink-0 {simple ? 'w-16' : 'w-12'}" style="touch-action: manipulation;">
             <button type="button"
                     class="flex-1 min-h-[44px] grid place-items-center border-b border-base"
                     style="touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0.08);"
@@ -830,7 +843,7 @@
   {/if}
 
   <!-- Iskanje postaje po imenu -->
-  {#if !activePlan}
+  {#if !activePlan && !simple}
     <button class="pressable absolute z-30 right-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
             style="top: calc(env(safe-area-inset-top) + 0.75rem)"
             on:click={openStopSearch}
@@ -840,7 +853,7 @@
   {/if}
 
   <!-- MBajk: vklop sloja (levo zgoraj, zrcalno z iskanjem) -->
-  {#if !activePlan}
+  {#if !activePlan && !simple}
     <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
             style="top: calc(env(safe-area-inset-top) + 0.75rem); {$showBikes ? 'background: #7C3AED; border-color: #7C3AED;' : ''}"
             on:click={() => showBikes.update(v => !v)}
@@ -900,7 +913,7 @@
   {/if}
 
   <!-- Namig za izbiro cilja na karti (nad gumboma levo spodaj) -->
-  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike && !pinMode && $hintVisible('map.pin')}
+  {#if !simple && !activePlan && !selectedStop && !selectedVehicle && !selectedBike && !pinMode && $hintVisible('map.pin')}
     <div class="absolute z-20 left-4 right-4" style="bottom: calc(var(--tabbar-space) + {hasGeo ? '9.5rem' : '5.5rem'})">
       <div class="max-w-screen-sm mx-auto shadow-card rounded-2xl">
         <Hint id="map.pin" text={$t('Za pot do poljubne točke tapni rdeči gumb z bucikom, premakni karto pod buciko in potrdi.')} />
@@ -910,8 +923,8 @@
 
   <!-- Live indicator -->
   {#if !activePlan}
-    <div class="absolute z-20 left-1/2 -translate-x-1/2 pointer-events-none"
-         style="top: calc(env(safe-area-inset-top) + 0.75rem)">
+    <div class="absolute z-20 pointer-events-none {simple ? 'right-4' : 'left-1/2 -translate-x-1/2'}"
+         style="top: calc(env(safe-area-inset-top) + {simple ? '1.25rem' : '0.75rem'})">
       <div class="surface rounded-full border border-base shadow-card px-3 h-8 flex items-center gap-2">
         <span class="w-2 h-2 rounded-full"
               style="background: {isLive && staleSec < 30 ? 'var(--status-ontime)' : 'var(--status-delay)'}"></span>
@@ -931,7 +944,7 @@
   {/if}
 
   <!-- Desno spodaj: Načrtuj (normalno) ALI Potrdi (pin mode) -->
-  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
+  {#if !simple && !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
     {#if pinMode}
       <button class="pressable absolute z-30 right-4 h-14 px-5 rounded-full t-headline shadow-float flex items-center gap-2"
               style="bottom: calc(var(--tabbar-space) + 1.5rem); background: var(--accent); color: #ffffff;"
@@ -961,7 +974,7 @@
   {/if}
 
   <!-- Levo nad Recenter: Pin FAB (vstop v pin mode) ALI Prekliči (izhod) -->
-  {#if !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
+  {#if !simple && !activePlan && !selectedStop && !selectedVehicle && !selectedBike}
     {#if pinMode}
       <button class="pressable absolute z-30 left-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
               style="bottom: calc(var(--tabbar-space) + {hasGeo ? '5.5rem' : '1.5rem'})"
@@ -979,9 +992,32 @@
     {/if}
   {/if}
 
+  <!-- Preprost pogled: velik gumb Nazaj (levo zgoraj) in +/− (desno) -->
+  {#if simple}
+    {#if onBack}
+      <button type="button" class="pressable absolute z-40 left-4 mm-ms-back shadow-card"
+              style="top: calc(env(safe-area-inset-top) + 0.75rem)"
+              on:click={onBack}>
+        <ArrowLeft size={26} strokeWidth={2.25} /> {$t('Nazaj')}
+      </button>
+    {/if}
+    <!-- Razprta kartica poti gre čez sredino karte — takrat gumba ne smeta ležati nanjo. -->
+    {#if !planExpanded}
+    <div class="absolute z-30 right-4 flex flex-col gap-3" style="top: 40%; transform: translateY(-50%);">
+      <button type="button" class="pressable mm-ms-zoom shadow-card" on:click={() => mapRef?.zoomBy(1)} aria-label={$t('Povečaj karto')}>
+        <Plus size={30} strokeWidth={2.5} />
+      </button>
+      <button type="button" class="pressable mm-ms-zoom shadow-card" on:click={() => mapRef?.zoomBy(-1)} aria-label={$t('Pomanjšaj karto')}>
+        <Minus size={30} strokeWidth={2.5} />
+      </button>
+    </div>
+    {/if}
+  {/if}
+
   <!-- Contextual bottom sheet -->
   <BottomSheet bind:this={sheetRef} snaps={[0.0, 0.50, 0.92]} snapIndex={0}>
-    <div class="px-4 pb-28 max-w-screen-sm mx-auto">
+    <!-- Spodnji odmik raste z --tabbar-space (gumb "Nazaj na preprost pogled" nad zavihki). -->
+    <div class="px-4 pb-28 max-w-screen-sm mx-auto" style="padding-bottom: max(7rem, calc(var(--tabbar-space) + 2.5rem));">
 
       {#if selectedStop}
         <!-- Naslov v svoji vrstici, akcije pod njim: s 44 px tarčami so štirje gumbi
@@ -1259,11 +1295,11 @@
   </BottomSheet>
 
   {#if stopSearchOpen}
-    <div class="fixed inset-0 z-50 flex flex-col"
+    <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex flex-col"
          style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
          on:click|self={() => stopSearchOpen = false}
          role="presentation">
-      <div class="surface w-full sm:max-w-lg mx-auto rounded-b-3xl shadow-float flex flex-col overflow-hidden"
+      <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface w-full sm:max-w-lg mx-auto rounded-b-3xl shadow-float flex flex-col overflow-hidden"
            style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - 4rem);"
            role="dialog" aria-modal="true" aria-label={$t('Poišči postajo')} tabindex="-1"
            use:focusTrap>
@@ -1309,11 +1345,11 @@
   {/if}
 
   {#if shareDialogOpen}
-    <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+    <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
          style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
          on:click|self={() => shareDialogOpen = false}
          role="presentation">
-      <div class="surface w-full sm:max-w-md rounded-3xl shadow-float overflow-hidden flex flex-col"
+      <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-md rounded-3xl shadow-float overflow-hidden flex flex-col"
            style="max-height: calc(100dvh - 2rem);"
            role="dialog" aria-modal="true" aria-label={$t('Deli pot')} tabindex="-1"
            use:focusTrap>
@@ -1363,3 +1399,21 @@
       onStopChange(s);
     }} />
 </div>
+
+<style>
+  /* Preprost pogled: tarče ≥ 64 px, napis ob puščici (ikona sama ni razumljiva). */
+  .mm-ms-back {
+    display: inline-flex; align-items: center; gap: 10px;
+    min-height: 64px; padding: 0 20px 0 14px; border-radius: 18px;
+    background: var(--surface); border: 2px solid var(--border); color: var(--text);
+    font-weight: 600; font-size: calc(16px * var(--ui-scale)); touch-action: manipulation;
+  }
+  /* Okrogli gumbi karte (44 px) so v preprostem pogledu 64 px. */
+  .mm-ms-simple :global(button.w-11.h-11) { width: 64px; height: 64px; }
+  .mm-ms-zoom {
+    width: 64px; height: 64px; border-radius: 18px;
+    display: grid; place-items: center;
+    background: var(--surface); border: 2px solid var(--border); color: var(--text);
+    touch-action: manipulation;
+  }
+</style>

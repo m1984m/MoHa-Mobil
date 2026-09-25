@@ -76,7 +76,8 @@
   --row-gap: 0px;      /* razmik med tarčami v kartici postaje */
 }
 
-/* ---------- Način za starejše ----------
+/* ---------- Večje besedilo (prej "način za starejše") ----------
+   Razred .senior velja ob nastavitvi Večje besedilo in vedno v preprostem pogledu.
    Ni samo večja pisava. Starost prinese troje hkrati: slabšo ostrino vida,
    upad občutljivosti za kontrast in manj natančen prst — zato gredo skupaj
    večje besedilo, kontrast 7:1 (WCAG 1.4.6 AAA), večje tarče z razmikom med
@@ -100,6 +101,31 @@
   --accent-pressed: #D32027;
   --status-ontime: #34C759;     /* 7,66:1 */
   --status-delay: #FF9500;      /* 7,74:1 */
+}
+
+/* ---------- Preprost pogled ----------
+   Vrstice odhodov 88 px (14 mm): od te velikosti starejši zadenejo več kot 97 %
+   dotikov (Leitão & Silva 2012). Stoji za .senior, da ga prepiše. */
+:root.mm-simple {
+  --row-min: 88px;
+}
+/* Celotna aplikacija, odprta iz preprostega pogleda: nad zavihki stoji gumb za
+   vrnitev, zato vse, kar računa iz --tabbar-space, dobi zanj prostor. Odmik 20 px
+   namesto 8: pri večjem besedilu se napis zavihka prelomi in vrstica je za ~11 px
+   višja od --tabbar-h (izmerjeno 87 proti 76 px). */
+:root.mm-simple-back {
+  --tabbar-space: calc(env(safe-area-inset-bottom) + var(--tabbar-h) + var(--tabbar-gap) + 84px);
+}
+.mm-simple-return {
+  position: fixed; z-index: 45; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabbar-h) + var(--tabbar-gap) + 20px);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 64px; padding: 6px 22px; border-radius: 32px;
+  width: max-content; max-width: calc(100% - 2rem); text-align: center; line-height: 1.2;
+  background: var(--accent); color: #ffffff;
+  /* Pri večjem besedilu (1,5) bi napis v eni vrstici presegel 360 px širok zaslon —
+     velikost je zato zamejena, na ozkih zaslonih pa se sme prelomiti. */
+  font-weight: 600; font-size: min(calc(16px * var(--ui-scale)), 20px); touch-action: manipulation;
 }
 
 :root.dark {

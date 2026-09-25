@@ -22,7 +22,8 @@
   import { Bus, Star, MoonStar } from 'lucide-svelte';
   import LineBadge from './LineBadge.svelte';
   import DepartureTime from './DepartureTime.svelte';
-  import { compactLists, seniorMode } from '../settings';
+  import { compactLists } from '../settings';
+  import { largeUI } from '../simple';
   import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
   import { fmtClock, fmtDayOffset } from '../time';
   import { t } from '../i18n';
@@ -51,7 +52,7 @@
   $: rowText = $compactLists ? 't-subhead' : 't-callout';
   // V načinu za starejše so vrstice ločene ploskve z razmikom med njimi —
   // sosednji tarči brez praznine zgreši vsak tresoč prst (WCAG 2.5.8).
-  $: badgeSize = ($seniorMode ? 'lg' : ($compactLists ? 'sm' : 'md')) as 'sm' | 'md' | 'lg';
+  $: badgeSize = ($largeUI ? 'lg' : ($compactLists ? 'sm' : 'md')) as 'sm' | 'md' | 'lg';
 </script>
 
 <div class="surface rounded-2xl border border-base shadow-card overflow-hidden">
@@ -61,7 +62,7 @@
           on:click={() => onSelect(stop)}>
     <div class="min-w-0 flex items-center gap-2">
       {#if starred}
-        <Star size={$seniorMode ? 21 : 16} fill="var(--status-delay)" color="var(--status-delay)" />
+        <Star size={$largeUI ? 21 : 16} fill="var(--status-delay)" color="var(--status-delay)" />
       {/if}
       <div class="min-w-0">
         <div class="t-title3 font-semibold truncate">{stop.name}</div>
@@ -72,7 +73,7 @@
         </div>
       </div>
     </div>
-    <Bus size={$seniorMode ? 28 : 22} strokeWidth={1.75} color="var(--text-muted)" />
+    <Bus size={$largeUI ? 28 : 22} strokeWidth={1.75} color="var(--text-muted)" />
   </button>
 
   {#if rows.length === 0}
@@ -93,10 +94,10 @@
       {/if}
     </div>
   {:else}
-    <ul class="mm-board" class:mm-board-roomy={$seniorMode}>
+    <ul class="mm-board" class:mm-board-roomy={$largeUI}>
       {#each rows as r}
-        {@const split = $seniorMode ? splitHeadsign(r.headsign, r.destination) : null}
-        <li class={$seniorMode ? '' : 'border-t border-base'}>
+        {@const split = $largeUI ? splitHeadsign(r.headsign, r.destination) : null}
+        <li class={$largeUI ? '' : 'border-t border-base'}>
           <button type="button"
                   class="pressable w-full text-left px-4 {rowPad} flex items-center gap-3"
                   style="touch-action: manipulation; min-height: var(--row-min);"

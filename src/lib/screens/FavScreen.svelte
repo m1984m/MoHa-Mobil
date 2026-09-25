@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
   import { upcomingDepartures } from '../gtfs';
@@ -387,11 +388,11 @@
 </Screen>
 
 {#if pickerStop && gtfs}
-  <div class="fixed inset-0 z-50 flex flex-col"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={() => pickerStop = null}
        role="presentation">
-    <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
+    <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
          role="dialog" aria-modal="true" aria-label={$t('Pripni linijo')} tabindex="-1"
          use:focusTrap>
@@ -436,11 +437,11 @@
 {/if}
 
 {#if renameId}
-  <div class="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={() => renameId = null}
        role="presentation">
-    <div class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
+    <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
          role="dialog" aria-modal="true" aria-label={$t('Preimenuj pot')} tabindex="-1"
          use:focusTrap>
       <div class="t-headline font-semibold mb-1">{$t('Preimenuj pot')}</div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { AlertTriangle } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
   import { tr } from '../i18n';
@@ -18,11 +19,11 @@
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onCancel(); }} />
 
 {#if open}
-  <div class="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onCancel}
        role="presentation">
-    <div class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
+    <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-sm rounded-3xl shadow-float p-5"
          role="alertdialog" aria-modal="true" aria-label={title} tabindex="-1"
          use:focusTrap>
       <div class="flex items-start gap-3 mb-4">

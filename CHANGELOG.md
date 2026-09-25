@@ -5,6 +5,60 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.21.0 — 2026-09-25
+
+### Preprost pogled (nadomešča način za starejše)
+- En zaslon brez spodnjih zavihkov, največ šest dejanj: moji avtobusi, Domov, moji kraji (do tri),
+  drug cilj, karta, celotna aplikacija. Odhodi so na vrhu in največji; gumb Domov pride pod njimi,
+  ker najbolj izrazit element na sredini pritegne pogled starejših prvi (Romano Bergstrom 2013).
+- Moji avtobusi: shranjena postajališča v bližini, sicer dve najbližji (obe strani ceste), brez
+  lokacije shranjena. Dotik odpre vse odhode s postajališča v velikem tisku, ne karte.
+- Domov in kraji: en dotik izračuna pot od trenutne lege in jo pokaže po korakih čez cel zaslon;
+  karta je na gumb. Dom in kraj se nastavita z gumbom »Sem tukaj« ali z vpisom naslova, ime kraja
+  se lahko izbere med predlogi.
+- Karta v preprostem pogledu: velik gumb Nazaj, gumba +/− namesto povečave s prsti, brez iskanja,
+  MBajk in bucike.
+- Celotna aplikacija iz preprostega pogleda ima nad zavihki ves čas viden gumb »Nazaj na preprost
+  pogled«; ob naslednjem zagonu je uporabnik spet v preprostem pogledu.
+- Tarče 88 px za glavne gumbe in vrstice odhodov, ≥ 64 px za ostale; vsak gumb ima napis.
+- Vstop: stikalo na prvi kartici vodiča in na vrhu Nastavitev. Kdor je imel vklopljen način za
+  starejše, ob posodobitvi samodejno dobi preprost pogled.
+
+### Glasno branje
+- Gumb »Preberi na glas« prebere odhode (linija, smer, čez koliko minut, zamuda) z vgrajenim
+  govorom brskalnika. Pokaže se samo, če ima naprava glas v jeziku vmesnika.
+
+### Nastavitve po kategorijah
+- Prva stran je kratek seznam kategorij s trenutnimi izbirami v podnaslovu (Preprost pogled ostane
+  na vrhu): Videz (jezik, tema, večje besedilo, kompaktni seznami), Lokacija (sledenje v živo, radij
+  bližnjih postajališč — zdaj vedno viden), Začetni zaslon (privzeti zavihek, kaj pokaže Dom), Odhodi
+  in poti, Karta, Obvestila (neposredno v opomnike), Zasebnost in podatki, Pomoč (cene, vodnik, deli,
+  predlagaj), O aplikaciji (različica, viri, novosti). Prej 13 razdelkov na eni strani, sorodne
+  nastavitve razmetane (sledenje lokaciji pod Karto, radij pod Domom).
+- Kategorija se odpre na svoji strani (glavna ohrani položaj drsenja); sistemski nazaj jo zapre.
+- Opomniki za odhod imajo namesto same puščice v kotu gumb z napisom »‹ Nastavitve« oziroma
+  »‹ Priljubljene« (odvisno od tega, od kod so bili odprti) — puščice uporabnik ni prepoznal kot poti nazaj.
+
+### Gibanje: okna in strani se odpirajo z animacijo
+- Nov modul `src/lib/motion.ts` z enotnim jezikom gibanja: `backdrop` (zatemnitev in zameglitev
+  ozadja se prelije), `sheet` (list zdrsne od spodaj ali od zgoraj), `page` (celozaslonska stran od
+  desne kot v iOS), `swap` (menjava vsebine znotraj okna). Odpiranje 360–380 ms z mehkim ustavljanjem,
+  zapiranje 220–240 ms.
+- Uporabljeno povsod, kjer se kaj odpre čez aplikacijo: vozni red linije in postaje (tudi izbira
+  postaje, menjava smeri in dneva), cene, vreme, planer in iskanje postaje (od zgoraj), izbira linij
+  in preimenovanje v Priljubljenih, deljenje poti, potrditvena okna, opomniki in njihov urejevalnik,
+  statistika, strani kategorij v Nastavitvah, zasloni Preprostega pogleda. Vozni redi: preklop
+  Linije/Postaje. Segmentni gumbi (dan, Linije/Postaje) barvo spremenijo mehko.
+- Ob sistemski nastavitvi »zmanjšaj gibanje« je trajanje 0 — brez animacije in brez čakanja ob zapiranju.
+- Zasloni Preprostega pogleda ostanejo pod karto odprti in samo skriti (prej so se zaprli in znova
+  odprli, kar bi z animacijo izgledalo kot korak nazaj); pod karto ne poizvedujejo in ne berejo.
+
+### Večje besedilo
+- Nekdanji način za starejše se imenuje Večje besedilo in ostane ločena nastavitev za običajni
+  vmesnik (lestvica 1,5, kontrast AAA). V preprostem pogledu velja vedno.
+
+Utemeljitev: `projekti/aplikacija_Mobilnost_Maas/raziskava_nacin_za_starejse.md` (Nucleus).
+
 ## 0.20.2 — 2026-09-22
 
 - Cene in vozovnice: brezplačen prestop v 75 minutah velja po uradnem ceniku samo za vozovnice

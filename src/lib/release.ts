@@ -10,11 +10,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '22. 9. 2026';
+export const RELEASE_DATE = '25. 9. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Aplikacija je zdaj tudi v angleščini — jezik izbereš v Nastavitvah',
-  'Na Karti so postaje MBajk s prostimi kolesi, ob postajališču pa najbližja postaja',
-  'Nov razdelek Cene in vozovnice: cenik Marproma in kje kupiti vozovnico',
-  'Kratek vodič ob prvem zagonu in namigi — znova ga odpreš v Nastavitvah',
+  'Nov Preprost pogled: velik tisk in samo najpomembnejše na enem zaslonu — vklopiš ga na vrhu Nastavitev',
+  'V Preprostem pogledu te en dotik pripelje domov ali do shranjenega kraja, pot je opisana po korakih',
+  'Odhode ti aplikacija lahko prebere na glas, če ima telefon slovenski glas',
+  'Nastavitve so razdeljene po kategorijah (Videz, Lokacija …); način za starejše je zdaj Večje besedilo pod Videz',
 ];

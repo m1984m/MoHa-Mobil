@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { X, CreditCard, Smartphone, Globe, Store, ExternalLink } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
@@ -51,11 +52,11 @@
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onClose(); }} />
 
 {#if open}
-  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onClose}
        role="presentation">
-    <div class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float flex flex-col"
+    <div in:sheet out:sheet={{ out: true }} class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float flex flex-col"
          style="max-height: calc(100dvh - env(safe-area-inset-top) - 1rem); padding-bottom: env(safe-area-inset-bottom);"
          role="dialog" aria-modal="true" aria-label={$t('Cene in vozovnice')} tabindex="-1"
          use:focusTrap>

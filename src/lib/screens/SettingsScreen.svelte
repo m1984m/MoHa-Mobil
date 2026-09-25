@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { Sun, Moon, Monitor, Info, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility, ChartNoAxesColumn, Ticket, GraduationCap } from 'lucide-svelte';
+  import { page } from '../motion';
+  import { onMount, onDestroy } from 'svelte';
+  import { Sun, Moon, Monitor, Info, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility, ChartNoAxesColumn, Ticket, GraduationCap, LayoutList, Palette, LocateFixed, Bus, ShieldCheck, LifeBuoy, ChevronLeft } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import { applyTheme, THEME_KEY, type Theme } from '../theme';
@@ -9,8 +10,11 @@
   import { loadMeta, type GtfsMeta } from '../gtfs';
   import { disablePush } from '../push';
   import { toast } from '../toast';
-  import { t, tr, lang, locale, type Lang } from '../i18n';
+  import { t, tr, lang, locale, plural, type Lang } from '../i18n';
   import { restartOnboarding } from '../onboarding';
+  import { simpleView } from '../simple';
+  import { alarms } from '../alarms';
+  import { pushBack, type BackRelease } from '../backstack';
 
   export let theme: Theme;
   export let onOpenStats: () => void = () => {};
@@ -170,15 +174,167 @@
         + 'Vozni redi: ' + (gtfsBuiltLabel || 'neznano') + '\n'
         + 'Naprava: ' + (typeof navigator !== 'undefined' ? navigator.userAgent : 'neznano') + '\n'
       );
+  // ---------- Kategorije ----------
+  // Nastavitve so razdeljene po kategorijah kot v nastavitvah telefona: prva stran je
+  // kratek seznam (s trenutnimi izbirami v podnaslovu), vsaka kategorija se odpre na
+  // svoji strani. Prej je bilo 13 razdelkov na eni strani, sorodne nastavitve pa
+  // razmetane (sledenje lokaciji pod Karto, radij pod Domom, kompaktni seznami pod Odhodi).
+  type Cat = 'videz' | 'lokacija' | 'zacetek' | 'odhodi' | 'karta' | 'zasebnost' | 'pomoc' | 'o';
+  let cat: Cat | null = null;
+
+  let backCat: BackRelease | null = null;
+  $: if (cat && !backCat) {
+    backCat = pushBack(() => cat = null);
+  } else if (!cat && backCat) {
+    const r = backCat; backCat = null; r();
+  }
+  // Menjava zavihka uniči zaslon — vnos v zgodovini ne sme ostati.
+  onDestroy(() => { backCat?.(); });
+
+  $: langLabel = langOptions.find(o => o.id === $lang)?.label ?? '';
+  $: themeLabel = options.find(o => o.id === theme)?.label ?? '';
+  $: tabLabel = defaultTabOptions.find(o => o.id === $defaultTab)?.label ?? '';
+  $: depLabel = departureOptions.find(o => o.id === $departureDisplay)?.label ?? '';
+  $: mapLabel = mapOptions.find(o => o.id === $mapStyleKind)?.label ?? '';
+  $: labelSizeLabel = labelSizeOptions.find(o => o.id === $mapLabelSize)?.label ?? '';
+  $: radiusLabel = radiusOptions.find(o => o.v === $nearbyRadiusM)?.label ?? `${$nearbyRadiusM} m`;
+
+  $: cats = [
+    { id: 'videz' as Cat, icon: Palette, title: $t('Videz'),
+      sub: [langLabel, themeLabel, $seniorMode ? $t('večje besedilo') : ''].filter(Boolean).join(' · ') },
+    { id: 'lokacija' as Cat, icon: LocateFixed, title: $t('Lokacija'),
+      sub: ($liveLocationWatch ? $t('sledenje v živo') : $t('brez sledenja')) + ' · ' + $t('radij {r}', { r: radiusLabel }) },
+    { id: 'zacetek' as Cat, icon: HomeIcon, title: $t('Začetni zaslon'),
+      sub: $t('ob zagonu: {zavihek}', { zavihek: tabLabel }) },
+    { id: 'odhodi' as Cat, icon: Bus, title: $t('Odhodi in poti'),
+      sub: depLabel + ' · ' + $t('hoja {v} km/h', { v: $walkSpeedKmh }) },
+    { id: 'karta' as Cat, icon: MapIcon, title: $t('Karta'),
+      sub: mapLabel + ' · ' + $t('napisi: {v}', { v: labelSizeLabel.toLowerCase() }) },
+  ];
+  $: cats2 = [
+    { id: 'zasebnost' as Cat, icon: ShieldCheck, title: $t('Zasebnost in podatki'),
+      sub: $analyticsEnabled ? $t('štetje uporabe vklopljeno') : $t('štetje uporabe izklopljeno') },
+  ];
+  $: cats3 = [
+    { id: 'pomoc' as Cat, icon: LifeBuoy, title: $t('Pomoč'),
+      sub: $t('cene, vodnik, deli, predlagaj izboljšavo') },
+    { id: 'o' as Cat, icon: Info, title: $t('O aplikaciji'),
+      sub: $t('različica {v}', { v: APP_VERSION }) },
+  ];
+  $: catTitle = [...cats, ...cats2, ...cats3].find(c => c.id === cat)?.title ?? '';
+  $: alarmCount = $alarms.length;
 </script>
 
 <Screen title={$t('Nastavitve')}>
-  <div class="px-4 max-w-screen-sm mx-auto space-y-8 pt-1">
+  <div class="px-4 max-w-screen-sm mx-auto space-y-6 pt-1">
 
+    <!-- Preprost pogled je na vrhu: v preverjenih aplikacijah z "načinom za starejše"
+         ga ljudje najpogosteje niso našli, ker je bil zakopan globoko v nastavitvah. -->
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Izgled')}</div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
+          <LayoutList size={20} color={$simpleView ? 'var(--accent)' : 'var(--text-muted)'} strokeWidth={$simpleView ? 2.2 : 1.75} />
+          <div class="flex-1">
+            <div class="t-body {$simpleView ? 'font-semibold' : ''}">{$t('Preprost pogled')}</div>
+            <div class="t-footnote text-muted mt-0.5">
+              {$t('Velik tisk in samo najpomembnejše na enem zaslonu: moji avtobusi, pot domov in moji kraji.')}
+            </div>
+          </div>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$simpleView ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => simpleView.update(v => !v)}
+                  aria-label={$t('Preklopi preprost pogled')}
+                  aria-pressed={$simpleView}>
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$simpleView ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <nav aria-label={$t('Kategorije nastavitev')} class="space-y-4">
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+          {#each cats as c, i}
+            <li class={i < cats.length - 1 ? 'border-b border-base' : ''}>
+              <button type="button" class="pressable w-full min-h-[64px] px-4 py-3 flex items-center gap-3.5 text-left"
+                      on:click={() => cat = c.id}>
+                <svelte:component this={c.icon} size={22} color="var(--accent)" strokeWidth={1.9} />
+                <div class="flex-1 min-w-0">
+                  <div class="t-body font-medium">{c.title}</div>
+                  <div class="t-footnote text-muted mt-0.5 truncate">{c.sub}</div>
+                </div>
+                <ChevronRight size={18} color="var(--text-muted)" />
+              </button>
+            </li>
+          {/each}
+      </ul>
+
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="border-b border-base">
+          <!-- Obvestila imajo eno samo vrstico — lastna stran bi bila korak več za nič. -->
+          <button class="pressable w-full min-h-[64px] px-4 py-3 flex items-center gap-3.5 text-left"
+                  on:click={onOpenAlarms}
+                  aria-label={$t('Odpri opomnike za odhod')}>
+            <AlarmClock size={22} color="var(--accent)" strokeWidth={1.9} />
+            <div class="flex-1 min-w-0">
+              <div class="t-body font-medium">{$t('Obvestila')}</div>
+              <div class="t-footnote text-muted mt-0.5 truncate">
+                {$t('Opomniki za odhod')}{#if alarmCount} · {alarmCount} {plural(alarmCount, ['opomnik', 'opomnika', 'opomniki', 'opomnikov'], ['reminder', 'reminders'])}{/if}
+              </div>
+            </div>
+            <ChevronRight size={18} color="var(--text-muted)" />
+          </button>
+        </li>
+          {#each cats2 as c}
+            <li>
+              <button type="button" class="pressable w-full min-h-[64px] px-4 py-3 flex items-center gap-3.5 text-left"
+                      on:click={() => cat = c.id}>
+                <svelte:component this={c.icon} size={22} color="var(--accent)" strokeWidth={1.9} />
+                <div class="flex-1 min-w-0">
+                  <div class="t-body font-medium">{c.title}</div>
+                  <div class="t-footnote text-muted mt-0.5 truncate">{c.sub}</div>
+                </div>
+                <ChevronRight size={18} color="var(--text-muted)" />
+              </button>
+            </li>
+          {/each}
+      </ul>
+
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+          {#each cats3 as c, i}
+            <li class={i < cats3.length - 1 ? 'border-b border-base' : ''}>
+              <button type="button" class="pressable w-full min-h-[64px] px-4 py-3 flex items-center gap-3.5 text-left"
+                      on:click={() => cat = c.id}>
+                <svelte:component this={c.icon} size={22} color="var(--accent)" strokeWidth={1.9} />
+                <div class="flex-1 min-w-0">
+                  <div class="t-body font-medium">{c.title}</div>
+                  <div class="t-footnote text-muted mt-0.5 truncate">{c.sub}</div>
+                </div>
+                <ChevronRight size={18} color="var(--text-muted)" />
+              </button>
+            </li>
+          {/each}
+      </ul>
+    </nav>
+
+  </div>
+</Screen>
+
+<!-- Stran kategorije leži čez glavno stran: ta ohrani položaj drsenja, podstran pa se
+     vedno začne na vrhu. -->
+{#if cat}
+  <div in:page out:page={{ out: true }} class="absolute inset-0 z-10">
+    <Screen title={catTitle}>
+      <div class="px-4 max-w-screen-sm mx-auto space-y-8 pt-1">
+        <button type="button" class="pressable -mt-2 -ml-2 min-h-[44px] pl-1 pr-3 rounded-xl flex items-center gap-1 t-body"
+                style="color: var(--accent)" on:click={() => cat = null}>
+          <ChevronLeft size={22} /> {$t('Nastavitve')}
+        </button>
+
+        {#if cat === 'videz'}
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Jezik')}</div>
       <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2 mb-3">
-        <div class="t-footnote text-muted px-2 pt-1 pb-2">{$t('Jezik')}</div>
         <div class="flex gap-2">
           {#each langOptions as o}
             {@const active = $lang === o.id}
@@ -192,6 +348,9 @@
           {/each}
         </div>
       </div>
+    </section>
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Tema')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         {#each options as o, i}
           {@const active = theme === o.id}
@@ -208,63 +367,61 @@
         {/each}
       </ul>
 
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-3">
+    </section>
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Berljivost')}</div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
           <Accessibility size={20} color={$seniorMode ? 'var(--accent)' : 'var(--text-muted)'} strokeWidth={$seniorMode ? 2.2 : 1.75} />
           <div class="flex-1">
-            <div class="t-body {$seniorMode ? 'font-semibold' : ''}">{$t('Način za starejše')}</div>
+            <div class="t-body {$seniorMode ? 'font-semibold' : ''}">{$t('Večje besedilo')}</div>
             <div class="t-footnote text-muted mt-0.5">
-              {$t('Večje besedilo in gumbi, močnejši kontrast, manj vsebine na zaslon. Pri odhodih je v ospredju končna postaja.')}
+              {$t('Besedilo in gumbi za polovico večji, močnejši kontrast. Pri odhodih je v ospredju končna postaja.')}
             </div>
           </div>
           <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
                   style="background: {$seniorMode ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => seniorMode.update(v => !v)}
-                  aria-label={$t('Preklopi način za starejše')}
+                  aria-label={$t('Preklopi večje besedilo')}
                   aria-pressed={$seniorMode}>
             <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
                   style="left: {$seniorMode ? '1.375rem' : '0.125rem'}"></span>
           </button>
         </li>
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-t border-base">
+          <Rows3 size={20} color="var(--text-muted)" />
+          <div class="flex-1">
+            <div class="t-body">{$t('Kompaktni seznami')}</div>
+            <div class="t-footnote text-muted mt-0.5">{$t('Manjše vrstice, več vsebine na ekran')}</div>
+          </div>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
+                  style="background: {$compactLists ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => compactLists.update(v => !v)}
+                  aria-label={$t('Preklopi kompakten prikaz')}>
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$compactLists ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
       </ul>
     </section>
 
+        {:else if cat === 'lokacija'}
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Zagon')}</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2">
-        <div class="t-footnote text-muted px-2 pt-1 pb-2">{$t('Privzeti zavihek ob zagonu')}</div>
-        <div class="flex gap-2">
-          {#each defaultTabOptions as o}
-            {@const active = $defaultTab === o.id}
-            <button class="pressable flex-1 min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors"
-                    style="background: {active ? 'var(--accent)' : 'transparent'}; color: {active ? 'white' : 'var(--text)'}"
-                    on:click={() => defaultTab.set(o.id)}>
-              <svelte:component this={o.icon} size={18} />
-              <span class="t-footnote {active ? 'font-semibold' : ''}">{o.label}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Dom')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
-          <MapPinned size={20} color="var(--text-muted)" />
+          <Navigation size={20} color="var(--text-muted)" />
           <div class="flex-1">
-            <div class="t-body">{$t('Najbližja postajališča')}</div>
-            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži postaje v bližini tvoje lokacije')}</div>
+            <div class="t-body">{$t('Sledi moji lokaciji v živo')}</div>
+            <div class="t-footnote text-muted mt-0.5">{$t('Porabi več baterije. Ob izklopu se pozicija osveži le ob zagonu aplikacije.')}</div>
           </div>
-          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
-                  style="background: {$homeShowNearby ? 'var(--accent)' : 'var(--surface-3)'}"
-                  on:click={() => homeShowNearby.update(v => !v)}
-                  aria-label={$t('Preklopi bližnja postajališča')}>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
+                  style="background: {$liveLocationWatch ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => liveLocationWatch.update(v => !v)}
+                  aria-label={$t('Preklopi sledenje lokaciji v živo')}>
             <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
-                  style="left: {$homeShowNearby ? '1.375rem' : '0.125rem'}"></span>
+                  style="left: {$liveLocationWatch ? '1.375rem' : '0.125rem'}"></span>
           </button>
         </li>
-        {#if $homeShowNearby}
           <li class="px-4 py-4 border-t border-base">
             <div class="flex items-center gap-3.5 mb-3">
               <Compass size={20} color="var(--text-muted)" />
@@ -285,7 +442,45 @@
               {/each}
             </div>
           </li>
-        {/if}
+      </ul>
+      <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">{$t('Dostop do lokacije dovoliš ali prekličeš v nastavitvah telefona ali brskalnika.')}</p>
+    </section>
+
+        {:else if cat === 'zacetek'}
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Ob zagonu')}</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2">
+        <div class="t-footnote text-muted px-2 pt-1 pb-2">{$t('Privzeti zavihek ob zagonu')}</div>
+        <div class="flex gap-2">
+          {#each defaultTabOptions as o}
+            {@const active = $defaultTab === o.id}
+            <button class="pressable flex-1 min-h-[52px] rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors"
+                    style="background: {active ? 'var(--accent)' : 'transparent'}; color: {active ? 'white' : 'var(--text)'}"
+                    on:click={() => defaultTab.set(o.id)}>
+              <svelte:component this={o.icon} size={18} />
+              <span class="t-footnote {active ? 'font-semibold' : ''}">{o.label}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Na zavihku Dom')}</div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
+          <MapPinned size={20} color="var(--text-muted)" />
+          <div class="flex-1">
+            <div class="t-body">{$t('Najbližja postajališča')}</div>
+            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži postaje v bližini tvoje lokacije')}</div>
+          </div>
+          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
+                  style="background: {$homeShowNearby ? 'var(--accent)' : 'var(--surface-3)'}"
+                  on:click={() => homeShowNearby.update(v => !v)}
+                  aria-label={$t('Preklopi bližnja postajališča')}>
+            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
+                  style="left: {$homeShowNearby ? '1.375rem' : '0.125rem'}"></span>
+          </button>
+        </li>
         <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-t border-base">
           <Star size={20} color="var(--status-delay)" fill="var(--status-delay)" />
           <div class="flex-1">
@@ -303,6 +498,7 @@
       </ul>
     </section>
 
+        {:else if cat === 'odhodi'}
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Odhodi')}</div>
       <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2">
@@ -320,74 +516,7 @@
           {/each}
         </div>
       </div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-4">
-        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5">
-          <Rows3 size={20} color="var(--text-muted)" />
-          <div class="flex-1">
-            <div class="t-body">{$t('Kompaktni seznami')}</div>
-            <div class="t-footnote text-muted mt-0.5">{$t('Manjše vrstice, več vsebine na ekran')}</div>
-          </div>
-          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
-                  style="background: {$compactLists ? 'var(--accent)' : 'var(--surface-3)'}"
-                  on:click={() => compactLists.update(v => !v)}
-                  aria-label={$t('Preklopi kompakten prikaz')}>
-            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
-                  style="left: {$compactLists ? '1.375rem' : '0.125rem'}"></span>
-          </button>
-        </li>
-      </ul>
     </section>
-
-    <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Karta')}</div>
-      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2 flex gap-1.5">
-        {#each mapOptions as o}
-          {@const active = $mapStyleKind === o.id}
-          <button class="pressable flex-1 min-h-[48px] rounded-xl flex items-center justify-center gap-2 t-body transition-colors"
-                  style="background: {active ? 'var(--accent)' : 'transparent'}; color: {active ? 'white' : 'var(--text)'}"
-                  on:click={() => mapStyleKind.set(o.id)}>
-            <svelte:component this={o.icon} size={18} />
-            <span class="{active ? 'font-semibold' : ''}">{o.label}</span>
-          </button>
-        {/each}
-      </div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-4">
-        <li class="px-4 py-4">
-          <div class="flex items-center gap-3.5 mb-3">
-            <Type size={20} color="var(--text-muted)" />
-            <div class="flex-1">
-              <div class="t-body">{$t('Velikost napisov')}</div>
-              <div class="t-footnote text-muted mt-0.5">{$t('Imena cest in naselij na karti')}</div>
-            </div>
-          </div>
-          <div class="flex gap-2">
-            {#each labelSizeOptions as o}
-              {@const active = $mapLabelSize === o.id}
-              <button class="pressable flex-1 min-h-[44px] rounded-xl flex items-center justify-center"
-                      style="background: {active ? 'var(--accent)' : 'var(--surface-2)'}; color: {active ? 'white' : 'var(--text)'}"
-                      on:click={() => mapLabelSize.set(o.id)}>
-                <span class="t-subhead {active ? 'font-semibold' : ''}" style="font-size: {o.id === 'small' ? '0.82rem' : o.id === 'large' ? '1.1rem' : '0.95rem'}">{o.label}</span>
-              </button>
-            {/each}
-          </div>
-        </li>
-        <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-t border-base">
-          <Navigation size={20} color="var(--text-muted)" />
-          <div class="flex-1">
-            <div class="t-body">{$t('Sledi moji lokaciji v živo')}</div>
-            <div class="t-footnote text-muted mt-0.5">{$t('Porabi več baterije. Ob izklopu se pozicija osveži le ob zagonu aplikacije.')}</div>
-          </div>
-          <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
-                  style="background: {$liveLocationWatch ? 'var(--accent)' : 'var(--surface-3)'}"
-                  on:click={() => liveLocationWatch.update(v => !v)}
-                  aria-label={$t('Preklopi sledenje lokaciji v živo')}>
-            <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
-                  style="left: {$liveLocationWatch ? '1.375rem' : '0.125rem'}"></span>
-          </button>
-        </li>
-      </ul>
-    </section>
-
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Načrtovanje poti')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
@@ -423,54 +552,45 @@
       </ul>
     </section>
 
+        {:else if cat === 'karta'}
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Pomoč')}</div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li class="border-b border-base">
-          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
-                  on:click={onOpenFares}>
-            <Ticket size={20} color="var(--text-muted)" />
-            <div class="flex-1">
-              <div class="t-body">{$t('Cene in vozovnice')}</div>
-              <div class="t-footnote text-muted mt-0.5">{$t('Cenik Marproma in kje kupiti vozovnico')}</div>
-            </div>
-            <ChevronRight size={16} color="var(--text-muted)" />
+      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Podlaga')}</div>
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-2 flex gap-1.5">
+        {#each mapOptions as o}
+          {@const active = $mapStyleKind === o.id}
+          <button class="pressable flex-1 min-h-[48px] rounded-xl flex items-center justify-center gap-2 t-body transition-colors"
+                  style="background: {active ? 'var(--accent)' : 'transparent'}; color: {active ? 'white' : 'var(--text)'}"
+                  on:click={() => mapStyleKind.set(o.id)}>
+            <svelte:component this={o.icon} size={18} />
+            <span class="{active ? 'font-semibold' : ''}">{o.label}</span>
           </button>
-        </li>
-        <li>
-          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
-                  on:click={restartOnboarding}>
-            <GraduationCap size={20} color="var(--text-muted)" />
+        {/each}
+      </div>
+      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card mt-4">
+        <li class="px-4 py-4">
+          <div class="flex items-center gap-3.5 mb-3">
+            <Type size={20} color="var(--text-muted)" />
             <div class="flex-1">
-              <div class="t-body">{$t('Vodnik po aplikaciji')}</div>
-              <div class="t-footnote text-muted mt-0.5">{$t('Znova pokaži uvodne kartice in namige')}</div>
+              <div class="t-body">{$t('Velikost napisov')}</div>
+              <div class="t-footnote text-muted mt-0.5">{$t('Imena cest in naselij na karti')}</div>
             </div>
-            <ChevronRight size={16} color="var(--text-muted)" />
-          </button>
-        </li>
-      </ul>
-    </section>
-
-    <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Obvestila')}</div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
-        <li>
-          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
-                  on:click={onOpenAlarms}
-                  aria-label={$t('Odpri opomnike za odhod')}>
-            <AlarmClock size={20} color="var(--text-muted)" />
-            <div class="flex-1">
-              <div class="t-body">{$t('Opomniki za odhod')}</div>
-              <div class="t-footnote text-muted mt-0.5">{$t('Opozorilo nekaj minut pred odhodom pripete linije')}</div>
-            </div>
-            <ChevronRight size={16} color="var(--text-muted)" />
-          </button>
+          </div>
+          <div class="flex gap-2">
+            {#each labelSizeOptions as o}
+              {@const active = $mapLabelSize === o.id}
+              <button class="pressable flex-1 min-h-[44px] rounded-xl flex items-center justify-center"
+                      style="background: {active ? 'var(--accent)' : 'var(--surface-2)'}; color: {active ? 'white' : 'var(--text)'}"
+                      on:click={() => mapLabelSize.set(o.id)}>
+                <span class="t-subhead {active ? 'font-semibold' : ''}" style="font-size: {o.id === 'small' ? '0.82rem' : o.id === 'large' ? '1.1rem' : '0.95rem'}">{o.label}</span>
+              </button>
+            {/each}
+          </div>
         </li>
       </ul>
     </section>
 
+        {:else if cat === 'zasebnost'}
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Podatki')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
           <ChartNoAxesColumn size={20} color="var(--text-muted)" />
@@ -502,9 +622,31 @@
       </ul>
     </section>
 
+        {:else if cat === 'pomoc'}
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Deli in predlagaj')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+        <li class="border-b border-base">
+          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
+                  on:click={onOpenFares}>
+            <Ticket size={20} color="var(--text-muted)" />
+            <div class="flex-1">
+              <div class="t-body">{$t('Cene in vozovnice')}</div>
+              <div class="t-footnote text-muted mt-0.5">{$t('Cenik Marproma in kje kupiti vozovnico')}</div>
+            </div>
+            <ChevronRight size={16} color="var(--text-muted)" />
+          </button>
+        </li>
+        <li class="border-b border-base">
+          <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
+                  on:click={restartOnboarding}>
+            <GraduationCap size={20} color="var(--text-muted)" />
+            <div class="flex-1">
+              <div class="t-body">{$t('Vodnik po aplikaciji')}</div>
+              <div class="t-footnote text-muted mt-0.5">{$t('Znova pokaži uvodne kartice in namige')}</div>
+            </div>
+            <ChevronRight size={16} color="var(--text-muted)" />
+          </button>
+        </li>
         <li class="border-b border-base">
           <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left"
                   on:click={shareApp}
@@ -531,8 +673,8 @@
       </ul>
     </section>
 
+        {:else if cat === 'o'}
     <section>
-      <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('O aplikaciji')}</div>
       <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
         <li class="min-h-[60px] px-4 py-3 flex items-center gap-3.5 border-b border-base">
           <Info size={20} color="var(--text-muted)" />
@@ -566,7 +708,6 @@
       </ul>
       <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">{$t('Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.')} {$t('Kolesa: MBajk / JCDecaux.')}</p>
     </section>
-
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Novosti')}</div>
       <div class="surface rounded-2xl border border-base overflow-hidden shadow-card p-4 space-y-2.5">
@@ -578,9 +719,11 @@
         </ul>
       </div>
     </section>
-
+        {/if}
+      </div>
+    </Screen>
   </div>
-</Screen>
+{/if}
 
 <ConfirmDialog open={clearConfirmOpen}
                title={$t('Počisti vse shranjene podatke?')}

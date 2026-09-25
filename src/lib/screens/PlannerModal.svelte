@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet } from '../motion';
   import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight } from 'lucide-svelte';
   import { cropShape, loadShapes, routeColor, type GTFS, type Stop } from '../gtfs';
   import { planAll, type Plan } from '../planner';
@@ -334,9 +335,9 @@
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') handleClose(); }} />
 
 {#if open}
-  <div class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
+  <div in:backdrop={{ alpha: 0.35, blur: 4 }} out:backdrop={{ out: true, alpha: 0.35, blur: 4 }} class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
        role="dialog" aria-modal="true" aria-label={$t('Načrtuj pot')}>
-    <div class="surface rounded-b-3xl shadow-float"
+    <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface rounded-b-3xl shadow-float"
          style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;"
          use:focusTrap>
       <div class="flex items-center justify-between px-4 pt-4 pb-2">

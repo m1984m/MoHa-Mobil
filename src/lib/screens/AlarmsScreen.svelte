@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ArrowLeft, Plus, Trash2, Pencil, AlarmClock, BellRing, BellOff, Smartphone, X, Send, AlertTriangle } from 'lucide-svelte';
+  import { backdrop, sheet, page } from '../motion';
+  import { ChevronLeft, Plus, Trash2, Pencil, AlarmClock, BellRing, BellOff, Smartphone, X, Send, AlertTriangle } from 'lucide-svelte';
   import type { GTFS } from '../gtfs';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -24,6 +25,9 @@
   export let open = false;
   export let gtfs: GTFS | null;
   export let onClose: () => void;
+  // Kam vodi gumb nazaj ("Nastavitve" / "Priljubljene"). Sama puščica v kotu ni povedala,
+  // da se z njo vrneš — uporabnik je ni prepoznal kot poti nazaj v Nastavitve.
+  export let backLabel: string = '';
 
   const DATE_FMT = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -143,19 +147,22 @@
 }} />
 
 {#if open}
-  <div class="mm-tap fixed inset-0 z-50 surface flex flex-col" style="padding-top: env(safe-area-inset-top);">
-    <header class="shrink-0 px-2 pt-2 pb-2 flex items-center gap-1">
-      <button class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0"
-              on:click={onClose} aria-label={$t('Nazaj')}>
-        <ArrowLeft size={20} />
-      </button>
-      <h1 class="t-title2 flex-1 min-w-0 truncate">{$t('Opomniki za odhod')}</h1>
-      {#if $favLines.length > 0}
-        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
-                on:click={openNew} aria-label={$t('Nov opomnik')}>
-          <Plus size={20} />
+  <div in:page out:page={{ out: true }} class="mm-tap fixed inset-0 z-50 surface flex flex-col" style="padding-top: env(safe-area-inset-top);">
+    <!-- Enaka glava kot strani kategorij v Nastavitvah: gumb z napisom, pod njim naslov. -->
+    <header class="shrink-0 px-2 pt-2 pb-2">
+      <div class="flex items-center justify-between gap-2">
+        <button type="button" class="pressable min-h-[44px] pl-1 pr-3 rounded-xl flex items-center gap-1 t-body shrink-0"
+                style="color: var(--accent)" on:click={onClose}>
+          <ChevronLeft size={22} /> {backLabel || $t('Nazaj')}
         </button>
-      {/if}
+        {#if $favLines.length > 0}
+          <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
+                  on:click={openNew} aria-label={$t('Nov opomnik')}>
+            <Plus size={20} />
+          </button>
+        {/if}
+      </div>
+      <h1 class="t-title1 px-2 mt-1">{$t('Opomniki za odhod')}</h1>
     </header>
 
     <div class="flex-1 overflow-y-auto scrollbox"
@@ -337,11 +344,11 @@
 {/if}
 
 {#if open && editorOpen}
-  <div class="fixed inset-0 z-[70] flex flex-col"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-[70] flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={() => editorOpen = false}
        role="presentation">
-    <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
+    <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
          role="dialog" aria-modal="true" aria-label={editId ? $t('Uredi opomnik') : $t('Nov opomnik')} tabindex="-1"
          use:focusTrap>

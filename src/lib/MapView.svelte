@@ -800,6 +800,12 @@
     return map?.getZoom() ?? 13;
   }
 
+  // Gumba +/− v preprostem pogledu: povečava brez kretnje z dvema prstoma.
+  export function zoomBy(delta: number) {
+    if (!map) return;
+    map.easeTo({ zoom: map.getZoom() + delta, duration: 300 });
+  }
+
   // FAB handler — postavi cilj na natančno lat/lon trenutnega centra karte.
   // Namerno BREZ snap-a na najbližjo postajo: uporabnik je premaknil križ točno tja,
   // kamor želi iti. Če bi želel postajo, bi jo tapnil neposredno.

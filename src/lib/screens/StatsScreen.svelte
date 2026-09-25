@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '../motion';
   import { ArrowLeft, RefreshCw, KeyRound, TriangleAlert, Table2, ChartColumn } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
   import type { GTFS } from '../gtfs';
@@ -113,7 +114,7 @@
 </script>
 
 {#if open}
-  <div class="mm-tap fixed inset-0 z-50 surface flex flex-col" style="padding-top: env(safe-area-inset-top);"
+  <div in:page out:page={{ out: true }} class="mm-tap fixed inset-0 z-50 surface flex flex-col" style="padding-top: env(safe-area-inset-top);"
        use:focusTrap>
     <header class="shrink-0 px-2 pt-2 pb-2 flex items-center gap-1">
       <button class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0"

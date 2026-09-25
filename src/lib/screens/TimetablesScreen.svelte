@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { swap } from '../motion';
   import { Search, MapPin, Star } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -66,7 +67,7 @@
     <div class="surface-2 rounded-xl p-1 flex gap-1 mb-4">
       {#each [{id: 'lines' as Mode, label: $t('Linije')}, {id: 'stops' as Mode, label: $t('Postaje')}] as tab}
         {@const a = mode === tab.id}
-        <button class="pressable flex-1 h-10 rounded-lg t-subhead font-semibold"
+        <button class="pressable flex-1 h-10 rounded-lg t-subhead font-semibold transition-colors"
                 style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
                 on:click={() => { mode = tab.id; query = ''; }}>{tab.label}</button>
       {/each}
@@ -79,6 +80,8 @@
              placeholder={mode === 'lines' ? $t('Poišči linijo (npr. P16)…') : $t('Poišči postajo…')} />
     </div>
 
+    {#key mode}
+    <div in:swap>
     {#if mode === 'lines'}
       {#if filteredRoutes.length === 0}
         <div class="t-body text-muted text-center py-12">{$t('Ni zadetkov.')}</div>
@@ -124,6 +127,8 @@
         </ul>
       {/if}
     {/if}
+    </div>
+    {/key}
   </div>
 </Screen>
 

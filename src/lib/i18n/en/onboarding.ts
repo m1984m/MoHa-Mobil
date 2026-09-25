@@ -6,7 +6,6 @@ export default {
   'Začni': 'Get started',
   'Kdaj pride moj avtobus?': 'When is my bus coming?',
   'Na začetnem zaslonu vidiš odhode s postajališč v tvoji bližini — v živo, z zamudami.': 'The Home screen shows departures from stops near you — live, including delays.',
-  'Večje besedilo in gumbi': 'Larger text and buttons',
   'Kje je avtobus zdaj?': 'Where is the bus now?',
   'Na Karti vidiš vse avtobuse v živo. Tapni postajališče za odhode ali avtobus za njegovo pot.': 'The Map shows every bus live. Tap a stop for its departures or a bus to see its route.',
   'Kako pridem do cilja?': 'How do I get there?',

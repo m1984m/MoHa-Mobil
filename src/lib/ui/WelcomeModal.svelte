@@ -2,7 +2,7 @@
   import { Clock, Bus, Route, MapPin } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
   import { lang, t, type Lang } from '../i18n';
-  import { seniorMode } from '../settings';
+  import { simpleView } from '../simple';
   import { onboardingDone } from '../onboarding';
 
   // Pozdrav ob prvem zagonu: tri kartice za tri naloge, zaradi katerih potnik
@@ -79,8 +79,8 @@
                   class:mm-wl-on={$lang === 'en'} on:click={() => setLang('en')}>English</button>
         </div>
         <label class="flex items-center justify-between gap-3 surface-2 rounded-2xl px-4 min-h-[52px]">
-          <span class="t-callout">{$t('Večje besedilo in gumbi')}</span>
-          <input type="checkbox" class="mm-wl-switch" bind:checked={$seniorMode} />
+          <span class="t-callout">{$t('Preprost pogled z velikim tiskom')}</span>
+          <input type="checkbox" class="mm-wl-switch" bind:checked={$simpleView} />
         </label>
       </div>
     </section>

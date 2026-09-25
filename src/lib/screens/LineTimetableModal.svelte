@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backdrop, sheet, swap } from '../motion';
   import { X, ArrowRightLeft, MapPin, ChevronDown, Check, Star, ExternalLink } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import { allTripsForRouteDirection, dayKindToDate, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
@@ -107,11 +108,11 @@
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onClose(); }} />
 
 {#if open && route}
-  <div class="fixed inset-0 z-50 flex flex-col"
+  <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex flex-col"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
        on:click|self={onClose}
        role="presentation">
-    <div class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
+    <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
          role="dialog" aria-modal="true" aria-label={$t('Vozni red linije {linija}', { linija: route.short })} tabindex="-1"
          use:focusTrap>
@@ -173,7 +174,7 @@
         <div class="surface-2 rounded-xl p-1 flex gap-1">
           {#each days as d}
             {@const a = day === d.id}
-            <button class="pressable flex-1 h-9 rounded-lg t-subhead"
+            <button class="pressable flex-1 h-9 rounded-lg t-subhead transition-colors"
                     style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
                     on:click={() => day = d.id}>{d.label}</button>
           {/each}
@@ -181,6 +182,10 @@
       </div>
 
       <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <!-- Ob menjavi (izbira postaje, smer, dan) vsebina rahlo zdrsne na mesto, namesto
+             da bi se v hipu zamenjala. -->
+        {#key `${pickerOpen}|${dir}|${day}|${selectedStopId}`}
+        <div in:swap>
         {#if pickerOpen}
           <ul class="surface rounded-2xl border border-base overflow-hidden">
             <li>
@@ -237,6 +242,8 @@
             {/each}
           </ul>
         {/if}
+        </div>
+        {/key}
       </div>
     </div>
   </div>
