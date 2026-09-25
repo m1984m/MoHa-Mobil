@@ -5,6 +5,10 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.9 — 2026-09-26
+
+- Izgovorjava (Matej): »UK Gosp.« → Štuk Gosposvetska, »GH« → Garažna hiša (GH Lent), »Koš. dol« → Košaški dol.
+
 ## 0.22.8 — 2026-09-26
 
 - Izgovorjava: »UKC« → Univerzitetni klinični center (Matej).
