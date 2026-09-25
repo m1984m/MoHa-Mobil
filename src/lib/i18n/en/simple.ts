@@ -100,5 +100,10 @@ export default {
   'Vpiši vsaj dve črki imena. Dotik na postajališče ga shrani med tvoja.': 'Type at least two letters of the name. Tap a stop to save it to your stops.',
   'Zadetki': 'Results',
   'Zadetkov: {n}': 'Results: {n}',
+
+  // MapScreen v preprostem pogledu: gumbi z napisi
+  'Pot do postaje': 'Route to stop',
+  'Sledi avtobusu': 'Follow bus',
+  'Ne sledi več': 'Stop following',
   'smer {dest}': 'towards {dest}',
 };

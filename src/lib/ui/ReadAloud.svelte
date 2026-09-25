@@ -67,4 +67,6 @@
     font-weight: 600; font-size: calc(16px * var(--ui-scale)); touch-action: manipulation;
   }
   .mm-ra-wide { width: 100%; }
+  /* Ikona se ne krči, ko se napis prelomi v dve vrstici. */
+  .mm-ra-big :global(svg) { flex-shrink: 0; }
 </style>

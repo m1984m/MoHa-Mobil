@@ -289,7 +289,7 @@
       }
       // Začetni flyTo na nižji zoom (14) — uporabnik hoče pregled okolice, ne bližnji pogled.
       mapRef?.flyTo(s.lat, s.lon, 14);
-      sheetRef?.setSnap(1);
+      sheetRef?.setSnap(sheetOpenSnap);
       refreshArrivals(s.id);
       liveArrivalsTimer = setInterval(() => refreshArrivals(s.id), 15_000);
       if (!gtfs) return;
@@ -342,8 +342,13 @@
     selectedLive = isLive ? (live.vehicles.find(lv => lv.deviceId === v.tripId) ?? null) : null;
     onStopChange(null);
     mapRef?.flyTo(v.lat, v.lon, 16);
-    sheetRef?.setSnap(1);
+    sheetRef?.setSnap(sheetOpenSnap);
   }
+
+  // Višina lista ob izbiri postaje ali avtobusa: v preprostem pogledu skoraj cel
+  // zaslon (Matej: starejši hočejo videti čim več naenkrat, ne pol lista), sicer
+  // polovica, da karta ostane vidna. Indeks v `snaps` od BottomSheet.
+  $: sheetOpenSnap = simple ? 2 : 1;
 
   // Klik na vrstico v seznamu prihodov postaje → pokaži ta bus na karti in
   // odpri vehicle detail sheet. Bus poišče po busCode v trenutnih OBA vozilih.
@@ -359,7 +364,7 @@
     onStopChange(null);
     const sm = smoothedById.get(lv.deviceId);
     mapRef?.flyTo(sm?.displayLat ?? lv.lat, sm?.displayLon ?? lv.lon, 16);
-    sheetRef?.setSnap(1);
+    sheetRef?.setSnap(sheetOpenSnap);
   }
   function closeVehicle() {
     stopBeforeVehicle = null;
@@ -1020,7 +1025,8 @@
 
   <!-- Preprost pogled: velik gumb Nazaj (levo zgoraj) in +/− (desno) -->
   {#if simple}
-    {#if onBack}
+    <!-- Ob odprtem listu ga skrij: list je čez skoraj cel zaslon in ima svoj "Zapri". -->
+    {#if onBack && !selectedStop && !selectedVehicle}
       <button type="button" class="pressable absolute z-40 left-4 mm-ms-back shadow-card"
               style="top: calc(env(safe-area-inset-top) + 0.75rem)"
               on:click={onBack}>
@@ -1052,6 +1058,22 @@
           <div class="t-footnote text-muted uppercase tracking-wide">{$t('Postaja')}</div>
           <h2 class="t-title2 font-semibold">{selectedStop.name}</h2>
           {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
+          {#if simple}
+            <!-- Preprost pogled: gumbi z napisi (ikona sama ni razumljiva), 64 px, v dveh stolpcih. -->
+            <div class="grid grid-cols-2 gap-2 mt-3">
+              <button type="button" class="pressable mm-ms-act mm-ms-act-accent" on:click={() => onPlanToStop(selectedStop!)}>
+                <Navigation size={22} /> {$t('Pot do postaje')}
+              </button>
+              <button type="button" class="pressable mm-ms-act" on:click={() => favStops.toggle(selectedStop!.id)}>
+                <Star size={22} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'currentColor'} />
+                {isFav ? $t('Shranjeno med moje') : $t('Shrani med moje')}
+              </button>
+              <ReadAloud variant="big" wide resetKey={selectedStop.id} text={stopText} />
+              <button type="button" class="pressable mm-ms-act" on:click={() => onStopChange(null)}>
+                <X size={22} /> {$t('Zapri')}
+              </button>
+            </div>
+          {:else}
           <div class="flex items-center gap-2 mt-2.5">
             <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card"
                     style="background: var(--accent); color: #ffffff"
@@ -1074,6 +1096,7 @@
               <X size={18} />
             </button>
           </div>
+          {/if}
         </div>
 
         <div class="mb-3"><Hint id="stop.fav" text={$t('Z zvezdico shraniš postajališče med priljubljene — njegovi odhodi so potem vedno na Domu.')} /></div>
@@ -1144,7 +1167,7 @@
                         on:click={() => tapArrivalBus(a.busCode)}
                         aria-label={$t('Pokaži avtobus na karti')}>
                   <div class="flex-1 min-w-0">
-                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{a.headsign}</div>
+                    <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium {simple ? '' : 'truncate'}">{a.headsign}</div>
                     <div class="t-footnote text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
                       {#if $departureDisplay !== 'minutes'}<span>{a.arrivalTime}</span>{/if}
                       {#if a.busCode}<span>{$departureDisplay !== 'minutes' ? '· ' : ''}bus #{a.busCode}</span>{/if}
@@ -1206,7 +1229,7 @@
                   <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
                 </button>
                 <div class="flex-1 min-w-0">
-                  <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium truncate">{d.trip.headsign}</div>
+                  <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium {simple ? '' : 'truncate'}">{d.trip.headsign}</div>
                   {#if $departureDisplay === 'both' && !$compactLists}
                     <div class="t-footnote text-muted">{fmtTime(d.depSec)}</div>
                   {/if}
@@ -1238,6 +1261,29 @@
             </span>
           </button>
         {/if}
+        {#if simple}
+          <!-- Preprost pogled: smer v svoji vrstici (tri okrogle tipke so jo zožile na "Ja…"),
+               gumbi z napisi pod njo. -->
+          <div class="mb-3">
+            <div class="flex items-center gap-3">
+              <LineBadge short={selectedVehicle.routeShort} routeId={selectedVehicle.routeId} size="lg" />
+              <div class="t-footnote text-muted uppercase tracking-wide">
+                {$t('Avtobus')}{#if selectedLive}&nbsp;#{selectedLive.busCode}{/if}
+              </div>
+            </div>
+            <div class="t-title2 font-semibold mt-2">→ {selectedVehicle.headsign}</div>
+            <div class="grid grid-cols-2 gap-2 mt-3">
+              <ReadAloud variant="big" wide resetKey={selectedVehicle.tripId} text={vehicleText} />
+              <button type="button" class="pressable mm-ms-act" class:mm-ms-act-accent={followBus}
+                      on:click={() => followBus = !followBus}>
+                <Navigation size={22} /> {followBus ? $t('Ne sledi več') : $t('Sledi avtobusu')}
+              </button>
+              <button type="button" class="pressable mm-ms-act col-span-2" on:click={closeVehicle}>
+                <X size={22} /> {$t('Zapri')}
+              </button>
+            </div>
+          </div>
+        {:else}
         <div class="flex items-start justify-between gap-3 mb-3">
           <div class="flex items-center gap-3 min-w-0">
             <LineBadge short={selectedVehicle.routeShort} routeId={selectedVehicle.routeId} size="lg" />
@@ -1262,6 +1308,7 @@
             </button>
           </div>
         </div>
+        {/if}
         {#if selectedLive}
           {@const eta = vehicleArrival?.etaMin ?? null}
           {@const delay = vehicleArrival?.delayMin ?? null}
@@ -1273,7 +1320,7 @@
             <div class="flex-1 min-w-0">
               <div class="t-footnote text-muted">{$t('Naslednja postaja')}</div>
               {#if liveNextStopName}
-                <div class="t-headline font-semibold truncate">{liveNextStopName}</div>
+                <div class="t-headline font-semibold {simple ? '' : 'truncate'}">{liveNextStopName}</div>
                 <div class="t-subhead text-muted">
                   {#if eta == null}—{:else if eta === 0}{$t('prihaja zdaj')}{:else}{$t('čez {n} min', { n: eta })}{/if}
                   {#if delay != null && delay !== 0}
@@ -1306,7 +1353,7 @@
                       on:click={() => jumpToStopFromBus(ns.stop)}
                       aria-label={$t('Odpri postajo {name}', { name: ns.stop.name })}>
                 <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {i === 0 ? selectedVehicle.color : 'var(--border-strong)'}"></div>
-                <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} truncate">{ns.stop.name}</div>
+                <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} {simple ? '' : 'truncate'}">{ns.stop.name}</div>
                 <div class="t-footnote text-muted shrink-0">{fmtTime(ns.arr)} · {ns.minutes}′</div>
               </button>
             </li>
@@ -1436,6 +1483,16 @@
     background: var(--surface); border: 2px solid var(--border); color: var(--text);
     font-weight: 600; font-size: calc(16px * var(--ui-scale)); touch-action: manipulation;
   }
+  /* Gumbi z napisi v listih postajališča in avtobusa v preprostem pogledu. */
+  .mm-ms-act {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; min-height: 64px; padding: 8px 14px; border-radius: 18px; text-align: center;
+    background: var(--surface-2); border: 2px solid var(--border); color: var(--text);
+    font-weight: 600; font-size: calc(16px * var(--ui-scale)); line-height: 1.2; touch-action: manipulation;
+  }
+  .mm-ms-act-accent { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+  /* Ikona se ne krči, ko se napis prelomi v dve vrstici (sicer pade na ~14 px). */
+  .mm-ms-act :global(svg) { flex-shrink: 0; }
   /* Okrogli gumbi karte (44 px) so v preprostem pogledu 64 px. */
   .mm-ms-simple :global(button.w-11.h-11) { width: 64px; height: 64px; }
   .mm-ms-zoom {

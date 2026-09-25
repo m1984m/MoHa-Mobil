@@ -1,6 +1,7 @@
 import { derived, get, writable } from 'svelte/store';
 import { lang, tr } from './i18n';
 import { toast } from './toast';
+import { forSpeech } from './pronounce';
 
 // Glasno branje. Besedila za posamezna okna sestavi readAloud.ts, gumb je
 // ui/ReadAloud.svelte.
@@ -247,6 +248,9 @@ export function speak(text: string, owner: unknown = null) {
   if (!text.trim()) return;
   const my = seq;
   const l = get(lang);
+  // Okrajšave v imenih postajališč ("Prol. brigad", "Zg. Duplek") razpiše slovar
+  // izgovorjave — glej pronounce.ts. Samo slovensko: razpis je v slovenščini.
+  if (l === 'sl') text = forSpeech(text);
   const sys = supported() ? pickVoice(get(voices), l) : null;
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
 

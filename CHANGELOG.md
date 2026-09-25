@@ -5,6 +5,24 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.1 — 2026-09-25
+
+### Karta v preprostem pogledu za starejše
+- Postajališče in avtobus, tapnjena na karti, se v preprostem pogledu odpreta skoraj čez cel zaslon
+  (prej do polovice) — starejši želijo videti čim več naenkrat (Matej).
+- Ime postajališča in smer avtobusa v svoji vrstici, v celoti; prej so tri okrogle tipke smer zožile
+  na »Ja…«. Gumbi z napisi, 64 px, v dveh stolpcih: Pot do postaje, Shrani med moje, Preberi na glas,
+  Zapri; pri avtobusu Sledi avtobusu. Imena postaj in ciljev se lomijo namesto rezanja.
+- Gumb »Nazaj« na karti je skrit, dokler je list odprt (sicer bi prekril njegov vrh).
+- Ikone v gumbih z napisom v dveh vrsticah so se krčile na ~14 px (flex-shrink); zdaj ostanejo 22 px.
+
+### Izgovorjava okrajšav
+- Slovar izgovorjave (`src/lib/pronounce.ts`): pred branjem se okrajšave iz voznega reda razpišejo —
+  »Prol. brigad« → Proletarskih brigad, »Ul. Poh. odr.« → Ulica Pohorskega odreda, »Zg.« → Zgornji,
+  »Cesta XIV. divizije« → štirinajste divizije, ŽP, AP, OŠ, MČ, TC, ZD, TABOR … (vseh 39 okrajšav v
+  imenih postajališč in smeri). Velja za Petro in sistemski glas; na zaslonu ostane zapis iz voznega reda.
+  Marpromov GTFS polja `tts_stop_name` nima, zato je slovar naš nadomestek.
+
 ## 0.22.0 — 2026-09-25
 
 ### Preprost pogled: moja postajališča
