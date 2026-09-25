@@ -4,6 +4,8 @@
   import { X, Sunrise, Sunset, Wind, Droplets, Sun } from 'lucide-svelte';
   import { fetchDayWeather, type DayWeather } from '../weather';
   import { t } from '../i18n';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { weatherSpeech } from '../readAloud';
 
   export let open = false;
   export let lat: number;
@@ -40,10 +42,16 @@
          style="padding-bottom: env(safe-area-inset-bottom);">
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
         <div class="t-title2">{$t('Vreme danes')}</div>
-        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={close} aria-label={$t('Zapri')}>
-          <X size={18} />
-        </button>
+        <div class="flex items-center gap-2">
+          {#if data}
+            {@const d = data}
+            <ReadAloud text={() => weatherSpeech(d)} />
+          {/if}
+          <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
+                  on:click={close} aria-label={$t('Zapri')}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {#if loading && !data}

@@ -47,8 +47,13 @@ export function focusTrap(node: HTMLElement) {
     destroy() {
       cancelAnimationFrame(raf);
       node.removeEventListener('keydown', onKeydown);
-      // Vrni fokus na element, ki je modal odprl — sicer pristane na <body>.
-      try { previouslyFocused?.focus({ preventScroll: true }); } catch {}
+      // Vrni fokus na element, ki je modal odprl — sicer pristane na <body>. Samo, če
+      // fokus ni medtem že v drugem oknu: ob zamenjavi okna (iskanje → postajališče) se
+      // staro zapre šele po animaciji in bi fokus vrnilo pod novo okno.
+      const active = document.activeElement;
+      const free = !active || active === document.body || node.contains(active);
+      if (!free || !previouslyFocused?.isConnected) return;
+      try { previouslyFocused.focus({ preventScroll: true }); } catch {}
     },
   };
 }

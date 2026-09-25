@@ -9,6 +9,9 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import PlanSteps from '../ui/PlanSteps.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { departuresSpeech, noMoreToday, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
+  import { liveDepartureRows, routeIdIndex } from '../departures';
   import { upcomingDepartures, nextServiceDeparture, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
@@ -509,6 +512,26 @@
   }
   $: vehNextStops = calcVehNextStops(gtfs, selectedVehicle, vehTrip, tick30);
 
+  // Besedila za glasno branje — sestavijo se ob dotiku, iz tega, kar list kaže.
+  function stopText(): string {
+    if (!selectedStop) return '';
+    const rows = liveArrivals.length > 0
+      ? liveDepartureRows(liveArrivals, routeIdIndex(gtfs), 5)
+      : departures.map(gtfsRow);
+    return departuresSpeech([{ name: selectedStop.name, rows, empty: noMoreToday(nextDayDep) }]);
+  }
+  function vehicleText(): string {
+    if (!selectedVehicle) return '';
+    return vehicleSpeech({
+      line: selectedVehicle.routeShort,
+      headsign: selectedVehicle.headsign,
+      nextStop: selectedLive ? liveNextStopName : null,
+      etaMin: selectedLive ? (vehicleArrival?.etaMin ?? null) : null,
+      delayMin: selectedLive ? (vehicleArrival?.delayMin ?? null) : null,
+      stops: vehNextStops.map(ns => ({ name: ns.stop.name, sec: ns.arr })),
+    });
+  }
+
   // Ime naslednje postaje: prioritetno po OBA nextStopPointId (source of truth za
   // etaMin), fallback na vehNextStops[0]. Prej je top-card kazal samo ETA brez imena
   // → uporabnik ga je asociiral s prvo vrstico spodnjega seznama, kar pa v primeru
@@ -831,7 +854,10 @@
                 <span class="t-callout font-medium">{$t('Deli pot')}</span>
               </button>
 
-              <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Pot po korakih')}</div>
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="t-footnote text-muted uppercase tracking-wide">{$t('Pot po korakih')}</div>
+                <ReadAloud resetKey={activePlan} text={() => activePlan ? planSpeech(activePlan.plan.legs, activePlan.to.name) : ''} />
+              </div>
               <div class="surface rounded-2xl border border-base shadow-card px-3 py-3">
                 <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} />
               </div>
@@ -1043,6 +1069,7 @@
                     aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljena')}>
               <Star size={18} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'} />
             </button>
+            <ReadAloud resetKey={selectedStop.id} text={stopText} />
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center ml-auto" on:click={() => onStopChange(null)} aria-label={$t('Zapri')}>
               <X size={18} />
             </button>
@@ -1223,6 +1250,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
+            <ReadAloud resetKey={selectedVehicle.tripId} text={vehicleText} />
             <button class="pressable w-11 h-11 rounded-full grid place-items-center"
                     style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
                     on:click={() => followBus = !followBus}

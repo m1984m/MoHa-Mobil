@@ -2,6 +2,8 @@
   import { backdrop, sheet, swap } from '../motion';
   import { X, Star } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { stopTimetableSpeech } from '../readAloud';
   import { allDeparturesForStop, dayKindToDate, type GTFS, type Stop, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
@@ -50,6 +52,15 @@
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   })();
 
+  // Za današnji dan se berejo naslednji odhodi, za drug dan prvi in zadnji po linijah.
+  function readText(): string {
+    if (!stop) return '';
+    const label = days.find(d => d.id === day)?.label ?? '';
+    const now = new Date();
+    const nowSec = day === detectToday() ? now.getHours() * 3600 + now.getMinutes() * 60 : null;
+    return stopTimetableSpeech(stop.name, label, deps, nowSec);
+  }
+
   function fmtMin(sec: number): string {
     return String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
   }
@@ -73,8 +84,9 @@
           <div class="t-footnote text-muted uppercase tracking-wide">
             {$t('Vozni red')}{#if filterRouteId != null && filterHeadsign} · {filterHeadsign}{/if}
           </div>
-          <div class="t-title2 truncate">{stop.name}</div>
+          <div class="t-title2 line-clamp-2">{stop.name}</div>
         </div>
+        <ReadAloud resetKey={`${stop.id}:${day}:${filterRouteId}`} text={readText} />
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={() => favStops.toggle(stop.id)}
                 aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljene')}
@@ -104,7 +116,7 @@
         {#key day}
         <div in:swap>
         {#if deps.length === 0}
-          <div class="t-body text-muted text-center py-8">{$t('Ni odhodov za izbran dan.')}</div>
+          <div class="t-body text-muted text-center py-8">{$t('Ni odhodov za izbrani dan.')}</div>
         {:else}
           <ul class="space-y-2">
             {#each grouped as [h, list]}

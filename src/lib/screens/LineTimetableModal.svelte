@@ -2,6 +2,8 @@
   import { backdrop, sheet, swap } from '../motion';
   import { X, ArrowRightLeft, MapPin, ChevronDown, Check, Star, ExternalLink } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { lineTimetableSpeech } from '../readAloud';
   import { allTripsForRouteDirection, dayKindToDate, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
@@ -102,6 +104,23 @@
     : [];
 
   $: selectedIsFav = selectedStopId != null && $favStops.has(selectedStopId);
+
+  // Z izbrano postajo se berejo njeni odhodi, sicer odhodi voženj z začetne postaje.
+  function readText(): string {
+    if (!route) return '';
+    const times = selectedStopId != null
+      ? stopSchedule.map(x => x.sec)
+      : trips.map(tr0 => tr0.stops[0] ? (tr0.stops[0][2] || tr0.stops[0][1]) : 0);
+    const now = new Date();
+    return lineTimetableSpeech({
+      line: route.short,
+      dir: dirHeadsigns.get(dir) || '',
+      day: days.find(d => d.id === day)?.label ?? '',
+      stop: selectedStopName,
+      times,
+      nowSec: day === detectToday() ? now.getHours() * 3600 + now.getMinutes() * 60 : null,
+    });
+  }
 </script>
 
 <!-- Escape na oknu — glej opombo v StopTimetableModal. -->
@@ -122,6 +141,7 @@
           <div class="t-footnote text-muted uppercase tracking-wide">{$t('Linija')}</div>
           <div class="t-title3 truncate">{route.long || route.short}</div>
         </div>
+        <ReadAloud resetKey={`${route.id}:${dir}:${selectedStopId}:${day}`} text={readText} />
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                 on:click={onClose} aria-label={$t('Zapri')}>
           <X size={18} />

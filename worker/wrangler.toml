@@ -7,6 +7,13 @@ compatibility_date = "2026-07-01"
 [vars]
 ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0.1:9125"
 
+# Glasno branje (POST /tts): Azure Speech, glas sl-SI-PetraNeural. Regija je
+# tista, ki jo izberes ob ustvarjanju vira Speech na portal.azure.com (raven
+# Free F0). West Europe 25.09.2026 ni sprejemal novih narocnikov (RequestDisallowedByAzure). Kljuc NI tu, je skrivnost:
+#   npx wrangler secret put AZURE_SPEECH_KEY
+# Brez kljuca /tts vrne 503 in aplikacija bere s sistemskim glasom telefona.
+AZURE_SPEECH_REGION = "germanywestcentral"
+
 # OBA je spet dosegljiv NEPOSREDNO s Cloudflara (preverjeno 22.09.2026 ob 08:35:
 # 12/12 klicev 200, GetLines v 0,74 s), zato posrednika ni vec.
 #
@@ -56,3 +63,16 @@ enabled = true
 [[analytics_engine_datasets]]
 binding = "ANALYTICS"
 dataset = "moha_mobil"
+
+# Omejevalnik za /tts na naslov IP (brez pisanja v KV). Kvota Azure F0 je skupna
+# vsem uporabnikom, zato en naslov ne sme poslati vec kot 20 novih besedil na
+# minuto (dolgo branje gre v kosih po 700 znakov, vsak kos je en klic; en telefon
+# prebere nekajkrat na minuto). namespace_id je poljubno stevilo, enolicno v
+# racunu Cloudflare.
+[[ratelimits]]
+name = "TTS_LIMITER"
+namespace_id = "7101"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60

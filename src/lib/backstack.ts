@@ -10,6 +10,8 @@
 // čez modal se odpre in zapre gnezdeno). Out-of-order release bi pustil
 // en odvečen history entry, kar je benigno (en back več do izhoda).
 
+import { stopSpeaking } from './speech';
+
 type Entry = { id: number; close: () => void };
 // release nosi id vnosa: kdor zapira več vnosov naenkrat (npr. zaslon ob uničenju),
 // jih zapre od najnovejšega proti najstarejšemu, da je vsak ob sprostitvi na vrhu.
@@ -48,6 +50,10 @@ function flushQueued() {
 }
 
 export function pushBack(close: () => void): BackRelease {
+  // Novo okno čez obstoječe utiša glasno branje. Gumb "Ustavi branje" je na oknu,
+  // ki bere, in bi bil pod novim oknom nedosegljiv — branje bi teklo naprej brez
+  // načina, da ga ustaviš.
+  stopSpeaking();
   const id = nextId++;
   stack.push({ id, close });
   // history.back() iz release() je asinhron in Chrome njegov cilj določi ob klicu.

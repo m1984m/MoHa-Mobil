@@ -5,6 +5,38 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.0 — 2026-09-25
+
+### Preprost pogled: moja postajališča
+- Napaka: shranjeno postajališče, ki ni v krogu 500 m, se v preprostem pogledu ni pokazalo nikjer, zato
+  je bilo videti, kot da se ni shranilo (zapis v `mm.favStops.v1` je deloval).
+- Nov razdelek »Moja postajališča« (med Domov in Moji kraji, da Domov ostane viden brez drsenja) z
+  vsemi shranjenimi; dotik odpre odhode. »Moji avtobusi« zgoraj ostanejo kot prej.
+- »+ Dodaj postajališče« odpre iskanje po imenu (brez šumnikov in ločil, po besedah: »sentiljska poc«
+  najde »Šentiljska - Počehovska«), z linijami in smerjo pri vsakem zadetku, da se loči par čez cesto.
+  Dotik shrani in odpre odhode. Prej je bila edina pot dotik pike na karti.
+
+### Glasno branje na vseh oknih, z naravnim glasom
+- Gumb »Preberi na glas« je zdaj na vseh oknih s prometnimi podatki: Dom (najbližja in priljubljena
+  postajališča), karta (postajališče, tudi najdeno z iskanjem; avtobus; pot po korakih), vozni red
+  postajališča in linije, Priljubljene, predlogi poti v načrtovalniku, vreme, cene in vozovnice ter
+  vsi trije zasloni preprostega pogleda. Prej samo v preprostem pogledu.
+- Med branjem je »Ustavi branje« samo na gumbu, ki bere; ob zaprtju okna, menjavi postajališča,
+  dneva ali smeri branje utihne. Dolga besedila (cenik, šest postajališč na Domu) se berejo v kosih
+  po stavkih, naslednji kos se prenaša med branjem prejšnjega.
+- »Preberi na glas« v slovenščini zdaj bere nevronski glas Petra (Microsoft Azure) prek lastnega
+  Workerja (`POST /tts`); sistemski glas telefona je bil robotski, ponekod ga ni bilo. Gumb se zato
+  pokaže tudi na telefonih brez slovenskega sistemskega glasu.
+- Brez povezave, ob napaki ali če Worker ne odgovori v 6 s, bere sistemski glas kot prej; angleščina
+  ostane na sistemskem glasu.
+- Pri sistemskem glasu ima prednost izboljšana različica, če je nameščena (npr. na iPhonu
+  »Tina (izboljšano)«, voiceURI `…enhanced…`); prej je aplikacija vzela prvi lokalni, lahko osnovni glas.
+- Worker: ključ je samo skrivnost (`AZURE_SPEECH_KEY`), raven Free F0 (trda meja, brez stroška),
+  največ 800 znakov, 20 novih besedil na minuto na naslov IP, posnetki 24 h v predpomnilniku.
+- Viri v »O aplikaciji« navajajo Microsoft Azure; imena postajališč za branje gredo Microsoftu.
+
+---
+
 ## 0.21.0 — 2026-09-25
 
 ### Preprost pogled (nadomešča način za starejše)

@@ -12,6 +12,8 @@
   import { focusTrap } from '../focusTrap';
   import { toast } from '../toast';
   import { t, tr, plural } from '../i18n';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { candidatesSpeech } from '../readAloud';
 
   export let open: boolean = false;
   export let gtfs: GTFS | null;
@@ -534,7 +536,10 @@
 
         {#if candidates.length > 0}
           <div class="pt-1">
-            <div class="t-footnote text-muted uppercase tracking-wide mb-2 px-1">{$t('Predlogi poti')}</div>
+            <div class="flex items-center justify-between gap-2 mb-2 px-1">
+              <div class="t-footnote text-muted uppercase tracking-wide">{$t('Predlogi poti')}</div>
+              <ReadAloud resetKey={candidates} text={() => candidatesSpeech(candidates)} />
+            </div>
             <ul class="space-y-2">
               {#each candidates as p, i}
                 <li>

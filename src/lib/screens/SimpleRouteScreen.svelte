@@ -17,6 +17,8 @@
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
   import PlanSteps from '../ui/PlanSteps.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { planSpeech } from '../readAloud';
 
   // Pot po korakih čez cel zaslon, brez karte in brez lista, ki bi ga bilo treba
   // vleči. Karta je na gumb.
@@ -82,6 +84,9 @@
           <div class="surface rounded-2xl border border-base shadow-card px-3 py-4">
             <PlanSteps legs={state.plan.legs} ciljIme={state.toName} />
           </div>
+          {@const plan = state.plan}
+          <!-- resetKey s `hidden`: ob odhodu na karto utihne (kot SimpleStopScreen). -->
+          <ReadAloud variant="big" wide resetKey={hidden ? 'skrit' : plan} text={() => planSpeech(plan.legs, state.toName)} />
           <button type="button" class="pressable mm-sr-btn w-full" on:click={onShowMap}>
             <MapIcon size={26} strokeWidth={2} color="var(--accent)" /> {$t('Pokaži na karti')}
           </button>

@@ -57,7 +57,6 @@ export default {
   '{n} post.': '{n} stops',
   'Vozni red postaje {postaja}': '{postaja} timetable',
   'Vozni red': 'Timetable',
-  'Ni odhodov za izbran dan.': 'No departures on the selected day.',
 
   // WeatherModal
   'Vreme danes': 'Weather today',

@@ -90,4 +90,15 @@ export default {
   'Linija {line}, smer {dest}, ob {time}.': 'Line {line} to {dest}, at {time}.',
   'Zamuja {n} {enota}.': 'Running {n} {enota} late.',
   'Postajališče {stop}.': 'Stop {stop}.',
+  'Glasno branje trenutno ni na voljo.': 'Reading aloud is not available right now.',
+  'Za glasno branje je potrebna povezava.': 'Reading aloud needs an internet connection.',
+
+  // SimpleScreen: Moja postajališča, SimpleStopSearch, simpleStops.ts
+  'Moja postajališča': 'My stops',
+  'Dodaj postajališče': 'Add a stop',
+  'Ime postajališča': 'Stop name',
+  'Vpiši vsaj dve črki imena. Dotik na postajališče ga shrani med tvoja.': 'Type at least two letters of the name. Tap a stop to save it to your stops.',
+  'Zadetki': 'Results',
+  'Zadetkov: {n}': 'Results: {n}',
+  'smer {dest}': 'towards {dest}',
 };

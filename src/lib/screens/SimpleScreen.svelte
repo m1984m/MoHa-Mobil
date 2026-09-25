@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick as flush } from 'svelte';
   import {
-    Home, MapPin, Search, Map as MapIcon, LayoutGrid, Volume2, Square, Pencil, Trash2, Plus, ChevronRight,
+    Home, MapPin, Search, Map as MapIcon, LayoutGrid, Pencil, Trash2, Plus, ChevronRight, Star,
   } from 'lucide-svelte';
   import { nearestStops, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
@@ -11,7 +11,7 @@
   import {
     liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
   } from '../departures';
-  import { canSpeak, speaking, speak, stopSpeaking, departuresSpeech } from '../speech';
+  import { departuresSpeech } from '../readAloud';
   import { pushBack, type BackRelease } from '../backstack';
   import { fmtClock } from '../time';
   import { t, tr } from '../i18n';
@@ -19,6 +19,10 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import SimpleStopSearch from './SimpleStopSearch.svelte';
+  import { stopHint } from '../simpleStops';
+  import { toast } from '../toast';
 
   // Preprost pogled — en zaslon, največ šest dejanj, najpomembnejše na sredini.
   //
@@ -53,6 +57,7 @@
   let denied = false;
   let editing = false;
   let removing: SimplePlace | null = null;
+  let stopSearchOpen = false;
 
   // Potrditveno okno za brisanje: sistemski nazaj ga zapre (ne zapre aplikacije).
   let backRemoving: BackRelease | null = null;
@@ -62,8 +67,36 @@
     const r = backRemoving; backRemoving = null; r();
   }
 
+  // Iskanje postajališča: sistemski nazaj ga zapre.
+  let backSearch: BackRelease | null = null;
+  $: if (stopSearchOpen && !backSearch) {
+    backSearch = pushBack(() => stopSearchOpen = false);
+  } else if (!stopSearchOpen && backSearch) {
+    const r = backSearch; backSearch = null; r();
+  }
+
+  // Moja postajališča: vsa shranjena, v vrstnem redu shranjevanja (novo je zadnje,
+  // tik nad "Dodaj postajališče"). "Moji avtobusi" zgoraj kažejo samo tista v
+  // bližini — brez tega seznama se je shranjeno oddaljeno postajališče zdelo izgubljeno.
+  $: stopById = gtfs ? new Map(gtfs.stops.map(s => [s.id, s])) : new Map<number, Stop>();
+  $: savedStops = [...$favStops].map(id => stopById.get(id)).filter((s): s is Stop => !!s);
+
+  async function pickSearched(s: Stop) {
+    if (!$favStops.has(s.id)) {
+      favStops.toggle(s.id);
+      toast.show(tr('Shranjeno med moje'));
+    }
+    // Najprej zapri iskanje (sprosti njegov vnos v zgodovini), šele nato odpri
+    // postajališče. Obratno bi App potisnil nov vnos pred sprostitvijo, iskanje ne
+    // bi bilo več na vrhu sklada in njegov vnos bi ostal — en pritisk nazaj bi
+    // potem ne naredil ničesar.
+    stopSearchOpen = false;
+    await flush();
+    onOpenStop(s);
+  }
+
   onMount(() => { timer = setInterval(() => { tick++; refreshLive(); }, 30_000); });
-  onDestroy(() => { if (timer) clearInterval(timer); stopSpeaking(); backRemoving?.(); });
+  onDestroy(() => { if (timer) clearInterval(timer); backRemoving?.(); backSearch?.(); });
 
   // Katera postajališča: če je med shranjenimi kakšno v bližini, ta (doma vidiš
   // svoje postajališče); sicer dve najbližji (običajno obe strani ceste); brez
@@ -112,11 +145,6 @@
   });
   $: anyLive = boards.some(b => (liveByStop[b.stop.id]?.length ?? 0) > 0 && Date.now() - (liveAt[b.stop.id] ?? 0) < LIVE_FRESH_MS);
 
-  function readAloud() {
-    if ($speaking) { stopSpeaking(); return; }
-    speak(departuresSpeech(boards.map(b => ({ name: b.stop.name, rows: b.rows }))));
-  }
-
   function clockOf(ms: number): string {
     const d = new Date(ms);
     return fmtClock(d.getHours() * 3600 + d.getMinutes() * 60);
@@ -143,14 +171,8 @@
       <section aria-labelledby="mm-s-buses" class="space-y-3">
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <h1 id="mm-s-buses" class="t-title1">{$t('Moji avtobusi')}</h1>
-          {#if $canSpeak && boards.length}
-            <button type="button" class="pressable mm-s-chip" on:click={readAloud}>
-              {#if $speaking}
-                <Square size={22} strokeWidth={2.25} /> {$t('Ustavi branje')}
-              {:else}
-                <Volume2 size={24} strokeWidth={2} /> {$t('Preberi na glas')}
-              {/if}
-            </button>
+          {#if boards.length}
+            <ReadAloud variant="big" text={() => departuresSpeech(boards.map(b => ({ name: b.stop.name, rows: b.rows })))} />
           {/if}
         </div>
 
@@ -227,7 +249,29 @@
         {/if}
       </section>
 
-      <!-- 3. Moji kraji -->
+      <!-- 3. Moja postajališča -->
+      <section aria-labelledby="mm-s-stops" class="space-y-3">
+        <h2 id="mm-s-stops" class="t-title3">{$t('Moja postajališča')}</h2>
+        {#each savedStops as s (s.id)}
+          <button type="button" class="pressable mm-s-row mm-s-plain w-full" on:click={() => onOpenStop(s)}>
+            <Star size={30} strokeWidth={2} fill="var(--status-delay)" color="var(--status-delay)" />
+            <span class="flex-1 min-w-0 text-left">
+              <span class="block t-headline">{s.name}</span>
+              {#if gtfs}
+                {@const hint = stopHint(gtfs, s.id)}
+                {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+              {/if}
+            </span>
+            <ChevronRight size={28} color="var(--text-muted)" />
+          </button>
+        {/each}
+        <button type="button" class="pressable mm-s-row mm-s-dashed w-full" on:click={() => stopSearchOpen = true}>
+          <Plus size={30} strokeWidth={2} color="var(--accent)" />
+          <span class="flex-1 text-left t-headline">{$t('Dodaj postajališče')}</span>
+        </button>
+      </section>
+
+      <!-- 4. Moji kraji -->
       <section aria-labelledby="mm-s-places" class="space-y-3">
         <div class="flex items-center justify-between gap-3">
           <h2 id="mm-s-places" class="t-title3">{$t('Moji kraji')}</h2>
@@ -275,7 +319,7 @@
         {/if}
       </section>
 
-      <!-- 4–6. Drug cilj, Karta, Celotna aplikacija -->
+      <!-- 5–7. Drug cilj, Karta, Celotna aplikacija -->
       <section class="space-y-3" aria-label={$t('Drugo')}>
         <button type="button" class="pressable mm-s-row mm-s-plain w-full" on:click={onOpenPlanner}>
           <Search size={30} strokeWidth={2} color="var(--accent)" />
@@ -299,6 +343,8 @@
     </div>
   </div>
 </section>
+
+<SimpleStopSearch {gtfs} open={stopSearchOpen} onClose={() => stopSearchOpen = false} onPick={pickSearched} />
 
 <ConfirmDialog open={!!removing}
   title={removing ? tr('Odstranim kraj »{kraj}«?', { kraj: removing.label }) : ''}
@@ -326,12 +372,11 @@
   }
 
   /* Sekundarni gumbi: ≥ 64 px visoki, vedno z napisom (ikona sama ni razumljiva). */
-  .mm-s-small, .mm-s-chip {
+  .mm-s-small {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     min-height: 64px; padding: 0 18px; border-radius: 16px;
     background: var(--surface-2); border: 2px solid var(--border); color: var(--text);
     font-weight: 600; font-size: calc(15px * var(--ui-scale)); touch-action: manipulation;
   }
-  .mm-s-chip { color: var(--accent); }
   .mm-s-danger { color: var(--status-disrupt); }
 </style>

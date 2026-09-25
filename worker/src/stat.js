@@ -79,12 +79,13 @@ export function poizvedbe(dni) {
       FROM ${NABOR} WHERE blob1 = 'app' AND blob2 = 'zagon' AND ${OD}
       GROUP BY dan ORDER BY dan FORMAT JSON`,
     // Casovnica zaledja po dnevih: skupaj, od tega napake, in mediana odziva.
+    // Samo OBA in ORS: branje (tts) traja sekunde in bi zameglilo mediano.
     zaledjeDnevi: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
              SUM(_sample_interval) AS n,
              sumIf(_sample_interval, blob4 = 'napaka' OR blob4 = 'nedosegljiv') AS napak,
              quantileExactWeighted(0.5)(double1, _sample_interval) AS ms_p50
-      FROM ${NABOR} WHERE blob1 = 'srv' AND ${OD}
+      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 IN ('oba', 'ors') AND ${OD}
       GROUP BY dan ORDER BY dan FORMAT JSON`,
     // Najbolj gledana postajalisca (blob8 pri GetArrivalsForStopPoint).
     postaje: `

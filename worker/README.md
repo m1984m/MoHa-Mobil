@@ -464,10 +464,28 @@ vrne na javna posrednika in vgrajen ključ.
 | `/alarms/sync` | DELETE | ne | telo `{ endpoint }` |
 | `/alarms/resubscribe` | POST | ne | enaka validacija in omejitve kot `/alarms/sync` |
 | `/alarms/status` | GET | ne | neobvezen parameter `endpoint` |
+| `/tts` | POST | 24 h (isto besedilo) | telo `text/plain` ≤ 800 znakov, 20 novih besedil/min na IP |
 | `/health` | GET | ne | edina pot brez preverjanja izvora |
 
 Vse drugo vrne 404, tuj izvor vrne 403. Zahteva navzgor se prekine po 4 sekundah
 pri OBA (nato zasilni odgovor) in po 9 sekundah pri ORS.
+
+## Glasno branje (POST /tts)
+
+Aplikacija pošlje slovensko besedilo, Worker ga pošlje Azure Speech (glas
+`sl-SI-PetraNeural`) in vrne MP3. Brez ključa `/tts` vrne 503 in aplikacija bere s
+sistemskim glasom telefona.
+
+1. Na portal.azure.com ustvari vir **Speech service**, regija Germany West Central (West Europe
+   25.09.2026 ni sprejemal novih naročnikov), raven
+   **Free F0** (0,5 M znakov na mesec, trda meja, brez stroška; S0 bi zaračunaval).
+2. Keys and Endpoint → KEY 1 → `npx wrangler secret put AZURE_SPEECH_KEY`.
+3. Druga regija: popravi `AZURE_SPEECH_REGION` v `wrangler.toml`.
+4. Objavi Worker; `/health` mora javiti `ttsConfigured: true`.
+
+Napačen ključ ali porabljena kvota (Azure 401/403) vrne 503, aplikacija do konca
+seje bere s sistemskim glasom. Omejevalnik na IP je vezava `TTS_LIMITER`
+(`[[ratelimits]]`), ki ne piše v KV.
 
 ## Analitika (Workers Analytics Engine)
 

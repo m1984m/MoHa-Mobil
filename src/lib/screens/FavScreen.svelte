@@ -2,12 +2,14 @@
   import { backdrop, sheet } from '../motion';
   import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
-  import { upcomingDepartures } from '../gtfs';
+  import { upcomingDepartures, nextServiceDeparture } from '../gtfs';
   import Screen from '../ui/Screen.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { departuresSpeech, gtfsRow, noMoreToday } from '../readAloud';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
   import { favLines, type FavLine } from '../favLines';
@@ -313,9 +315,15 @@
     {:else if favList.length > 0}
       <div class="flex items-center justify-between">
         <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
-        <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
-          <Trash2 size={14} /> {$t('Počisti')}
-        </button>
+        <div class="flex items-center gap-2">
+          <ReadAloud text={() => departuresSpeech(boards.map(b => ({
+            name: b.stop.name, rows: b.deps.map(gtfsRow),
+            empty: gtfs && b.deps.length === 0 ? noMoreToday(nextServiceDeparture(gtfs, b.stop.id)) : undefined,
+          })))} />
+          <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
+            <Trash2 size={14} /> {$t('Počisti')}
+          </button>
+        </div>
       </div>
       {#each boards as b (b.stop.id)}
         {@const key = `s:${b.stop.id}`}

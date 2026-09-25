@@ -17,6 +17,7 @@
  *   GET  /oba/GetArrivalsForStopPoint?stopPointId=123
  *   POST /ors/directions/foot-walking/geojson
  *   POST /ors/matrix/foot-walking
+ *   POST /tts                     (glasno branje, glej tts.js)
  *   GET  /health
  *
  * Tretja naloga (dodano kasneje): alarm za odhod avtobusa. Telefon sme obvestilo
@@ -37,6 +38,7 @@ import { handleStat } from './stat.js';
 import { processDue } from './due.js';
 import { OBA_BASE, OBA_METHODS, STALE_MAX_MS, OBA_HEADERS, kljucPredpomnilnika, zaPredpomnilnik } from './oba.js';
 import { ogrejPredpomnilnik } from './warm.js';
+import { handleTts } from './tts.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
 // Pot Cloudflare → vozniredi.marprom.si je NEZANESLJIVA in to niha po urah.
@@ -848,6 +850,7 @@ export default {
       return json({
         ok: true,
         orsConfigured: !!env.ORS_KEY,
+        ttsConfigured: !!(env.AZURE_SPEECH_KEY && env.AZURE_SPEECH_REGION),
         allowedOrigins: allowedOrigins(env).length,
         obaVia: env.OBA_RELAY ? 'relay' : 'direct',
         relayKeyConfigured: !!env.RELAY_KEY,
@@ -863,6 +866,7 @@ export default {
     if (path.startsWith('/oba/')) return handleOba(request, env, ctx, path, cors);
     if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
     if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);
+    if (path === '/tts') return handleTts(request, env, ctx, cors);
 
     return json({ error: 'not found' }, 404, cors);
   },

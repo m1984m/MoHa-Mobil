@@ -706,7 +706,7 @@
           </button>
         </li>
       </ul>
-      <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">{$t('Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.')} {$t('Kolesa: MBajk / JCDecaux.')}</p>
+      <p class="mt-3 px-2 t-footnote text-muted leading-relaxed">{$t('Vozni redi: GTFS Marprom. Zemljevidi: © OpenStreetMap, © CARTO. Satelitski posnetki: © Esri. Pešpoti: openrouteservice.org. Vreme: Open-Meteo.')} {$t('Kolesa: MBajk / JCDecaux.')} {$t('Glas za branje: Microsoft Azure.')}</p>
     </section>
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Novosti')}</div>

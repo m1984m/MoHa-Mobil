@@ -1,20 +1,21 @@
 <script lang="ts">
   import { page } from '../motion';
   import { onDestroy } from 'svelte';
-  import { ArrowLeft, Star, Volume2, Square, Map as MapIcon, MoonStar } from 'lucide-svelte';
+  import { ArrowLeft, Star, Map as MapIcon, MoonStar } from 'lucide-svelte';
   import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
   import {
     liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
   } from '../departures';
-  import { canSpeak, speaking, speak, stopSpeaking, departuresSpeech } from '../speech';
+  import { departuresSpeech, noMoreToday } from '../readAloud';
   import { fmtClock, fmtDayOffset } from '../time';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
 
   // Vsi bližnji odhodi z enega postajališča, v velikem tisku, brez karte.
   // Vrstice niso gumbi: dotik nanje ne bi naredil ničesar, zato ne smejo
@@ -49,10 +50,8 @@
     refresh();
     if (!timer) timer = setInterval(() => { tick++; refresh(); }, 30_000);
   }
-  $: if (!stop && timer) { clearInterval(timer); timer = null; loadedFor = null; stopSpeaking(); }
-  onDestroy(() => { if (timer) clearInterval(timer); stopSpeaking(); });
-  // Ob odhodu na karto utihni.
-  $: if (hidden) stopSpeaking();
+  $: if (!stop && timer) { clearInterval(timer); timer = null; loadedFor = null; }
+  onDestroy(() => { if (timer) clearInterval(timer); });
 
   $: routeIds = routeIdIndex(gtfs);
   $: stopNames = gtfs ? new Map(gtfs.stops.map(s => [s.id, s.name])) : new Map<number, string>();
@@ -70,11 +69,6 @@
   $: rows = makeRows(stop, gtfs, isLive, tick);
   $: nextDay = (stop && gtfs && rows.length === 0) ? nextServiceDeparture(gtfs, stop.id) : null;
   $: starred = stop ? $favStops.has(stop.id) : false;
-
-  function readAloud() {
-    if ($speaking) { stopSpeaking(); return; }
-    if (stop) speak(departuresSpeech([{ name: stop.name, rows }]));
-  }
 </script>
 
 {#if stop}
@@ -96,12 +90,9 @@
         </div>
 
         <div class="flex flex-wrap gap-3">
-          {#if $canSpeak && rows.length}
-            <button type="button" class="pressable mm-ss-btn" style="color: var(--accent)" on:click={readAloud}>
-              {#if $speaking}<Square size={22} strokeWidth={2.25} /> {$t('Ustavi branje')}
-              {:else}<Volume2 size={24} strokeWidth={2} /> {$t('Preberi na glas')}{/if}
-            </button>
-          {/if}
+          <!-- resetKey s `hidden`: ob odhodu na karto utihne. -->
+          <ReadAloud variant="big" resetKey={`${stop.id}:${hidden}`}
+                     text={() => stop ? departuresSpeech([{ name: stop.name, rows, empty: noMoreToday(nextDay) }]) : ''} />
           <button type="button" class="pressable mm-ss-btn" on:click={() => stop && favStops.toggle(stop.id)}>
             <Star size={24} strokeWidth={2} fill={starred ? 'var(--status-delay)' : 'none'} color={starred ? 'var(--status-delay)' : 'currentColor'} />
             {starred ? $t('Shranjeno med moje') : $t('Shrani med moje')}

@@ -20,6 +20,7 @@ export default {
   'Vodnik po aplikaciji': 'App guide',
   'Znova pokaži uvodne kartice in namige': 'Show the intro cards and tips again',
   'Kolesa: MBajk / JCDecaux.': 'Bikes: MBajk / JCDecaux.',
+  'Glas za branje: Microsoft Azure.': 'Read-aloud voice: Microsoft Azure.',
   'Tapni ime postajališča za vse odhode in lego na karti.': 'Tap a stop name to see all departures and its place on the map.',
   'Za pot do poljubne točke tapni rdeči gumb z bucikom, premakni karto pod buciko in potrdi.': 'To get directions to any place, tap the red pin button, move the map under the pin and confirm.',
   'Z zvezdico shraniš postajališče med priljubljene — njegovi odhodi so potem vedno na Domu.': 'Tap the star to save this stop — its departures will then always be on Home.',

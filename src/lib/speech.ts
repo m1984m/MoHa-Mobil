@@ -1,21 +1,57 @@
 import { derived, get, writable } from 'svelte/store';
-import { lang, plural, tr } from './i18n';
-import { splitHeadsign } from './gtfs';
-import { fmtClock } from './time';
-import type { DepartureRow } from './departures';
+import { lang, tr } from './i18n';
+import { toast } from './toast';
 
-// Glasno branje odhodov prek vgrajenega govora brskalnika (Web Speech API).
+// Glasno branje. Besedila za posamezna okna sestavi readAloud.ts, gumb je
+// ui/ReadAloud.svelte.
 //
-// Bere samo z glasom v jeziku vmesnika. Slovenskega besedila z angleškim glasom ne
-// beremo — to bi bilo nerazumljivo, zato se gumb takrat ne pokaže. Ali ima telefon
-// slovenski glas, je odvisno od sistema; seznam glasov pride pri Chromu šele po
-// dogodku voiceschanged.
+// Slovensko besedilo najprej prebere nevronski glas Petra prek Workerja (POST /tts,
+// glej worker/src/tts.js). Sistemski glas telefona je za slovenščino robotski,
+// marsikje pa ga sploh ni. Brez povezave ali ob napaki Workerja bere sistemski glas
+// (Web Speech), angleščino pa vedno on — angleški glas ima vsak telefon.
+//
+// Sistemski glas bere samo v jeziku vmesnika. Slovenskega besedila z angleškim
+// glasom ne beremo — to bi bilo nerazumljivo. Seznam glasov pride pri Chromu šele
+// po dogodku voiceschanged.
 
 const voices = writable<SpeechSynthesisVoice[]>([]);
 export const speaking = writable(false);
-// Referenca na izgovor, dokler se ne konča: Chrome sicer izgovor lahko pobere smetar,
-// onend se ne sproži in gumb obvisi na "Ustavi branje".
-let current: SpeechSynthesisUtterance | null = null;
+// Kdo bere: gumb, ki je branje začel. Med branjem je "Ustavi branje" samo na njem,
+// ne na vseh gumbih v aplikaciji.
+export const speakingOwner = writable<unknown>(null);
+// Reference na izgovore, dokler se ne končajo: Chrome sicer izgovor lahko pobere
+// smetar, onend se ne sproži in gumb obvisi na "Ustavi branje".
+let current: SpeechSynthesisUtterance[] = [];
+
+// Naslov se izpelje iz proxyja za OBA (kot pri analitiki), da ni treba vzdrževati
+// še ene spremenljivke; VITE_TTS_ENDPOINT ima prednost, če je nastavljen.
+function ttsEndpoint(): string {
+  const env = (import.meta as any).env ?? {};
+  const izrecno = env.VITE_TTS_ENDPOINT as string | undefined;
+  if (izrecno) return izrecno.replace(/\/$/, '');
+  const oba = env.VITE_OBA_PROXY as string | undefined;
+  if (oba && /\/oba\/?$/.test(oba)) return oba.replace(/\/oba\/?$/, '/tts');
+  return '';
+}
+const TTS_URL = ttsEndpoint();
+const TTS_LANG = 'sl';          // Worker ima samo slovenski glas
+const TTS_TIMEOUT_MS = 6000;    // potem raje sistemski glas kot tišina
+// Worker sprejme največ 800 znakov na klic. Daljše besedilo (cenik, vozni red)
+// gre v kosih po stavkih; naslednji kos se prenaša, medtem ko prejšnji igra.
+const TTS_CHUNK = 700;
+// Worker je javil 503 (ključ ni nastavljen ali ne velja) ali 404 (Worker te poti
+// še nima) — to se med sejo ne popravi, zato ga do konca seje ne kličemo več.
+const ttsOff = writable(false);
+
+// Tihih 10 ms. iOS dovoli predvajanje samo iz dotika, posnetek pa pride šele po
+// nekaj sto milisekundah; element, ki je enkrat zaigral iz dotika, sme potem
+// zaigrati tudi brez njega.
+const SILENCE = 'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+
+let seq = 0;    // vsak speak/stop ga poveča; odziv starejšega branja se po tem prepozna
+let abort: AbortController | null = null;
+let audio: HTMLAudioElement | null = null;
+let blobUrl: string | null = null;
 
 function supported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
@@ -27,60 +63,224 @@ if (supported()) {
   try { window.speechSynthesis.addEventListener('voiceschanged', read); } catch {}
 }
 
-function pickVoice(list: SpeechSynthesisVoice[], l: string): SpeechSynthesisVoice | null {
+// Izboljšana različica sistemskega glasu (iPhone: Nastavitve → Dostopnost → Govorjena
+// vsebina → Glasovi, npr. "Tina (izboljšano)", voiceURI "…enhanced…"/"…premium…")
+// zveni bistveno manj robotsko od osnovne, ki jo iOS navede prav tako.
+const BETTER = /enhanced|premium|izbolj|natural|neural/i;
+
+export function pickVoice(list: SpeechSynthesisVoice[], l: string): SpeechSynthesisVoice | null {
   const mine = list.filter(v => v.lang.toLowerCase().replace('_', '-').startsWith(l));
+  const better = (v: SpeechSynthesisVoice) => BETTER.test(v.name) || BETTER.test(v.voiceURI ?? '');
   // Lokalni glas deluje tudi brez povezave; spletni (npr. Edge "Online") ne.
-  return mine.find(v => v.localService) ?? mine[0] ?? null;
+  return mine.find(v => v.localService && better(v)) ?? mine.find(v => v.localService) ?? mine[0] ?? null;
 }
 
-export const canSpeak = derived([voices, lang], ([v, l]) => supported() && pickVoice(v, l) !== null);
+function ttsUsable(l: string, off: boolean): boolean {
+  return !!TTS_URL && l === TTS_LANG && !off && typeof Audio !== 'undefined';
+}
 
-export function speak(text: string) {
-  if (!supported()) return;
-  const v = pickVoice(get(voices), get(lang));
-  if (!v) return;
+export const canSpeak = derived([voices, lang, ttsOff], ([v, l, off]) =>
+  ttsUsable(l, off) || (supported() && pickVoice(v, l) !== null));
+
+// Razdeli besedilo na kose do `max` znakov po mejah stavkov. Stavek, daljši od
+// meje, se razreže pri zadnjem presledku.
+export function chunks(text: string, max = TTS_CHUNK): string[] {
+  const sentences = text.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [text];
+  const out: string[] = [];
+  let cur = '';
+  const push = (s: string) => { if (s.trim()) out.push(s.trim()); };
+  for (let s of sentences) {
+    while (s.length > max) {
+      const cut = s.lastIndexOf(' ', max);
+      const at = cut > 0 ? cut : max;
+      push(cur); cur = '';
+      push(s.slice(0, at));
+      s = s.slice(at);
+    }
+    if ((cur + s).length > max) { push(cur); cur = ''; }
+    cur += s;
+  }
+  push(cur);
+  return out;
+}
+
+function finish(my: number) {
+  if (my !== seq) return;
+  speaking.set(false);
+  speakingOwner.set(null);
+}
+
+function releaseAudio() {
+  if (audio) {
+    audio.onended = null;
+    audio.onerror = null;
+    audio.onpause = null;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+}
+
+// Sistemski glas bere po kosih (en izgovor na kos): Android dolgih izgovorov
+// (~4000 znakov) ne sprejme, nekateri spletni glasovi pa utihnejo po ~15 s.
+function speakSystem(parts: string[], v: SpeechSynthesisVoice, my: number) {
   const s = window.speechSynthesis;
   s.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.voice = v;
-  u.lang = v.lang;
-  u.rate = 0.9; // nekoliko počasneje od privzetega — bere se med hojo ali na postaji
-  // Preklic prejšnjega izgovora (cancel zgoraj) sproži njegov onend — ta ne sme
-  // ugasniti stanja novega.
-  const done = () => { if (current === u) { current = null; speaking.set(false); } };
-  u.onend = done;
-  u.onerror = done;
-  current = u;
+  const list = parts.filter(p => p.trim());
+  if (!list.length) { finish(my); return; }
+  const batch = list.map(text => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = v;
+    u.lang = v.lang;
+    u.rate = 0.9; // nekoliko počasneje od privzetega — bere se med hojo ali na postaji
+    return u;
+  });
+  // Preklic prejšnjega branja (cancel zgoraj) sproži onend/onerror njegovih
+  // izgovorov — ta ne sme ugasniti stanja novega, zato šteje samo ta paket.
+  // Konec je zadnji izgovor ali napaka kateregakoli.
+  const done = () => { if (current !== batch) return; current = []; finish(my); };
+  batch.forEach((u, i) => {
+    u.onend = i === batch.length - 1 ? done : null;
+    u.onerror = done;
+  });
+  current = batch;
   speaking.set(true);
-  s.speak(u);
+  for (const u of batch) s.speak(u);
+}
+
+async function fetchAudio(part: string, signal: AbortSignal): Promise<Blob> {
+  const res = await fetch(TTS_URL, {
+    method: 'POST',
+    // text/plain je za CORS "preprost" klic — brez predhodnega OPTIONS.
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body: part,
+    signal,
+  });
+  if (res.status === 503 || res.status === 404) ttsOff.set(true);
+  if (!res.ok) throw new Error('tts ' + res.status);
+  return res.blob();
+}
+
+async function speakNeural(text: string, my: number, sys: SpeechSynthesisVoice | null) {
+  const parts = chunks(text);
+  let at = 0;   // kos, ki igra ali nanj čakamo
+
+  // Posnetka ni bilo ali se ni dal predvajati: preostanek prebere sistemski glas,
+  // če obstaja. Isti neuspeh lahko pride dvakrat (napaka elementa in zavrnjen
+  // play()), bere pa se samo enkrat — drugi klic bi prekinil prvi izgovor in gumb
+  // bi se vrnil med branjem.
+  let fell = false;
+  const fallback = () => {
+    if (fell || my !== seq) return;   // že obravnavano ali medtem ustavljeno
+    fell = true;
+    releaseAudio();
+    if (sys) speakSystem(parts.slice(at), sys, my);
+    else { finish(my); toast.show(tr('Glasno branje trenutno ni na voljo.')); }
+  };
+  let played = 0;   // koliko kosov je že zaigralo
+
+  const ctrl = new AbortController();
+  abort = ctrl;
+  // Meja velja od začetka čakanja na kos do začetka njegovega predvajanja — tudi
+  // play() lahko obvisi.
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const disarm = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const arm = () => { disarm(); timer = setTimeout(() => { ctrl.abort(); fallback(); }, TTS_TIMEOUT_MS); };
+
+  const a = audio!;
+  try {
+    let next: Promise<Blob> | null = fetchAudio(parts[0], ctrl.signal);
+    for (at = 0; at < parts.length; at++) {
+      arm();
+      const blob: Blob = await next!;
+      if (fell || my !== seq) return;
+      next = at + 1 < parts.length ? fetchAudio(parts[at + 1], ctrl.signal) : null;
+      next?.catch(() => {});   // napaka pride ob await v naslednjem krogu
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      blobUrl = URL.createObjectURL(blob);
+      // Premor od zunaj (klic, zaklenjen zaslon, predvajalnik v obvestilih) ne
+      // sproži `ended` — takrat se branje konča. Tudi konec posnetka najprej
+      // sproži pause; takrat je `ended` true ali pa je položaj na koncu (WebKit
+      // trajanje MP3 z ocenjeno dolžino ne javi vedno natančno).
+      const atEnd = () => a.ended || (Number.isFinite(a.duration) && a.currentTime >= a.duration - 0.3);
+      // Šteje šele po začetku predvajanja: menjava vira ustavi prejšnji zvok.
+      let paused = false;
+      let started = false;
+      const ended = new Promise<void>((resolve, reject) => {
+        a.onended = () => resolve();
+        a.onerror = () => reject(new Error('audio'));
+        a.onpause = () => { if (started && !atEnd()) { paused = true; resolve(); } };
+      });
+      ended.catch(() => {});   // napaka pride ob await spodaj; če play() pade prej, nikogar ne zanima
+      a.src = blobUrl;
+      await a.play();
+      started = true;
+      played++;
+      disarm();
+      if (fell || my !== seq) return;
+      await ended;
+      if (fell || my !== seq) return;
+      if (paused) { releaseAudio(); finish(my); ctrl.abort(); return; }
+    }
+    releaseAudio();
+    finish(my);
+  } catch {
+    // Telefon v ozadju (zaklenjen) naslednjega kosa ne pusti predvajati. Sistemski
+    // glas bi tam prav tako molčal in gumb bi obvisel na "Ustavi branje" — branje
+    // se konča tiho, prebrani del je bil slišan.
+    if (played > 0 && typeof document !== 'undefined' && document.hidden && my === seq && !fell) {
+      releaseAudio();
+      finish(my);
+      return;
+    }
+    fallback();
+  } finally {
+    disarm();
+    if (abort === ctrl) abort = null;
+  }
+}
+
+// `owner` je gumb, ki bere (glej speakingOwner); brez njega bere "nihče".
+export function speak(text: string, owner: unknown = null) {
+  stopSpeaking();
+  if (!text.trim()) return;
+  const my = seq;
+  const l = get(lang);
+  const sys = supported() ? pickVoice(get(voices), l) : null;
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+
+  if (ttsUsable(l, get(ttsOff)) && online) {
+    // Oboje mora steči zdaj, še med dotikom (iOS). Prazen izgovor odklene sistemski
+    // glas za primer, da posnetka ne bo; gre pred tišino, da govor ne prevzame
+    // zvoka potem, ko element že igra. Tišina odklene element — glej SILENCE.
+    if (sys) {
+      try {
+        const u = new SpeechSynthesisUtterance('');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+      } catch {}
+    }
+    if (!audio) audio = new Audio();
+    audio.src = SILENCE;
+    audio.play().catch(() => {});
+    speakingOwner.set(owner);
+    speaking.set(true);
+    void speakNeural(text, my, sys);
+    return;
+  }
+  if (sys) { speakingOwner.set(owner); speakSystem(chunks(text), sys, my); return; }
+  // Sem pride samo slovensko branje brez povezave na telefonu brez slovenskega glasu.
+  toast.show(tr('Za glasno branje je potrebna povezava.'));
 }
 
 export function stopSpeaking() {
+  seq++;
+  abort?.abort();
+  abort = null;
+  releaseAudio();
   if (supported()) window.speechSynthesis.cancel();
-  current = null;
+  current = [];
   speaking.set(false);
-}
-
-function minutes(n: number): string {
-  return plural(n, ['minuto', 'minuti', 'minute', 'minut'], ['minute', 'minutes']);
-}
-
-// "Linija G6, smer Kamnica, čez 4 minute. Zamuja 2 minuti." — "smer" + imenovalnik,
-// ker sklanjanja imen postaj ("proti Kamnici") ne moremo narediti zanesljivo.
-function rowSentence(r: DepartureRow): string {
-  const dest = splitHeadsign(r.headsign, r.destination).dest;
-  let s: string;
-  if (r.minutesFromNow <= 0) s = tr('Linija {line}, smer {dest}, prihaja zdaj.', { line: r.routeShort, dest });
-  else if (r.minutesFromNow < 60) s = tr('Linija {line}, smer {dest}, čez {n} {enota}.', { line: r.routeShort, dest, n: r.minutesFromNow, enota: minutes(r.minutesFromNow) });
-  else s = tr('Linija {line}, smer {dest}, ob {time}.', { line: r.routeShort, dest, time: fmtClock(r.depSec) });
-  const d = r.delayMin ?? 0;
-  if (r.delayKnown && d >= 1) s += ' ' + tr('Zamuja {n} {enota}.', { n: d, enota: minutes(d) });
-  return s;
-}
-
-export function departuresSpeech(stops: { name: string; rows: DepartureRow[] }[]): string {
-  return stops.map(st => {
-    const body = st.rows.length ? st.rows.map(rowSentence).join(' ') : tr('Danes ni več odhodov');
-    return tr('Postajališče {stop}.', { stop: st.name }) + ' ' + body;
-  }).join(' ');
+  speakingOwner.set(null);
 }

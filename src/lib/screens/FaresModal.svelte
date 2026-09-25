@@ -2,6 +2,8 @@
   import { backdrop, sheet } from '../motion';
   import { X, CreditCard, Smartphone, Globe, Store, ExternalLink } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { faresSpeech } from '../readAloud';
   import { t } from '../i18n';
 
   // Cenik mestnega prometa Marprom in kje se vozovnico kupi. Aplikacija vozovnic ne
@@ -47,6 +49,25 @@
     { title: $t('Dnevne vozovnice'), rows: days },
     { title: $t('Terminske vozovnice'), rows: passes },
   ];
+
+  // Vse, kar okno kaže, v istem vrstnem redu (brez povezav).
+  function readText(): string {
+    return faresSpeech(
+      $t('Če vozovnico kupiš vnaprej, lahko v 75 minutah brezplačno prestopiš na drug avtobus. Na avtobusu plačaš samo z bančno kartico, gotovine ne sprejemajo.'),
+      groups,
+      [
+        $t('Kje kupiti') + ': ' + [
+          $t('Na avtobusu: brezstično z bančno kartico (Visa, Mastercard) — 1,50 € za vožnjo.'),
+          $t('Aplikacija Marprom Shop: nakup vozovnic in polnjenje kartice, plačilo z bančno kartico.'),
+          $t('Spletna prodaja: vozovnica za tisk ali polnjenje kartice Marprom.'),
+          $t('Prodajna mesta: Avtobusna postaja (Mlinska 1), Center mobilnosti (Partizanska 21), TIC in trafike 3DVA. Kartica Marprom stane 3 €.'),
+        ].join(' '),
+        $t('Brezplačno') + ': ' + $t('Starejši in upokojenci') + '. '
+          + $t('Vozijo se brezplačno s kartico IJPP. Vlogo zanjo oddaš pri Marpromu.') + ' '
+          + $t('Brezplačno se vozijo tudi invalidi s prebivališčem v Mariboru (z odločbo MOM).'),
+      ],
+    );
+  }
 </script>
 
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onClose(); }} />
@@ -62,10 +83,13 @@
          use:focusTrap>
       <div class="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
         <div class="t-title2">{$t('Cene in vozovnice')}</div>
-        <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
-                on:click={onClose} aria-label={$t('Zapri')}>
-          <X size={18} />
-        </button>
+        <div class="flex items-center gap-2">
+          <ReadAloud text={readText} />
+          <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
+                  on:click={onClose} aria-label={$t('Zapri')}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       <div class="overflow-y-auto px-5 pb-6 space-y-5">

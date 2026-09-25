@@ -12,9 +12,11 @@
 </script>
 
 {#if $toast}
-  <!-- Nad TabBar-om; pointer-events samo na gumbu Razveljavi, da toast ne prestreza tapov po karti. -->
+  <!-- Nad TabBar-om; pointer-events samo na gumbu Razveljavi, da toast ne prestreza tapov po karti.
+       z-80: nad zasloni preprostega pogleda (z-65) in potrditvenim oknom (z-70) — sicer je
+       obvestilo (npr. "Glasno branje trenutno ni na voljo.") ostalo skrito pod njimi. -->
   {#key $toast.id}
-    <div class="fixed left-1/2 -translate-x-1/2 z-[60] px-4 max-w-[calc(100vw-1.5rem)] pointer-events-none"
+    <div class="fixed left-1/2 -translate-x-1/2 z-[80] px-4 max-w-[calc(100vw-1.5rem)] pointer-events-none"
          style="bottom: calc(var(--tabbar-space) + 2.5rem)"
          transition:fly={{ y: 16, duration: 200 }}>
       <div class="surface rounded-full border border-base shadow-elev pl-4 {$toast.undo ? 'pr-1.5' : 'pr-4'} h-11 flex items-center gap-3">

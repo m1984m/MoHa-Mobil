@@ -3,7 +3,7 @@
   import { MapPinned, CloudOff, ArrowDownToDot, ArrowUpFromDot } from 'lucide-svelte';
   import {
     nearestStops, upcomingDepartures, loadMeta, feedCoversDate,
-    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination,
+    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination, nextServiceDeparture,
     type GTFS, type Stop, type CenterDir, type CenterIndex,
   } from '../gtfs';
   import type { Weather } from '../weather';
@@ -19,6 +19,8 @@
   import { track } from '../analytics';
   import { t, tr } from '../i18n';
   import Hint from '../ui/Hint.svelte';
+  import ReadAloud from '../ui/ReadAloud.svelte';
+  import { departuresSpeech, noMoreToday } from '../readAloud';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -211,6 +213,13 @@
     // "kje ujamem avtobus v center" — raje je ni.
     }).filter(b => !filter || b.rows.length > 0);
   }
+  // Glasno branje razdelka: postajališča in odhodi, kot jih kažejo kartice.
+  function boardsSpeech(list: { stop: Stop; rows: BoardRow[] }[]): string {
+    return departuresSpeech(list.map(b => ({
+      name: b.stop.name, rows: b.rows,
+      empty: gtfs && b.rows.length === 0 ? noMoreToday(nextServiceDeparture(gtfs, b.stop.id)) : undefined,
+    })));
+  }
   $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
   $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
   $: nearLive = anyLive(nearStops, liveByStop, tick);
@@ -319,7 +328,10 @@
     {:else}
       <div class="flex items-center justify-between pt-1" class:mm-stack={$seniorMode}>
         <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Najbližja postajališča')}{centerSuffix}</h2>
-        <LiveDot live={nearLive} label={nearLive ? $t('V živo') : $t('Po voznem redu')} />
+        <div class="flex items-center gap-2">
+          <LiveDot live={nearLive} label={nearLive ? $t('V živo') : $t('Po voznem redu')} />
+          <ReadAloud label={$t('Najbližja postajališča')} text={() => boardsSpeech(boards)} />
+        </div>
       </div>
       <Hint id="home.stop" text={$t('Tapni ime postajališča za vse odhode in lego na karti.')} />
 
@@ -333,7 +345,10 @@
     {#if $homeShowFavs && favBoards.length > 0}
       <div class="flex items-center justify-between pt-2" class:mm-stack={$seniorMode}>
         <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena postajališča')}{centerSuffix}</h2>
-        <LiveDot live={favLive} label={favLive ? $t('V živo') : $t('Po voznem redu')} />
+        <div class="flex items-center gap-2">
+          <LiveDot live={favLive} label={favLive ? $t('V živo') : $t('Po voznem redu')} />
+          <ReadAloud label={$t('Priljubljena postajališča')} text={() => boardsSpeech(favBoards)} />
+        </div>
       </div>
       {#each favBoards as b (b.stop.id)}
         <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.directionHint}
