@@ -2,22 +2,7 @@ import { derived, get, writable } from 'svelte/store';
 import { lang, tr } from './i18n';
 import { toast } from './toast';
 import { forSpeech } from './pronounce';
-import { greeting } from './readAloud';
 
-// Koliko branj je uporabnik danes začel — od tega je odvisen pozdrav (greeting).
-// Števec se ponastavi naslednji dan; brez shrambe (zasebno okno) šteje kot prvo branje.
-const COUNT_KEY = 'mm.readCount.v1';
-function countReading(now = new Date()): number {
-  const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-  try {
-    const s = JSON.parse(localStorage.getItem(COUNT_KEY) || 'null');
-    const n = s && s.day === day && Number.isFinite(s.n) ? s.n + 1 : 1;
-    localStorage.setItem(COUNT_KEY, JSON.stringify({ day, n }));
-    return n;
-  } catch {
-    return 1;
-  }
-}
 
 // Glasno branje. Besedila za posamezna okna sestavi readAloud.ts, gumb je
 // ui/ReadAloud.svelte.
@@ -55,11 +40,14 @@ const TTS_LANG = 'sl';          // Worker ima samo slovenski glas
 // Mora biti daljše od Workerjeve meje (10 s), sicer odjemalec odneha, preden dobi
 // njegov odgovor. Ob normalnem teku prvi kos pride v ~3 s.
 const TTS_TIMEOUT_MS = 12000;
-// Azure (F0) sintetizira ~1 s na 100 znakov (izmerjeno 25.09.2026: 267 znakov
-// 3,1 s; 500 znakov čez 4,5 s). Prvi kos je zato kratek, da branje začne hitro;
-// naslednji se prenaša, medtem ko prejšnji igra (kos traja 20 s in več), zato
-// sme biti daljši. Worker sprejme največ 800 znakov na klic.
-const TTS_FIRST_CHUNK = 250;
+// Azure (F0) sintetizira ~1 s na 100 znakov (izmerjeno 26.09.2026: 108 znakov
+// 2,2 s; 225 znakov 3,9 s). Prvi kos je zato kratek — postajališče in prvi odhod —
+// da Petra začne v ~2 s; naslednji se prenaša, medtem ko prejšnji igra, zato sme
+// biti daljši. Worker sprejme največ 800 znakov na klic.
+const TTS_FIRST_CHUNK = 120;
+// Kratko branje (eno postajališče z nekaj odhodi) ostane en kos: razdelitev bi
+// prihranila le ~0,5 s, porabila pa dva klica od 20 na minuto (Azure F0).
+const TTS_SINGLE_MAX = 160;
 const TTS_CHUNK = 500;
 // Worker je javil 503 (ključ ni nastavljen ali ne velja) ali 404 (Worker te poti
 // še nima) — to se med sejo ne popravi, zato ga do konca seje ne kličemo več.
@@ -106,7 +94,8 @@ export const canSpeak = derived([voices, lang, ttsOff], ([v, l, off]) =>
 
 // Razdeli besedilo na kose po mejah stavkov: prvi do `first` znakov, ostali do
 // `max`. Stavek, daljši od meje, se razreže pri zadnjem presledku.
-export function chunks(text: string, max = TTS_CHUNK, first = TTS_FIRST_CHUNK): string[] {
+export function chunks(text: string, max = TTS_CHUNK, first = TTS_FIRST_CHUNK, single = TTS_SINGLE_MAX): string[] {
+  if (text.trim().length <= single) return text.trim() ? [text.trim()] : [];
   const sentences = text.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [text];
   const out: string[] = [];
   let cur = '';
@@ -271,9 +260,6 @@ export function speak(text: string, owner: unknown = null) {
   if (!text.trim()) return;
   const my = seq;
   const l = get(lang);
-  // Vsako branje se začne s pozdravom po uri dneva (Matej) — pri Petri in pri glasu telefona.
-  // S klicajem, da ga glas izgovori prijazneje; Worker ga pri Petri oblikuje še posebej.
-  text = `${greeting(new Date(), countReading())}! ${text}`;
   // Okrajšave v imenih postajališč ("Prol. brigad", "Zg. Duplek") razpiše slovar
   // izgovorjave — glej pronounce.ts. Samo slovensko: razpis je v slovenščini.
   if (l === 'sl') text = forSpeech(text);

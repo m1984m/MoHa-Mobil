@@ -5,6 +5,14 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.5 — 2026-09-26
+
+- Pozdrav (Dober dan / Zdravo / Hej) odstranjen iz branja; ostane samo v Petrini predstavitvi na kartici. Branje se
+  začne takoj z vsebino (Matej: odziv se je podaljšal; pozdrav je dodal ~1 s zvoka in ker se je spreminjal, je
+  vsako branje zgrešilo predpomnilnik).
+- Hitrejši začetek: kratko branje (≤ 160 znakov) en klic (~2,5 s); daljše ima prvi kos ≤ 120 znakov (~2,2 s,
+  izmerjeno: 108 znakov 2,2 s, 225 znakov 3,9 s), ostalo se pripravlja med branjem.
+
 ## 0.23.4 — 2026-09-26
 
 - Pozdrav glede na to, kolikokrat uporabnik danes pritisne »Preberi na glas« (Matej): 1. in 2. po uri dneva,

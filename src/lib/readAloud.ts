@@ -12,13 +12,10 @@ import type { DayWeather } from './weather';
 // 3 minute, 5 minut); ure kot 14:35. Imena postaj in smeri so v imenovalniku
 // ("smer Kamnica"), ker jih ne znamo zanesljivo sklanjati.
 
-// Pozdrav na začetku vsakega branja (Matej). `n` je, kolikokrat je uporabnik danes
-// pritisnil "Preberi na glas": prvič in drugič pozdrav po uri na telefonu (4–10 h
-// jutro, 10–18 h dan, sicer večer — "lahko noč" je slovo, ne pozdrav), od tretjega
-// "Zdravo", po sedmem "Hej" — kot pri znancu, ki ga srečaš večkrat na dan.
-export function greeting(d = new Date(), n = 1): string {
-  if (n > 7) return tr('Hej');
-  if (n >= 3) return tr('Zdravo');
+// Pozdrav po uri na telefonu, samo v Petrini predstavitvi (kartica "Spoznaj Petro").
+// Branje odhodov se začne takoj z vsebino (Matej: pozdrav je podaljšal odziv).
+// 4–10 h jutro, 10–18 h dan, sicer večer — "lahko noč" je slovo, ne pozdrav.
+export function greeting(d = new Date()): string {
   const h = d.getHours();
   if (h >= 4 && h < 10) return tr('Dobro jutro');
   if (h >= 10 && h < 18) return tr('Dober dan');
