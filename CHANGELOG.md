@@ -5,6 +5,10 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.2 — 2026-09-26
+
+- Izgovorjava: »Focheva« → Foševa (Matej).
+
 ## 0.23.1 — 2026-09-26
 
 - Vsako branje (Petra in glas telefona) se začne s pozdravom po uri na telefonu: 4–10 h »Dobro jutro«,

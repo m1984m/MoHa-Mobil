@@ -30,6 +30,8 @@ const WORDS: [string, string][] = [
   ['Sp.', 'Spodnji'],
   ['Ul.', 'Ulica'],
   ['ul.', 'ulica'],
+  // Tuja imena: zapis → izgovor (Matej)
+  ['Focheva', 'Foševa'],
   ['E.Leclerc', 'Leklerk'],
   ["E'Leclerc", 'Leklerk'],
   ['E. Leclerc', 'Leklerk'],
