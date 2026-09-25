@@ -30,9 +30,11 @@ const FORMAT = 'audio-24khz-48kbitrate-mono-mp3';
 // Najdaljše branje v aplikaciji je šest odhodov z enega postajališča, okoli
 // 550 znakov. Daljše besedilo aplikacija prebere s sistemskim glasom.
 const MAX_CHARS = 800;
-// Krajše od čakanja v aplikaciji (6 s): odjemalec mora dobiti naš odgovor, sicer
-// odneha prej in Azure posnetek vseeno zaračuna v kvoto.
-const TIMEOUT_MS = 4500;
+// Azure F0 sintetizira ~1 s na 100 znakov (izmerjeno 25.09.2026: 267 znakov 3,1 s,
+// 500 znakov čez 4,5 s — prejšnja meja 4,5 s je prekinila vsak daljši kos). Krajše
+// od čakanja v aplikaciji (12 s): odjemalec mora dobiti naš odgovor, sicer odneha
+// prej in Azure posnetek vseeno zaračuna v kvoto.
+const TIMEOUT_MS = 10000;
 // Vsako branje se začne s "Postajališče …" in ima več deset kB. Manjši 200 je
 // pokvarjen odgovor in ne sme v predpomnilnik, kjer bi ležal 24 ur.
 const MIN_BYTES = 1024;
@@ -157,7 +159,15 @@ export async function handleTts(request, env, ctx, cors) {
     return napaka({ error: 'tts', status: res.status }, status, cors);
   }
 
-  const buf = await res.arrayBuffer();
+  // Meja časa velja tudi za branje telesa: prekinitev tu vrže in brez tega bi
+  // Worker odgovoril s 500 (izjema) namesto z urejeno napako.
+  let buf;
+  try {
+    buf = await res.arrayBuffer();
+  } catch (e) {
+    stej('nedosegljiv', 504);
+    return napaka({ error: 'upstream timeout', detail: String(e?.name ?? e) }, 504, cors);
+  }
   if (buf.byteLength < MIN_BYTES || !(res.headers.get('Content-Type') ?? '').startsWith('audio/')) {
     stej('napaka', 200);
     return napaka({ error: 'tts', status: 200 }, 502, cors);

@@ -36,10 +36,15 @@ function ttsEndpoint(): string {
 }
 const TTS_URL = ttsEndpoint();
 const TTS_LANG = 'sl';          // Worker ima samo slovenski glas
-const TTS_TIMEOUT_MS = 6000;    // potem raje sistemski glas kot tišina
-// Worker sprejme največ 800 znakov na klic. Daljše besedilo (cenik, vozni red)
-// gre v kosih po stavkih; naslednji kos se prenaša, medtem ko prejšnji igra.
-const TTS_CHUNK = 700;
+// Mora biti daljše od Workerjeve meje (10 s), sicer odjemalec odneha, preden dobi
+// njegov odgovor. Ob normalnem teku prvi kos pride v ~3 s.
+const TTS_TIMEOUT_MS = 12000;
+// Azure (F0) sintetizira ~1 s na 100 znakov (izmerjeno 25.09.2026: 267 znakov
+// 3,1 s; 500 znakov čez 4,5 s). Prvi kos je zato kratek, da branje začne hitro;
+// naslednji se prenaša, medtem ko prejšnji igra (kos traja 20 s in več), zato
+// sme biti daljši. Worker sprejme največ 800 znakov na klic.
+const TTS_FIRST_CHUNK = 250;
+const TTS_CHUNK = 500;
 // Worker je javil 503 (ključ ni nastavljen ali ne velja) ali 404 (Worker te poti
 // še nima) — to se med sejo ne popravi, zato ga do konca seje ne kličemo več.
 const ttsOff = writable(false);
@@ -83,22 +88,24 @@ function ttsUsable(l: string, off: boolean): boolean {
 export const canSpeak = derived([voices, lang, ttsOff], ([v, l, off]) =>
   ttsUsable(l, off) || (supported() && pickVoice(v, l) !== null));
 
-// Razdeli besedilo na kose do `max` znakov po mejah stavkov. Stavek, daljši od
-// meje, se razreže pri zadnjem presledku.
-export function chunks(text: string, max = TTS_CHUNK): string[] {
+// Razdeli besedilo na kose po mejah stavkov: prvi do `first` znakov, ostali do
+// `max`. Stavek, daljši od meje, se razreže pri zadnjem presledku.
+export function chunks(text: string, max = TTS_CHUNK, first = TTS_FIRST_CHUNK): string[] {
   const sentences = text.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [text];
   const out: string[] = [];
   let cur = '';
+  const limit = () => (out.length === 0 ? Math.min(first, max) : max);
   const push = (s: string) => { if (s.trim()) out.push(s.trim()); };
   for (let s of sentences) {
-    while (s.length > max) {
-      const cut = s.lastIndexOf(' ', max);
-      const at = cut > 0 ? cut : max;
-      push(cur); cur = '';
+    while (s.length > limit()) {
+      const lim = limit();
+      const cut = s.lastIndexOf(' ', lim);
+      const at = cut > 0 ? cut : lim;
+      if (cur.trim()) { push(cur); cur = ''; continue; }
       push(s.slice(0, at));
       s = s.slice(at);
     }
-    if ((cur + s).length > max) { push(cur); cur = ''; }
+    if ((cur + s).length > limit()) { push(cur); cur = ''; }
     cur += s;
   }
   push(cur);

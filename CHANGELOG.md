@@ -5,6 +5,23 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.2 — 2026-09-25
+
+### Petra prebere dolgo besedilo do konca
+- Napaka: cenik je Petra prebrala le do prvega dela, nato je (brez opozorila) nadaljeval sistemski glas
+  telefona, ki je »14« prebral kot »ena štiri«. Vzrok: Azure F0 sintetizira ~1 s na 100 znakov (izmerjeno:
+  267 znakov 3,1 s, 500 znakov čez 4,5 s), Worker pa je čakal le 4,5 s; prekinitev med branjem posnetka ni
+  bila ujeta → 500.
+- Worker čaka 10 s in prekinjen prenos vrne kot 504 (ne izjema); aplikacija čaka 12 s. Besedilo v kosih:
+  prvi do 250 znakov (branje začne v ~3 s), ostali do 500 — naslednji se pripravlja med branjem prejšnjega.
+
+### Izgovorjava
+- Cene in številke: »1,50 €« → 1 evro in 50 centov, »13,00 €« → 13 evrov, »49 / 39 €« → 49 ali 39 evrov,
+  razpon »6–14 let« → od 6 do 14 let, »9–13 h« → od 9 do 13 ure; ure (14:35) ostanejo.
+- Kratice v ceniku: P+R (parkiraj in se pelji), IJPP, MOM, TIC, 3DVA.
+- Oznake »črka + število«: P15 → pe 15 (prej po števkah), S31 → es 31 (Matej).
+- ć → č in đ → dž (»Vlahovića« je glas bral kot »Vlahovija«).
+
 ## 0.22.1 — 2026-09-25
 
 ### Karta v preprostem pogledu za starejše
