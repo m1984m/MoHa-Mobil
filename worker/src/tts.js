@@ -77,9 +77,19 @@ export function ocistiBesedilo(raw) {
   return String(raw ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Pozdrav na začetku (ga doda aplikacija): Petra nima sloga "prijazno" (mstts:express-as
+// ga pri sl-SI ne pozna), zato ga oblikujemo sami — malo višje, počasneje in s kratkim
+// premorom, preden začne brati odhode (Matej: "Dober večer naj bo bolj prijazen").
+const POZDRAV = /^(Dobro jutro|Dober dan|Dober večer|Good morning|Hello|Good evening)!\s*/;
+
 export function ssml(text) {
+  const m = text.match(POZDRAV);
+  const glava = m
+    ? `<prosody pitch="+8%" rate="-15%">${xmlEscape(m[1])}!</prosody><break time="300ms"/>`
+    : '';
+  const telo = m ? text.slice(m[0].length) : text;
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="sl-SI">`
-    + `<voice name="${VOICE}"><prosody rate="${RATE}">${xmlEscape(text)}</prosody></voice></speak>`;
+    + `<voice name="${VOICE}">${glava}<prosody rate="${RATE}">${xmlEscape(telo)}</prosody></voice></speak>`;
 }
 
 async function kljuc(text) {

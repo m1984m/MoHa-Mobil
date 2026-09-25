@@ -5,6 +5,13 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.3 — 2026-09-26
+
+- Prijaznejši pozdrav: »Dober večer!« s klicajem; Worker ga pri Petri izgovori malo višje (+8 %) in počasneje s premorom
+  300 ms pred odhodi (Petra sloga »friendly« v Azure nima).
+- Izgovorjava tujih imen (Matej): City → Siti, Greenwich → Grinvič, Maribox → Mariboks, Ilicha → Iliha,
+  Teplyevo/Teplyjevo → Teplijevo, Waldorfska → Valdorfska.
+
 ## 0.23.2 — 2026-09-26
 
 - Izgovorjava: »Focheva« → Foševa (Matej).

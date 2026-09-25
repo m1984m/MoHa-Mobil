@@ -32,6 +32,13 @@ const WORDS: [string, string][] = [
   ['ul.', 'ulica'],
   // Tuja imena: zapis → izgovor (Matej)
   ['Focheva', 'Foševa'],
+  ['City', 'Siti'],
+  ['Greenwich', 'Grinvič'],
+  ['Maribox', 'Mariboks'],
+  ['Ilicha', 'Iliha'],
+  ['Teplyjevo', 'Teplijevo'],
+  ['Teplyevo', 'Teplijevo'],
+  ['Waldorfska', 'Valdorfska'],
   ['E.Leclerc', 'Leklerk'],
   ["E'Leclerc", 'Leklerk'],
   ['E. Leclerc', 'Leklerk'],
