@@ -4,6 +4,21 @@ import { toast } from './toast';
 import { forSpeech } from './pronounce';
 import { greeting } from './readAloud';
 
+// Koliko branj je uporabnik danes začel — od tega je odvisen pozdrav (greeting).
+// Števec se ponastavi naslednji dan; brez shrambe (zasebno okno) šteje kot prvo branje.
+const COUNT_KEY = 'mm.readCount.v1';
+function countReading(now = new Date()): number {
+  const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  try {
+    const s = JSON.parse(localStorage.getItem(COUNT_KEY) || 'null');
+    const n = s && s.day === day && Number.isFinite(s.n) ? s.n + 1 : 1;
+    localStorage.setItem(COUNT_KEY, JSON.stringify({ day, n }));
+    return n;
+  } catch {
+    return 1;
+  }
+}
+
 // Glasno branje. Besedila za posamezna okna sestavi readAloud.ts, gumb je
 // ui/ReadAloud.svelte.
 //
@@ -258,7 +273,7 @@ export function speak(text: string, owner: unknown = null) {
   const l = get(lang);
   // Vsako branje se začne s pozdravom po uri dneva (Matej) — pri Petri in pri glasu telefona.
   // S klicajem, da ga glas izgovori prijazneje; Worker ga pri Petri oblikuje še posebej.
-  text = `${greeting()}! ${text}`;
+  text = `${greeting(new Date(), countReading())}! ${text}`;
   // Okrajšave v imenih postajališč ("Prol. brigad", "Zg. Duplek") razpiše slovar
   // izgovorjave — glej pronounce.ts. Samo slovensko: razpis je v slovenščini.
   if (l === 'sl') text = forSpeech(text);

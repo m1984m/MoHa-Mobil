@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.23.4 — 2026-09-26
+
+- Pozdrav glede na to, kolikokrat uporabnik danes pritisne »Preberi na glas« (Matej): 1. in 2. po uri dneva,
+  3.–7. »Zdravo!«, od 8. »Hej!«; števec `mm.readCount.v1` se ponastavi naslednji dan.
+- Pozdrav ni več višji, ostane počasnejši s premorom (Matej: »ne rabi biti višji«).
+
 ## 0.23.3 — 2026-09-26
 
 - Prijaznejši pozdrav: »Dober večer!« s klicajem; Worker ga pri Petri izgovori malo višje (+8 %) in počasneje s premorom

@@ -5,6 +5,8 @@ export default {
   'Dobro jutro': 'Good morning',
   'Dober dan': 'Hello',
   'Dober večer': 'Good evening',
+  'Zdravo': 'Hi',
+  'Hej': 'Hey',
   'Danes ni več odhodov. Prvi {day} ob {time}, linija {line}.': 'No more departures today. The first one is {day} at {time}, line {line}.',
 
   // Avtobus
