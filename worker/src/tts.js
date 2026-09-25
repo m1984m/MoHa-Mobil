@@ -109,8 +109,10 @@ export async function handleTts(request, env, ctx, cors) {
 
   const zacetek = Date.now();
   const drzava = (request.cf && request.cf.country) || '';
-  const stej = (izid, status) => recordUpstream(env, {
-    storitev: 'tts', metoda: 'petra', izid, status, preko: 'direct', drzava, ms: Date.now() - zacetek,
+  // `znaki` samo, kadar je Azure odgovoril z zvokom (tedaj šteje v kvoto) — ne pri
+  // zadetku v predpomnilniku ali zavrnitvi.
+  const stej = (izid, status, znaki = 0) => recordUpstream(env, {
+    storitev: 'tts', metoda: 'petra', izid, status, preko: 'direct', drzava, ms: Date.now() - zacetek, znaki,
   });
 
   const zvok = (body, oznaka) => new Response(body, {
@@ -165,14 +167,14 @@ export async function handleTts(request, env, ctx, cors) {
   try {
     buf = await res.arrayBuffer();
   } catch (e) {
-    stej('nedosegljiv', 504);
+    stej('nedosegljiv', 504, text.length);
     return napaka({ error: 'upstream timeout', detail: String(e?.name ?? e) }, 504, cors);
   }
   if (buf.byteLength < MIN_BYTES || !(res.headers.get('Content-Type') ?? '').startsWith('audio/')) {
-    stej('napaka', 200);
+    stej('napaka', 200, text.length);
     return napaka({ error: 'tts', status: 200 }, 502, cors);
   }
-  stej('ok', 200);
+  stej('ok', 200, text.length);
   ctx.waitUntil(cache.put(cacheKey, new Response(buf.slice(0), {
     headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': `public, max-age=${CACHE_S}` },
   })));

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '../motion';
-  import { ArrowLeft, RefreshCw, KeyRound, TriangleAlert, Table2, ChartColumn } from 'lucide-svelte';
+  import { ArrowLeft, RefreshCw, KeyRound, TriangleAlert, Table2, ChartColumn, Volume2 } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
   import type { GTFS } from '../gtfs';
   import ChartTime from '../ui/viz/ChartTime.svelte';
@@ -104,6 +104,27 @@
   }));
   $: zavihki = (podatki?.zavihki ?? []).map(z => ({ oznaka: String(z.zavihek), n: Number(z.n) || 0 }));
   $: postajeZaKarto = (podatki?.postaje ?? []).map(p => ({ postaja: String(p.postaja), n: Number(p.n) || 0 }));
+  // ── glas Petra (Azure Speech F0): 500.000 znakov na mesec ─────────────────
+  const KVOTA_GLASU = 500_000;
+  $: glasZnakov = Number(podatki?.glasMesec?.[0]?.znakov) || 0;
+  $: glasBranjMesec = Number(podatki?.glasMesec?.[0]?.n) || 0;
+  $: glasDelez = glasZnakov / KVOTA_GLASU;
+  // Ocena do konca meseca: dosedanja poraba, razpotegnjena na cel mesec. Prve ure
+  // meseca je premalo podatkov, zato takrat ocene ni.
+  $: glasOcena = (() => {
+    const d = new Date();
+    const pretekloDni = d.getUTCDate() - 1 + (d.getUTCHours() * 60 + d.getUTCMinutes()) / 1440;
+    const dniVMesecu = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    return pretekloDni >= 0.25 ? Math.round(glasZnakov / pretekloDni * dniVMesecu) : null;
+  })();
+  // Barva nosi resnost (z ikono in napisom, nikoli sama): navadno, opozorilo, ko
+  // ocena preseže kvoto, rdeča, ko je kvota porabljena.
+  $: glasStanje = glasDelez >= 1 ? 'porabljena' : glasOcena != null && glasOcena > KVOTA_GLASU ? 'ocena' : 'v redu';
+  $: glasBarva = glasStanje === 'porabljena' ? 'var(--status-disrupt)'
+    : glasStanje === 'ocena' ? 'var(--status-delay)' : 'var(--viz-1)';
+  $: glasDnevi = (podatki?.glasDnevi ?? []).map(v => ({ dan: String(v.dan), n: Number(v.znakov) || 0 }));
+  const odstotek = (x: number) => (x * 100).toLocaleString('sl-SI', { maximumFractionDigits: x < 0.1 ? 1 : 0 });
+
   $: dejanja = [
     ...(podatki?.filter ?? []).map(v => ({ oznaka: 'filter · ' + v.smer, n: Number(v.n) || 0 })),
     ...(podatki?.namestitev ?? []).map(v => ({ oznaka: 'namestitev · ' + v.korak, n: Number(v.n) || 0 })),
@@ -188,6 +209,29 @@
 
           <!-- ploščice: ena vrednost na ploščico, brez grafa -->
           <div class="grid grid-cols-2 gap-3">
+            <!-- Kvota glasu: razmerje proti meji → merilnik (sled je svetlejši korak iste barve). -->
+            <div class="surface-2 rounded-2xl border border-base p-3 col-span-2">
+              <div class="t-footnote text-muted flex items-center gap-1.5"><Volume2 size={14} /> Glas Petra ta mesec (Azure F0)</div>
+              <div class="flex items-baseline gap-2 flex-wrap">
+                <div class="mm-hero">{stevilo(glasZnakov)}</div>
+                <div class="t-subhead text-muted">od {stevilo(KVOTA_GLASU)} znakov · {odstotek(glasDelez)} %</div>
+              </div>
+              <div class="mm-meter mt-2" role="meter" aria-valuemin="0" aria-valuemax={KVOTA_GLASU} aria-valuenow={glasZnakov}
+                   aria-label="Poraba kvote glasu" style="--m: {glasBarva}">
+                <div class="mm-meter-fill" style="width: {Math.min(100, glasDelez * 100)}%"></div>
+              </div>
+              <div class="t-footnote text-muted mt-1.5">
+                {stevilo(glasBranjMesec)} klicev{#if glasOcena != null}&nbsp;· ocena do konca meseca {stevilo(glasOcena)} znakov ({odstotek(glasOcena / KVOTA_GLASU)} %){/if}
+              </div>
+              {#if glasStanje !== 'v redu'}
+                <div class="t-footnote font-semibold mt-1 flex items-center gap-1.5" style="color: {glasBarva}">
+                  <TriangleAlert size={14} />
+                  {glasStanje === 'porabljena'
+                    ? 'Kvota je porabljena — do 1. v mesecu bere glas telefona.'
+                    : 'Po tej porabi bo kvota pred koncem meseca porabljena; nato bere glas telefona.'}
+                </div>
+              {/if}
+            </div>
             <div class="surface-2 rounded-2xl border border-base p-3">
               <div class="t-footnote text-muted">Zagonov</div>
               <div class="mm-hero">{stevilo(vsehZagonov)}</div>
@@ -215,6 +259,10 @@
                 da posrednik ne odgovarja.
               </p>
               <ChartTime tocke={odziv} naslov="Odzivni čas (mediana)" enota="ms" vrsta="ploskev" povzetek="povprecje" />
+            </section>
+
+            <section class="surface-2 rounded-2xl border border-base p-3">
+              <ChartTime tocke={glasDnevi} naslov="Znaki za glas po dnevih" enota="znakov" vrsta="stolpci" />
             </section>
 
             {#if StopMapComp && podatki.postaje?.length}
@@ -295,6 +343,23 @@
               </ul>
             </section>
 
+            <section>
+              <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Glas po dnevih</h2>
+              <ul class="surface rounded-2xl border border-base overflow-hidden">
+                {#each podatki.glasDnevi ?? [] as v, i}
+                  <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
+                    <div class="flex-1 min-w-0">
+                      <div class="t-subhead font-medium truncate">{datum(String(v.dan))} · {stevilo(v.n)} klicev</div>
+                      <div class="t-footnote text-muted">iz predpomnilnika {stevilo(v.izPredpomnilnika)} · napak {stevilo(v.napak)}</div>
+                    </div>
+                    <div class="t-subhead font-bold tabular-nums">{stevilo(v.znakov)}</div>
+                  </li>
+                {:else}
+                  <li class="px-4 py-3 t-footnote text-muted">Ni podatkov.</li>
+                {/each}
+              </ul>
+            </section>
+
             {#if podatki.postaje?.length}
               <section>
                 <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Postajališča (id · pogledi)</h2>
@@ -334,4 +399,10 @@
     letter-spacing: -0.5px;
     margin: 2px 0;
   }
+  /* Merilnik kvote: polnilo nosi resnost (--m), sled je svetlejši korak iste barve. */
+  .mm-meter {
+    height: 10px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in oklab, var(--m) 18%, var(--surface));
+  }
+  .mm-meter-fill { height: 100%; border-radius: 999px; background: var(--m); }
 </style>

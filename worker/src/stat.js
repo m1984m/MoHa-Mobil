@@ -49,9 +49,25 @@ async function sql(env, poizvedba) {
  * za dan toStartOfInterval (toDate ni zanesljiv) in za mediano
  * quantileExactWeighted (quantileWeighted z novo obliko klica ne dela).
  */
-export function poizvedbe(dni) {
+export function poizvedbe(dni, zdaj = new Date()) {
   const OD = `timestamp > NOW() - INTERVAL '${dni}' DAY`;
+  // Kvota glasu (Azure F0) je mesečna: štejemo od 1. v tekočem mesecu (UTC).
+  const mesecOd = `${zdaj.getUTCFullYear()}-${String(zdaj.getUTCMonth() + 1).padStart(2, '0')}-01 00:00:00`;
   return {
+    // Glasno branje: double4 = znaki, ki jih je sintetiziral Azure (0 pri zadetku
+    // v predpomnilniku). Zapisi pred 0.22.4 nimajo double4 in štejejo kot 0.
+    glasMesec: `
+      SELECT SUM(double4 * _sample_interval) AS znakov, SUM(_sample_interval) AS n
+      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 = 'tts' AND timestamp >= toDateTime('${mesecOd}')
+      FORMAT JSON`,
+    glasDnevi: `
+      SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
+             SUM(_sample_interval) AS n,
+             sumIf(_sample_interval, blob4 = 'cache') AS izPredpomnilnika,
+             sumIf(_sample_interval, blob4 != 'ok' AND blob4 != 'cache') AS napak,
+             SUM(double4 * _sample_interval) AS znakov
+      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 = 'tts' AND ${OD}
+      GROUP BY dan ORDER BY dan FORMAT JSON`,
     zagoni: `
       SELECT blob3 AS nacin, blob4 AS razlicica, blob5 AS tema, blob6 AS starejsi,
              SUM(_sample_interval) AS n

@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.22.4 — 2026-09-25
+
+- Statistika: ploščica »Glas Petra ta mesec« — porabljeni znaki proti kvoti Azure F0 (500.000/mesec), merilnik,
+  ocena do konca meseca in opozorilo (ikona + besedilo), ko bi kvota pošla; graf in tabela znakov po dnevih.
+- Worker v analitiko zapiše znake, ki jih je sintetiziral Azure (`double4`; 0 pri zadetku v predpomnilniku).
+
 ## 0.22.3 — 2026-09-25
 
 - Oznake linij: Petra je »P15« prebrala kot »pe petnajsti« (vrstilni števnik). Število v oznaki je zdaj

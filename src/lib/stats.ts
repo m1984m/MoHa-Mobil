@@ -20,6 +20,8 @@ export type Statistika = {
   zaledjeDnevi: Vrstica[];
   postaje: Vrstica[];
   zaledje: Vrstica[];
+  glasMesec?: Vrstica[];
+  glasDnevi?: Vrstica[];
 };
 
 export function beriKljuc(): string {
