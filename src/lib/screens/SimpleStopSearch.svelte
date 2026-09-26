@@ -5,7 +5,7 @@
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
-  import { stopHint } from '../simpleStops';
+  import { stopHint, searchStops, normName } from '../simpleStops';
 
   // Preprost pogled: poišči postajališče po imenu in ga dodaj med svoja.
   //
@@ -25,20 +25,7 @@
   // prestavi na prvi gumb (Nazaj), če v oknu še ni ničesar fokusiranega.
   $: if (open && inputEl) inputEl.focus();
 
-  // Brez šumnikov, ločil in velikih črk: "sentiljska poc" najde
-  // "Šentiljska - Počehovska" (vezaja nihče ne tipka).
-  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ').trim();
-
-  // Vsaka vpisana beseda mora biti v imenu; najprej imena, ki se z iskanim začnejo.
-  $: results = (() => {
-    const q = norm(query);
-    if (!gtfs || q.length < 2) return [] as Stop[];
-    const words = q.split(' ');
-    const hits = gtfs.stops.filter(s => { const n = norm(s.name); return words.every(w => n.includes(w)); });
-    hits.sort((a, b) => Number(norm(b.name).startsWith(q)) - Number(norm(a.name).startsWith(q)) || a.name.localeCompare(b.name, 'sl'));
-    return hits.slice(0, 20);
-  })();
+  $: results = searchStops(gtfs, query);
 </script>
 
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onClose(); }} />
@@ -63,7 +50,7 @@
     <div class="flex-1 overflow-y-auto scrollbox">
       <div class="px-4 max-w-screen-sm mx-auto space-y-3"
            style="padding-bottom: calc(env(safe-area-inset-bottom) + 2rem);">
-        {#if norm(query).length < 2}
+        {#if normName(query).length < 2}
           <p class="t-body text-muted pt-2">{$t('Vpiši vsaj dve črki imena. Dotik na postajališče ga shrani med tvoja.')}</p>
         {:else if results.length === 0}
           <p class="t-body text-muted pt-2">{$t('Ni zadetkov.')}</p>

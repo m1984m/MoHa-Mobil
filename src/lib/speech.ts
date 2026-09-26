@@ -255,6 +255,29 @@ async function speakNeural(text: string, my: number, sys: SpeechSynthesisVoice |
 }
 
 // `owner` je gumb, ki bere (glej speakingOwner); brez njega bere "nihče".
+// Odklene zvok med dotikom (iOS): prazen izgovor za sistemski glas in tišina za
+// element, ki bo predvajal Petro — glej SILENCE. speak() to naredi sam; kdor bo
+// bral šele malo po dotiku (npr. ob odprtju okna, ko se to izriše), pokliče
+// primeAudio() v dotiku. Prazen izgovor gre pred tišino, da govor ne prevzame
+// zvoka potem, ko element že igra.
+function unlock(sys: SpeechSynthesisVoice | null) {
+  if (sys) {
+    try {
+      const u = new SpeechSynthesisUtterance('');
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+  if (typeof Audio === 'undefined') return;
+  if (!audio) audio = new Audio();
+  audio.src = SILENCE;
+  audio.play().catch(() => {});
+}
+
+export function primeAudio() {
+  unlock(supported() ? pickVoice(get(voices), get(lang)) : null);
+}
+
 export function speak(text: string, owner: unknown = null) {
   stopSpeaking();
   if (!text.trim()) return;
@@ -267,19 +290,9 @@ export function speak(text: string, owner: unknown = null) {
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
 
   if (ttsUsable(l, get(ttsOff)) && online) {
-    // Oboje mora steči zdaj, še med dotikom (iOS). Prazen izgovor odklene sistemski
-    // glas za primer, da posnetka ne bo; gre pred tišino, da govor ne prevzame
-    // zvoka potem, ko element že igra. Tišina odklene element — glej SILENCE.
-    if (sys) {
-      try {
-        const u = new SpeechSynthesisUtterance('');
-        u.volume = 0;
-        window.speechSynthesis.speak(u);
-      } catch {}
-    }
-    if (!audio) audio = new Audio();
-    audio.src = SILENCE;
-    audio.play().catch(() => {});
+    // Mora steči zdaj, še med dotikom (iOS); sistemski glas se odklene za primer,
+    // da posnetka ne bo.
+    unlock(sys);
     speakingOwner.set(owner);
     speaking.set(true);
     void speakNeural(text, my, sys);

@@ -5,6 +5,20 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.24.0 — 2026-09-26
+
+- Preprost pogled: kraji brez omejitve (prej največ trije) in razdelek »Moji opomniki« s čarovnikom v šestih korakih:
+  postajališče → avtobus (linija in smer) → dnevi → točna ura avtobusa → koliko prej → pregled. En avtobus = en
+  opomnik (Matejeva izbira); okna z več avtobusi ostanejo v celotni aplikaciji. Ure so tiste, ob katerih avtobus vozi
+  vse izbrane dneve (sobota in nedelja imata različen vozni red); prazniki in dnevi zunaj voznega reda niso vzorec.
+- »Petra vodi«: stikalo v čarovniku (zapomni si ga); Petra ob vsakem koraku prebere vprašanje in možnosti (shranjena
+  in bližnja postajališča, linije s smermi, prvo in zadnjo uro, povzetek). Sistemski nazaj prebere prejšnji korak.
+- Karta: postajališče se vedno odpre skoraj čez cel zaslon (tudi v celotni aplikaciji); avtobus ostane do polovice.
+- Zapiranje lista postaje in avtobusa: rdeč gumb z napisom »Zapri« in reliefom namesto X (Matej).
+- Po pregledu kode: med shranjevanjem opomnika Esc in nazaj ne premakneta čarovnika; ponovno ustvarjen izklopljen
+  opomnik se vklopi; dan brez objavljenega voznega reda to pove namesto »ne vozi«; na ozkem zaslonu so dnevi v enem
+  stolpcu in stikalo opomnika v svoji vrstici.
+
 ## 0.23.5 — 2026-09-26
 
 - Pozdrav (Dober dan / Zdravo / Hej) odstranjen iz branja; ostane samo v Petrini predstavitvi na kartici. Branje se

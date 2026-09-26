@@ -29,6 +29,8 @@ export default {
   'V Preprostem pogledu te en dotik pripelje domov ali do shranjenega kraja, pot je opisana po korakih': 'In Simple view one tap takes you home or to a saved place, with the route described step by step',
   'Spoznaj Petro: naš novi glas ti na vseh oknih prebere odhode, pot, vozni red in cene': 'Meet Petra: our new voice reads departures, routes, timetables and fares on every screen',
   'V Preprostem pogledu dodaš postajališče z iskanjem po imenu; vsa shranjena so pod »Moja postajališča«': 'In Simple view you can add a stop by searching its name; all saved stops are under “My stops”',
+  'Opomnik za svoj avtobus nastaviš v Preprostem pogledu v nekaj korakih, Petra te lahko vodi skozi vse': 'Set a reminder for your bus in a few steps in Simple view, and Petra can guide you through all of them',
+  'Postajališče na karti se odpre čez cel zaslon, zapreš ga z rdečim gumbom Zapri': 'A stop on the map now opens full screen; close it with the red Close button',
   'Svetla': 'Light',
   'Temna': 'Dark',
   'Samodejno': 'Automatic',

@@ -26,6 +26,17 @@ simpleView.subscribe(v => {
   try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch {}
 });
 
+// "Petra vodi": v čarovniku opomnikov Petra ob vsakem koraku sama prebere
+// vprašanje in možnosti. Zapomni si se, ker jo rabi isti človek vsakič.
+const GUIDE_KEY = 'mm.petraGuide.v1';
+function initialGuide(): boolean {
+  try { return localStorage.getItem(GUIDE_KEY) === 'true'; } catch { return false; }
+}
+export const petraGuide = writable<boolean>(initialGuide());
+petraGuide.subscribe(v => {
+  try { localStorage.setItem(GUIDE_KEY, String(v)); } catch {}
+});
+
 // "Celotna aplikacija" iz preprostega pogleda: običajni vmesnik do naslednjega
 // zagona, z vidnim gumbom za vrnitev. Namenoma ni shranjeno — ob ponovnem zagonu
 // je uporabnik spet na varnem, znanem zaslonu.
@@ -36,7 +47,7 @@ export const simpleActive = derived([simpleView, simpleFullApp], ([v, f]) => v &
 // preprostem pogledu vedno, v običajnem pa po nastavitvi "Večje besedilo".
 export const largeUI = derived([seniorMode, simpleActive], ([s, a]) => s || a);
 
-// Dom in do trije kraji. Kraj je samo cilj — izhodišče je vedno trenutna lega,
+// Dom in poljubno krajev. Kraj je samo cilj — izhodišče je vedno trenutna lega,
 // zato ni treba shranjevati celih poti kot v savedRoutes.
 export type SimplePlace = {
   id: string;
@@ -46,7 +57,6 @@ export type SimplePlace = {
   lat: number;
   lon: number;
 };
-export const MAX_PLACES = 3;
 
 function okPlace(p: any): p is SimplePlace {
   return !!p && typeof p.id === 'string' && (p.kind === 'home' || p.kind === 'place')
@@ -92,7 +102,6 @@ function create() {
         if (p.id && l.some(x => x.id === p.id)) {
           return l.map(x => x.id === p.id ? { ...x, label: p.label, name: p.name, lat: p.lat, lon: p.lon } : x);
         }
-        if (l.filter(x => x.kind === 'place').length >= MAX_PLACES) return l;
         return [...l, { id: genId(), kind: 'place', label: p.label, name: p.name, lat: p.lat, lon: p.lon }];
       });
     },

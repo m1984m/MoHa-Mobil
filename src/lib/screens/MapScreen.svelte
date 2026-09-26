@@ -289,7 +289,7 @@
       }
       // Začetni flyTo na nižji zoom (14) — uporabnik hoče pregled okolice, ne bližnji pogled.
       mapRef?.flyTo(s.lat, s.lon, 14);
-      sheetRef?.setSnap(sheetOpenSnap);
+      sheetRef?.setSnap(STOP_SNAP);
       refreshArrivals(s.id);
       liveArrivalsTimer = setInterval(() => refreshArrivals(s.id), 15_000);
       if (!gtfs) return;
@@ -345,9 +345,12 @@
     sheetRef?.setSnap(sheetOpenSnap);
   }
 
-  // Višina lista ob izbiri postaje ali avtobusa: v preprostem pogledu skoraj cel
-  // zaslon (Matej: starejši hočejo videti čim več naenkrat, ne pol lista), sicer
-  // polovica, da karta ostane vidna. Indeks v `snaps` od BottomSheet.
+  // Višina lista ob izbiri postaje ali avtobusa (indeks v `snaps` od BottomSheet).
+  // Postaja vedno skoraj čez cel zaslon (Matej: odhodi so tisto, kar hočeš videti;
+  // traso vidiš, ko list povlečeš dol). Avtobus v običajnem pogledu do polovice, da
+  // je vožnja na karti vidna; v preprostem skoraj cel zaslon (starejši hočejo
+  // videti čim več naenkrat).
+  const STOP_SNAP = 2;
   $: sheetOpenSnap = simple ? 2 : 1;
 
   // Klik na vrstico v seznamu prihodov postaje → pokaži ta bus na karti in
@@ -1070,8 +1073,8 @@
                 <Star size={22} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'currentColor'} />
                 {isFav ? $t('Shranjeno med moje') : $t('Shrani med moje')}
               </button>
-              <button type="button" class="pressable mm-ms-act" on:click={() => onStopChange(null)}>
-                <X size={22} /> {$t('Zapri')}
+              <button type="button" class="pressable mm-ms-act mm-close" on:click={() => onStopChange(null)}>
+                {$t('Zapri')}
               </button>
             </div>
           {:else}
@@ -1093,8 +1096,8 @@
               <Star size={18} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'} />
             </button>
             <ReadAloud resetKey={selectedStop.id} text={stopText} />
-            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center ml-auto" on:click={() => onStopChange(null)} aria-label={$t('Zapri')}>
-              <X size={18} />
+            <button type="button" class="pressable mm-close mm-close-round ml-auto" on:click={() => onStopChange(null)}>
+              {$t('Zapri')}
             </button>
           </div>
           {/if}
@@ -1279,8 +1282,8 @@
                       on:click={() => followBus = !followBus}>
                 <Navigation size={22} /> {followBus ? $t('Ne sledi več') : $t('Sledi avtobusu')}
               </button>
-              <button type="button" class="pressable mm-ms-act col-span-2" on:click={closeVehicle}>
-                <X size={22} /> {$t('Zapri')}
+              <button type="button" class="pressable mm-ms-act mm-close col-span-2" on:click={closeVehicle}>
+                {$t('Zapri')}
               </button>
             </div>
           </div>
@@ -1304,8 +1307,8 @@
                     aria-label={followBus ? $t('Prenehaj slediti') : $t('Sledim avtobus')}>
               <Navigation size={18} />
             </button>
-            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={closeVehicle}>
-              <X size={18} />
+            <button type="button" class="pressable mm-close mm-close-round" on:click={closeVehicle}>
+              {$t('Zapri')}
             </button>
           </div>
         </div>
@@ -1492,6 +1495,26 @@
     font-weight: 600; font-size: calc(16px * var(--ui-scale)); line-height: 1.2; touch-action: manipulation;
   }
   .mm-ms-act-accent { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+  /* Zapri v listih postaje in avtobusa: napis namesto X, rdeč z reliefom (Matej).
+     Rdeča je stalna, ne --accent — ta je v visokem kontrastu črn. Krog, dokler gre
+     napis vanj (večje besedilo ga raztegne v oval). */
+  .mm-close {
+    color: #ffffff; font-weight: 700; letter-spacing: 0.01em;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    background: linear-gradient(180deg, #F0535A 0%, #D32027 52%, #A8181E 100%);
+    border: 1px solid #8E1318;
+    box-shadow: inset 0 2px 1px rgba(255, 255, 255, 0.45), inset 0 -3px 3px rgba(0, 0, 0, 0.3),
+      0 3px 6px rgba(0, 0, 0, 0.35);
+  }
+  .mm-close:active {
+    background: linear-gradient(180deg, #D32027 0%, #B91C22 60%, #A8181E 100%);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  .mm-close-round {
+    display: inline-grid; place-items: center; flex-shrink: 0;
+    min-width: 52px; height: 52px; padding: 0 6px; border-radius: 999px;
+    font-size: calc(14px * var(--ui-scale));
+  }
   /* Ikona se ne krči, ko se napis prelomi v dve vrstici (sicer pade na ~14 px). */
   .mm-ms-act :global(svg) { flex-shrink: 0; }
   /* Okrogli gumbi karte (44 px) so v preprostem pogledu 64 px. */

@@ -2,12 +2,17 @@
   import { onMount, onDestroy, tick as flush } from 'svelte';
   import {
     Home, MapPin, Search, Map as MapIcon, LayoutGrid, Pencil, Trash2, Plus, ChevronRight, Star,
+    Bell, BellOff, TriangleAlert,
   } from 'lucide-svelte';
   import { nearestStops, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
   import { nearbyRadiusM } from '../settings';
-  import { simpleHome, simpleOthers, simplePlaces, MAX_PLACES, type SimplePlace } from '../simple';
+  import { simpleHome, simpleOthers, simplePlaces, petraGuide, type SimplePlace } from '../simple';
+  import { primeAudio } from '../speech';
+  import { alarms, toggleAlarm, removeAlarm, computeOccurrences, daysLabel, alarmsCoverageWarning, type Alarm } from '../alarms';
+  import { pushState, enablePush } from '../push';
+  import SimpleAlarmWizard from './SimpleAlarmWizard.svelte';
   import {
     liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
   } from '../departures';
@@ -57,6 +62,31 @@
   let denied = false;
   let editing = false;
   let removing: SimplePlace | null = null;
+  let alarmWizardOpen = false;
+  let editingAlarms = false;
+  let removingAlarm: Alarm | null = null;
+
+  // Opomnik iz čarovnika je en avtobus (od = do); iz celotne aplikacije je lahko okno.
+  function alarmTitle(a: Alarm): string {
+    return a.fromMin === a.toMin
+      ? tr('{line} ob {ura}', { line: a.routeShort, ura: fmtClock(a.fromMin * 60) })
+      : `${a.routeShort} ${fmtClock(a.fromMin * 60)}–${fmtClock(a.toMin * 60)}`;
+  }
+  // Vklop mora biti v dotiku (iOS dovoli dovoljenje za obvestila samo takrat).
+  function enableNotifications() {
+    if (gtfs) void enablePush(computeOccurrences(gtfs, $alarms));
+  }
+  $: if (editingAlarms && $alarms.length === 0) editingAlarms = false;
+  // Vozni red se izteka → opomniki bodo utihnili (septembra 2026 se je to zgodilo tiho).
+  $: alarmWarn = gtfs && $alarms.length > 0 ? alarmsCoverageWarning(gtfs, $alarms) : null;
+
+  // Potrditev odstranitve opomnika: sistemski nazaj jo zapre (ne aplikacije).
+  let backRemovingAlarm: BackRelease | null = null;
+  $: if (removingAlarm && !backRemovingAlarm) {
+    backRemovingAlarm = pushBack(() => removingAlarm = null);
+  } else if (!removingAlarm && backRemovingAlarm) {
+    const r = backRemovingAlarm; backRemovingAlarm = null; r();
+  }
   let stopSearchOpen = false;
 
   // Potrditveno okno za brisanje: sistemski nazaj ga zapre (ne zapre aplikacije).
@@ -96,7 +126,7 @@
   }
 
   onMount(() => { timer = setInterval(() => { tick++; refreshLive(); }, 30_000); });
-  onDestroy(() => { if (timer) clearInterval(timer); backRemoving?.(); backSearch?.(); });
+  onDestroy(() => { if (timer) clearInterval(timer); backRemoving?.(); backSearch?.(); backRemovingAlarm?.(); });
 
   // Katera postajališča: če je med shranjenimi kakšno v bližini, ta (doma vidiš
   // svoje postajališče); sicer dve najbližji (običajno obe strani ceste); brez
@@ -157,7 +187,6 @@
     denied = !hasGeo;
   }
 
-  $: canAdd = $simpleOthers.length < MAX_PLACES;
   // Urejanje nima smisla, ko ni česa urejati.
   $: if (editing && !$simpleHome && $simpleOthers.length === 0) editing = false;
 </script>
@@ -276,7 +305,8 @@
         <div class="flex items-center justify-between gap-3">
           <h2 id="mm-s-places" class="t-title3">{$t('Moji kraji')}</h2>
           {#if $simpleHome || $simpleOthers.length}
-            <button type="button" class="pressable mm-s-small" on:click={() => editing = !editing}>
+            <button type="button" class="pressable mm-s-small" aria-label={editing ? $t('Končano') : $t('Uredi kraje')}
+                    on:click={() => editing = !editing}>
               {#if editing}{$t('Končano')}{:else}<Pencil size={20} /> {$t('Uredi')}{/if}
             </button>
           {/if}
@@ -311,15 +341,83 @@
           {/if}
         {/each}
 
-        {#if canAdd}
-          <button type="button" class="pressable mm-s-row mm-s-dashed w-full" on:click={() => onEditPlace('place', null)}>
-            <Plus size={30} strokeWidth={2} color="var(--accent)" />
-            <span class="flex-1 text-left t-headline">{$t('Dodaj kraj')}</span>
-          </button>
-        {/if}
+        <!-- Krajev je lahko poljubno mnogo (prej največ trije). -->
+        <button type="button" class="pressable mm-s-row mm-s-dashed w-full" on:click={() => onEditPlace('place', null)}>
+          <Plus size={30} strokeWidth={2} color="var(--accent)" />
+          <span class="flex-1 text-left t-headline">{$t('Dodaj kraj')}</span>
+        </button>
       </section>
 
-      <!-- 5–7. Drug cilj, Karta, Celotna aplikacija -->
+      <!-- 5. Moji opomniki (čarovnik: SimpleAlarmWizard) -->
+      <section aria-labelledby="mm-s-alarms" class="space-y-3">
+        <div class="flex items-center justify-between gap-3">
+          <h2 id="mm-s-alarms" class="t-title3">{$t('Moji opomniki')}</h2>
+          {#if $alarms.length}
+            <button type="button" class="pressable mm-s-small" aria-label={editingAlarms ? $t('Končano') : $t('Uredi opomnike')}
+                    on:click={() => editingAlarms = !editingAlarms}>
+              {#if editingAlarms}{$t('Končano')}{:else}<Pencil size={20} /> {$t('Uredi')}{/if}
+            </button>
+          {/if}
+        </div>
+
+        {#if alarmWarn}
+          <p class="t-body flex items-start gap-2" style="color: var(--status-delay)">
+            <TriangleAlert size={24} class="shrink-0" /> {alarmWarn.text}
+          </p>
+        {/if}
+        {#if $pushState.subscribed && $pushState.error}
+          <p class="t-callout" style="color: var(--status-delay)">{$pushState.error}</p>
+        {/if}
+        {#if $alarms.some(a => a.enabled) && !$pushState.subscribed}
+          <div class="surface-2 rounded-2xl p-4 space-y-3">
+            <p class="t-body flex items-start gap-2" style="color: var(--status-delay)">
+              <TriangleAlert size={24} class="shrink-0" /> {$t('Obvestila so izklopljena, zato opomniki ne zazvonijo.')}
+            </p>
+            <button type="button" class="pressable mm-s-row mm-s-accent w-full" disabled={$pushState.busy} on:click={enableNotifications}>
+              <Bell size={30} strokeWidth={2} />
+              <span class="flex-1 text-left t-headline">{$t('Vklopi obvestila')}</span>
+            </button>
+            {#if $pushState.error}<p class="t-callout">{$pushState.error}</p>{/if}
+          </div>
+        {/if}
+
+        {#each $alarms as a (a.id)}
+          <!-- Gumb v svoji vrstici: ob povečanem besedilu ob njem za ime ne ostane prostora. -->
+          <div class="mm-s-edit flex-wrap">
+            <svelte:component this={a.enabled ? Bell : BellOff} size={28} strokeWidth={2}
+                              color={a.enabled ? 'var(--accent)' : 'var(--text-muted)'} />
+            <div class="flex-1 min-w-0">
+              <div class="t-headline">{alarmTitle(a)}</div>
+              <div class="t-footnote text-muted">{a.stopName} · {daysLabel(a.days)} · {$t('{n} min prej', { n: a.leadMin })}</div>
+            </div>
+            {#if editingAlarms}
+              <button type="button" class="pressable mm-s-small mm-s-danger w-full" on:click={() => removingAlarm = a}>
+                <Trash2 size={20} /> {$t('Odstrani')}
+              </button>
+            {:else}
+              <!-- Ime vsebuje viden napis (glasovno upravljanje) in postajališče (dva opomnika z isto uro). -->
+              <button type="button" class="pressable mm-s-small w-full" class:mm-s-onoff={a.enabled}
+                      role="switch" aria-checked={a.enabled}
+                      aria-label={`${a.enabled ? $t('Vklopljen') : $t('Izklopljen')}: ${alarmTitle(a)}, ${a.stopName}`}
+                      on:click={() => toggleAlarm(a.id)}>
+                {a.enabled ? $t('Vklopljen') : $t('Izklopljen')}
+              </button>
+            {/if}
+          </div>
+        {/each}
+
+        <!-- Petra v čarovniku spregovori ob izrisu, ne v tem dotiku — zvok se odklene tu (iOS). -->
+        <button type="button" class="pressable mm-s-row mm-s-dashed w-full"
+                on:click={() => { if ($petraGuide) primeAudio(); alarmWizardOpen = true; }}>
+          <Plus size={30} strokeWidth={2} color="var(--accent)" />
+          <span class="flex-1 min-w-0 text-left">
+            <span class="block t-headline">{$t('Dodaj opomnik')}</span>
+            <span class="block t-footnote text-muted">{$t('Telefon te opomni, ko je čas, da greš na avtobus')}</span>
+          </span>
+        </button>
+      </section>
+
+      <!-- 6–8. Drug cilj, Karta, Celotna aplikacija -->
       <section class="space-y-3" aria-label={$t('Drugo')}>
         <button type="button" class="pressable mm-s-row mm-s-plain w-full" on:click={onOpenPlanner}>
           <Search size={30} strokeWidth={2} color="var(--accent)" />
@@ -345,6 +443,16 @@
 </section>
 
 <SimpleStopSearch {gtfs} open={stopSearchOpen} onClose={() => stopSearchOpen = false} onPick={pickSearched} />
+
+{#if alarmWizardOpen}
+  <SimpleAlarmWizard {gtfs} {origin} {hasGeo} onClose={() => alarmWizardOpen = false} />
+{/if}
+
+<ConfirmDialog open={!!removingAlarm}
+  title={removingAlarm ? tr('Odstranim opomnik »{ime}«?', { ime: alarmTitle(removingAlarm) }) : ''}
+  confirmLabel={tr('Odstrani')} destructive
+  onConfirm={() => { if (removingAlarm) removeAlarm(removingAlarm.id); removingAlarm = null; }}
+  onCancel={() => removingAlarm = null} />
 
 <ConfirmDialog open={!!removing}
   title={removing ? tr('Odstranim kraj »{kraj}«?', { kraj: removing.label }) : ''}
@@ -379,4 +487,6 @@
     font-weight: 600; font-size: calc(15px * var(--ui-scale)); touch-action: manipulation;
   }
   .mm-s-danger { color: var(--status-disrupt); }
+  /* Vklopljen opomnik: gumb v poudarjeni barvi (stanje nosi tudi napis). */
+  .mm-s-onoff { background: var(--accent); border-color: var(--accent); color: #ffffff; }
 </style>
