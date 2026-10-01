@@ -5,6 +5,17 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.25.0 — 2026-10-01
+
+- Preprost pogled: v urejanju opomnikov gumb »Popravi« odpre čarovnik predizpolnjen (na pregledu); shranjevanje
+  posodobi obstoječi opomnik (updateAlarm), uskladitev s strežnikom gre po običajni poti (scheduleSync v App).
+- Opomniki: »Pošlji preizkusno obvestilo« na koncu čarovnika in v Opomnikih (lokalno prek showNotification, ob
+  zavrnjenem dovoljenju jasno sporočilo); navodilo »Kako vklopim zvok obvestil« (iPhone, Android, brez SMS);
+  potisna obvestila v sw z izrecnim `silent: false`.
+- mBajk: na zaslonu postajališča v Preprostem pogledu vrstica z najbližjo postajo mBajk (upošteva nastavitev MBajk,
+  poizvedovanje teče samo, dokler je zaslon odprt); na karti kartica postaje mBajk pokaže najbližje postajališče
+  z gumbom, ki odpre njegove odhode.
+
 ## 0.24.0 — 2026-09-26
 
 - Preprost pogled: kraji brez omejitve (prej največ trije) in razdelek »Moji opomniki« s čarovnikom v šestih korakih:

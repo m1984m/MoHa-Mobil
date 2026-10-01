@@ -243,4 +243,9 @@ export default {
   'Na Karti so postaje MBajk s prostimi kolesi, ob postajališču pa najbližja postaja': 'The Map shows MBajk bike stations with available bikes, and each stop shows the nearest one',
   'Nov razdelek Cene in vozovnice: cenik Marproma in kje kupiti vozovnico': 'New Fares & tickets section: Marprom prices and where to buy tickets',
   'Kratek vodič ob prvem zagonu in namigi — znova ga odpreš v Nastavitvah': 'A short guide on first launch plus tips — reopen it from Settings',
+  // Novosti 0.25.0
+  'Opomnik v Preprostem pogledu zdaj popraviš z gumbom Popravi, ni ga treba brisati': 'You can now edit a reminder in Simple view with the Edit button, no need to delete it',
+  'Pošlji preizkusno obvestilo in kratko navodilo, kako vklopiš zvok obvestil': 'Send a test notification, plus short instructions for turning on notification sound',
+  'Pri postajališču vidiš najbližjo postajo mBajk s prostimi kolesi': 'At a stop you can see the nearest MBajk station with available bikes',
+  'Na karti postaja mBajk pokaže najbližje avtobusno postajališče in njegove odhode': 'On the map an MBajk station shows the nearest bus stop and its departures',
 };

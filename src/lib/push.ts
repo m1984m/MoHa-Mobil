@@ -381,11 +381,17 @@ async function doEnsureSubscribed(): Promise<boolean> {
 /** Takojšnje lokalno obvestilo — preizkus deluje tudi, če strežnik ni dosegljiv. */
 export async function showLocalTest(): Promise<boolean> {
   try {
-    if (!('Notification' in window)) return false;
+    if (!('Notification' in window)) {
+      patch({ error: tr('Ta brskalnik ne podpira obvestil. Na iPhonu najprej dodaj aplikacijo na začetni zaslon.') });
+      return false;
+    }
     if (currentPermission() !== 'granted') {
       const perm = await Notification.requestPermission();
       patch({ permission: perm });
-      if (perm !== 'granted') return false;
+      if (perm !== 'granted') {
+        patch({ error: tr('Obvestila niso dovoljena. Dovoli jih v nastavitvah telefona ali brskalnika in poskusi znova.') });
+        return false;
+      }
     }
     const reg = await getRegistration();
     const opts: NotificationOptions = {
@@ -394,6 +400,7 @@ export async function showLocalTest(): Promise<boolean> {
       icon: iconUrl('icon-192.svg'),
       badge: iconUrl('icon-maskable.svg'),
       data: { url: '/' },
+      silent: false,
     };
     const title = tr('Preizkus obvestila');
     if (reg) {

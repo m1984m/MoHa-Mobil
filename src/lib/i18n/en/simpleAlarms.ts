@@ -91,4 +91,15 @@ export default {
   'Dopoldne': 'Late morning',
   'Popoldne': 'Afternoon',
   'Zvečer': 'Evening',
+
+  // 0.25.0: popravljanje, preizkus in zvok obvestil
+  'Popravi': 'Edit',
+  'Popravi opomnik': 'Edit reminder',
+  'Pošlji preizkusno obvestilo': 'Send a test notification',
+  'Kako vklopim zvok obvestil': 'How do I turn on notification sound',
+  'aplikacija mora biti dodana na začetni zaslon in odprta s te ikone. Nato Nastavitve, Obvestila, MoHa Mobil in vklopi Zvoki. Fokus ali tihi način obvestila utišata.': 'the app must be added to the Home Screen and opened from that icon. Then go to Settings, Notifications, MoHa Mobil and turn on Sounds. Focus or silent mode mutes notifications.',
+  'v nastavitvah telefona odpri Obvestila za aplikacijo MoHa Mobil ali za brskalnik in dovoli zvok.': 'in the phone settings open Notifications for the MoHa Mobil app or for your browser and allow sound.',
+  'Opomnik pride kot obvestilo na telefon. Aplikacija ne pošilja SMS sporočil.': 'A reminder arrives as a notification on your phone. The app does not send text messages (SMS).',
+  'Ta brskalnik ne podpira obvestil. Na iPhonu najprej dodaj aplikacijo na začetni zaslon.': 'This browser does not support notifications. On iPhone, add the app to the Home Screen first.',
+  'Obvestila niso dovoljena. Dovoli jih v nastavitvah telefona ali brskalnika in poskusi znova.': 'Notifications are not allowed. Allow them in your phone or browser settings and try again.',
 };

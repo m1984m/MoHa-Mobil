@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from '../motion';
   import { onDestroy } from 'svelte';
-  import { ArrowLeft, Star, Map as MapIcon, MoonStar } from 'lucide-svelte';
+  import { ArrowLeft, Star, Map as MapIcon, MoonStar, Bike } from 'lucide-svelte';
   import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
+  import { showBikes } from '../settings';
+  import { bikeStations, startBikes, nearestBikeStation } from '../bikes';
   import {
     liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
   } from '../departures';
@@ -69,6 +71,15 @@
   $: rows = makeRows(stop, gtfs, isLive, tick);
   $: nextDay = (stop && gtfs && rows.length === 0) ? nextServiceDeparture(gtfs, stop.id) : null;
   $: starred = stop ? $favStops.has(stop.id) : false;
+
+  // MBajk ob postajališču: podatki tečejo samo, dokler je zaslon odprt in viden
+  // ter sloj MBajk vklopljen (ista nastavitev kot na karti).
+  let stopBikes: (() => void) | null = null;
+  $: bikesWanted = !!stop && !hidden && $showBikes;
+  $: if (bikesWanted && !stopBikes) stopBikes = startBikes();
+  $: if (!bikesWanted && stopBikes) { stopBikes(); stopBikes = null; }
+  onDestroy(() => stopBikes?.());
+  $: nearBike = stop && $showBikes ? nearestBikeStation($bikeStations, stop.lat, stop.lon) : null;
 </script>
 
 {#if stop}
@@ -133,6 +144,13 @@
               </li>
             {/each}
           </ul>
+        {/if}
+
+        {#if nearBike}
+          <div class="mm-ss-row t-body">
+            <Bike size={28} strokeWidth={2} color="#7C3AED" class="shrink-0" />
+            <span>{$t('Najbližji mBajk: {ime}, {m} m, prosta kolesa: {n}', { ime: nearBike.name, m: Math.round(nearBike.m / 10) * 10, n: nearBike.bikes })}</span>
+          </div>
         {/if}
 
         <button type="button" class="pressable mm-ss-btn w-full" on:click={() => stop && onShowMap(stop)}>

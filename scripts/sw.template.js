@@ -190,6 +190,8 @@ self.addEventListener('push', (event) => {
     vibrate,
     data: { url, fireAt: isFinite(fireAt) ? fireAt : null, stale },
     requireInteraction: false,
+    // Privzeto že false; izrecno, da noben brskalnik opomnika ne prikaže tiho.
+    silent: false,
   }));
 });
 

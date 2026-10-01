@@ -10,4 +10,7 @@ export default {
   'Registracija': 'Sign up',
   'Podatki: MBajk / JCDecaux': 'Data: MBajk / JCDecaux',
   'MBajk v bližini · {m} m': 'MBajk nearby · {m} m',
+
+  'Najbližji mBajk: {ime}, {m} m, prosta kolesa: {n}': 'Nearest MBajk: {ime}, {m} m, bikes available: {n}',
+  'Najbližje postajališče · {m} m': 'Nearest bus stop · {m} m',
 };

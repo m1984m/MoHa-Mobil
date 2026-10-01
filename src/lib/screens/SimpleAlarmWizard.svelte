@@ -2,11 +2,11 @@
   import { page } from '../motion';
   import { onDestroy, onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
-  import { ArrowLeft, MapPin, Star, BellRing, TriangleAlert, Check, Volume2 } from 'lucide-svelte';
+  import { ArrowLeft, MapPin, Star, BellRing, TriangleAlert, Check, Volume2, Send } from 'lucide-svelte';
   import { nearestStops, type GTFS, type Stop } from '../gtfs';
   import { favStops } from '../favorites';
-  import { alarms, addAlarm, updateAlarm, computeOccurrences } from '../alarms';
-  import { pushState, enablePush } from '../push';
+  import { alarms, addAlarm, updateAlarm, computeOccurrences, type Alarm } from '../alarms';
+  import { pushState, enablePush, showLocalTest } from '../push';
   import { pushBack, type BackRelease } from '../backstack';
   import { focusTrap } from '../focusTrap';
   import { fmtClock } from '../time';
@@ -16,6 +16,7 @@
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { speak, stopSpeaking, speakingOwner, canSpeak } from '../speech';
   import { petraGuide } from '../simple';
+  import NotifySoundHelp from '../ui/NotifySoundHelp.svelte';
 
   // Preprost pogled: opomnik za odhod v šestih korakih, po eno vprašanje na zaslon.
   // Postajališče → avtobus (linija in smer) → dnevi → ura avtobusa → koliko prej →
@@ -26,6 +27,9 @@
   export let origin: { lat: number; lon: number };
   export let hasGeo: boolean;
   export let onClose: () => void;
+  // Popravljanje obstoječega opomnika: čarovnik je predizpolnjen in začne na pregledu,
+  // shranjevanje pa ta opomnik posodobi (updateAlarm) namesto da doda novega.
+  export let edit: Alarm | null = null;
 
   type Step = 'stop' | 'line' | 'days' | 'time' | 'lead' | 'summary' | 'done';
   const ORDER: Step[] = ['stop', 'line', 'days', 'time', 'lead', 'summary'];
@@ -35,6 +39,15 @@
   let days: boolean[] = [false, false, false, false, false, false, false];
   let depSec: number | null = null;
   let lead = 10;
+  if (edit && gtfs) {
+    const e = edit;
+    stop = gtfs.stops.find(s => s.id === e.stopId) ?? null;
+    line = stop ? linesAtStop(gtfs, stop.id).find(l => l.routeId === e.routeId && l.dir === e.dir) ?? null : null;
+    days = [...e.days];
+    depSec = e.fromMin * 60;
+    lead = e.leadMin;
+    if (stop && line) step = 'summary';
+  }
   let query = '';
   let saving = false;
   let dlg: HTMLElement;
@@ -170,7 +183,14 @@
     const dup = get(alarms).find(a => a.stopId === stop!.id && a.routeId === line!.routeId && a.dir === line!.dir
       && a.fromMin === fromMin && a.toMin === toMin && a.leadMin === lead && a.days.join() === days.join());
     // Isti opomnik že obstaja: izklopljenega vklopi, sicer bi "shranjeno" ne zazvonilo.
-    if (dup) {
+    if (edit && get(alarms).some(a => a.id === edit!.id)) {
+      // Uskladitev s strežnikom sproži App (scheduleSync ob vsaki spremembi $alarms).
+      updateAlarm(edit.id, {
+        stopId: stop.id, routeId: line.routeId, dir: line.dir,
+        stopName: stop.name, routeShort: line.routeShort, headsign: line.dest,
+        days: [...days], fromMin, toMin, leadMin: lead, enabled: true,
+      });
+    } else if (dup) {
       if (!dup.enabled) updateAlarm(dup.id, { enabled: true });
     } else {
       addAlarm({
@@ -188,6 +208,16 @@
   }
 
   $: stepNo = ORDER.indexOf(step) + 1;
+
+  // Preizkus: lokalno obvestilo prek storitvenega delavca; dovoljenje se zahteva v tem dotiku.
+  let testing = false;
+  let testMsg = '';
+  async function sendTest() {
+    testing = true; testMsg = '';
+    const ok = await showLocalTest();
+    testing = false;
+    if (!ok) testMsg = get(pushState).error ?? tr('Preizkusnega obvestila ni bilo mogoče prikazati.');
+  }
 
   // ── Petra vodi ── ob vsakem koraku prebere vprašanje in možnosti, ki so na
   // zaslonu (starejši ne vidijo dobro ali ne vedo, kaj pritisniti). Besedilo se
@@ -255,7 +285,7 @@
 
 <div in:page out:page={{ out: true }} class="fixed inset-0 z-[60] flex flex-col surface"
      style="padding-top: env(safe-area-inset-top);"
-     role="dialog" aria-modal="true" aria-label={$t('Nov opomnik')} tabindex="-1" use:focusTrap bind:this={dlg}>
+     role="dialog" aria-modal="true" aria-label={edit ? $t('Popravi opomnik') : $t('Nov opomnik')} tabindex="-1" use:focusTrap bind:this={dlg}>
   <!-- Na ozkem zaslonu z večjim besedilom gre "Petra vodi" v svojo vrstico. -->
   <div class="px-4 pt-3 pb-2 max-w-screen-sm mx-auto w-full flex flex-wrap items-center justify-between gap-3">
     <button type="button" class="pressable mm-aw-back" disabled={saving} on:click={goBack}>
@@ -411,6 +441,12 @@
             <span>{$pushState.error ?? $t('Obvestila še niso vklopljena, zato opomnik ne bo zazvonil.')}</span>
           </div>
         {/if}
+        <button type="button" class="pressable mm-aw-row w-full" disabled={testing} on:click={sendTest}>
+          <Send size={26} color="var(--accent)" />
+          <span class="flex-1 text-left t-headline">{$t('Pošlji preizkusno obvestilo')}</span>
+        </button>
+        {#if testMsg}<p class="t-body" style="color: var(--status-delay)">{testMsg}</p>{/if}
+        <NotifySoundHelp big />
         <button type="button" class="pressable mm-aw-next w-full" on:click={onClose}>{$t('Končano')}</button>
       {/if}
     </div>

@@ -12,7 +12,7 @@
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { departuresSpeech, noMoreToday, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
   import { liveDepartureRows, routeIdIndex } from '../departures';
-  import { upcomingDepartures, nextServiceDeparture, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
@@ -97,6 +97,8 @@
   $: if (selectedBike) selectedBike = $bikeStations.find(b => b.id === selectedBike!.id) ?? selectedBike;
   $: nearBike = selectedStop && $showBikes ? nearestBikeStation($bikeStations, selectedStop.lat, selectedStop.lon) : null;
   $: if (selectedStop || selectedVehicle || activePlan) selectedBike = null;
+  // Obratno od »MBajk v bližini«: najbližje avtobusno postajališče izbrane postaje MBajk.
+  $: bikeNearStop = selectedBike && gtfs ? nearestStops(gtfs.stops, selectedBike, 1)[0] ?? null : null;
   function selectBike(b: BikeStation) {
     onStopChange(null);
     if (selectedVehicle) closeVehicle();
@@ -932,6 +934,17 @@
           {$t('Prva ura vsake izposoje je brezplačna. Potrebna je registracija (letno 3 €, tedensko 1 €).')}
           {#if $bikesError}<span style="color: var(--status-delay)"> {$t('Podatki so lahko zastareli.')}</span>{/if}
         </div>
+        {#if bikeNearStop}
+          <button class="pressable w-full mt-3 min-h-[44px] rounded-xl surface-2 border border-base px-3 py-2 flex items-center gap-3 text-left"
+                  on:click={() => { const s = bikeNearStop; if (s) onStopChange(s); }}>
+            <span class="w-9 h-9 rounded-lg grid place-items-center shrink-0" style="background: var(--accent); color: #ffffff"><Bus size={18} /></span>
+            <span class="flex-1 min-w-0">
+              <span class="block t-footnote text-muted">{$t('Najbližje postajališče · {m} m', { m: Math.round(bikeNearStop.d / 10) * 10 })}</span>
+              <span class="block t-callout font-medium truncate">{bikeNearStop.name}</span>
+            </span>
+            <span class="t-callout font-semibold shrink-0" style="color: var(--accent)">{$t('Odhodi')}</span>
+          </button>
+        {/if}
         <div class="flex gap-2 mt-3">
           <button class="pressable flex-1 min-h-[44px] rounded-xl t-callout font-semibold flex items-center justify-center gap-2"
                   style="background: var(--accent); color: #ffffff"

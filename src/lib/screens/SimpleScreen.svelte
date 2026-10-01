@@ -63,6 +63,7 @@
   let editing = false;
   let removing: SimplePlace | null = null;
   let alarmWizardOpen = false;
+  let alarmEdit: Alarm | null = null;
   let editingAlarms = false;
   let removingAlarm: Alarm | null = null;
 
@@ -391,9 +392,15 @@
               <div class="t-footnote text-muted">{a.stopName} · {daysLabel(a.days)} · {$t('{n} min prej', { n: a.leadMin })}</div>
             </div>
             {#if editingAlarms}
-              <button type="button" class="pressable mm-s-small mm-s-danger w-full" on:click={() => removingAlarm = a}>
-                <Trash2 size={20} /> {$t('Odstrani')}
-              </button>
+              <div class="flex gap-2 w-full">
+                <button type="button" class="pressable mm-s-small flex-1"
+                        on:click={() => { if ($petraGuide) primeAudio(); alarmEdit = a; alarmWizardOpen = true; }}>
+                  <Pencil size={20} /> {$t('Popravi')}
+                </button>
+                <button type="button" class="pressable mm-s-small mm-s-danger flex-1" on:click={() => removingAlarm = a}>
+                  <Trash2 size={20} /> {$t('Odstrani')}
+                </button>
+              </div>
             {:else}
               <!-- Ime vsebuje viden napis (glasovno upravljanje) in postajališče (dva opomnika z isto uro). -->
               <button type="button" class="pressable mm-s-small w-full" class:mm-s-onoff={a.enabled}
@@ -408,7 +415,7 @@
 
         <!-- Petra v čarovniku spregovori ob izrisu, ne v tem dotiku — zvok se odklene tu (iOS). -->
         <button type="button" class="pressable mm-s-row mm-s-dashed w-full"
-                on:click={() => { if ($petraGuide) primeAudio(); alarmWizardOpen = true; }}>
+                on:click={() => { if ($petraGuide) primeAudio(); alarmEdit = null; alarmWizardOpen = true; }}>
           <Plus size={30} strokeWidth={2} color="var(--accent)" />
           <span class="flex-1 min-w-0 text-left">
             <span class="block t-headline">{$t('Dodaj opomnik')}</span>
@@ -445,7 +452,7 @@
 <SimpleStopSearch {gtfs} open={stopSearchOpen} onClose={() => stopSearchOpen = false} onPick={pickSearched} />
 
 {#if alarmWizardOpen}
-  <SimpleAlarmWizard {gtfs} {origin} {hasGeo} onClose={() => alarmWizardOpen = false} />
+  <SimpleAlarmWizard {gtfs} {origin} {hasGeo} edit={alarmEdit} onClose={() => { alarmWizardOpen = false; alarmEdit = null; }} />
 {/if}
 
 <ConfirmDialog open={!!removingAlarm}

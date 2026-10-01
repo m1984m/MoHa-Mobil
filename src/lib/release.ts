@@ -10,11 +10,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '26. 9. 2026';
+export const RELEASE_DATE = '1. 10. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Nov Preprost pogled: velik tisk in samo najpomembnejše na enem zaslonu — vklopiš ga na vrhu Nastavitev',
-  'Spoznaj Petro: naš novi glas ti na vseh oknih prebere odhode, pot, vozni red in cene',
-  'Opomnik za svoj avtobus nastaviš v Preprostem pogledu v nekaj korakih, Petra te lahko vodi skozi vse',
-  'Postajališče na karti se odpre čez cel zaslon, zapreš ga z rdečim gumbom Zapri',
+  'Opomnik v Preprostem pogledu zdaj popraviš z gumbom Popravi, ni ga treba brisati',
+  'Pošlji preizkusno obvestilo in kratko navodilo, kako vklopiš zvok obvestil',
+  'Pri postajališču vidiš najbližjo postajo mBajk s prostimi kolesi',
+  'Na karti postaja mBajk pokaže najbližje avtobusno postajališče in njegove odhode',
 ];

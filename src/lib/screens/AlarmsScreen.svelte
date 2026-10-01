@@ -17,6 +17,7 @@
   import type { Alarm, Occurrence } from '../alarms';
   import { pushState, enablePush, disablePush, showLocalTest, isIOS, isStandalone } from '../push';
   import { fmtClock } from '../time';
+  import NotifySoundHelp from '../ui/NotifySoundHelp.svelte';
   import { t, tr, plural, locale } from '../i18n';
 
   // Zaslon je poln prekrivni sloj (z-50, nad TabBar), ne šesti zavihek:
@@ -243,10 +244,14 @@
                       on:click={onTest} aria-label={$t('Pokaži preizkusno obvestilo zdaj')}>
                 <Send size={20} color="var(--text-muted)" />
                 <div class="flex-1">
-                  <div class="t-body">{$t('Preizkusi zdaj')}</div>
+                  <div class="t-body">{$t('Pošlji preizkusno obvestilo')}</div>
                   <div class="t-footnote text-muted">{$t('Takoj prikaže obvestilo na tej napravi')}</div>
                 </div>
               </button>
+            </li>
+
+            <li class="px-4 py-3 border-t border-base">
+              <NotifySoundHelp />
             </li>
 
             <!-- Stanje STREŽNIKA, ne lokalnega izračuna: pomirjujoč stavek "pokriti do"
