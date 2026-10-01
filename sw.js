@@ -8,7 +8,7 @@
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = '0.24.0-9e7b22d';
+const VERSION = '0.25.0-79826a9';
 // Alarmi: SW nima dostopa do import.meta.env, zato vrednosti vstavi build-sw.mjs
 // (iz process.env ob gradnji). Če nista nastavljeni, ostaneta prazna niza in
 // obnovitev naročnine spodaj se tiho preskoči.
@@ -190,6 +190,8 @@ self.addEventListener('push', (event) => {
     vibrate,
     data: { url, fireAt: isFinite(fireAt) ? fireAt : null, stale },
     requireInteraction: false,
+    // Privzeto že false; izrecno, da noben brskalnik opomnika ne prikaže tiho.
+    silent: false,
   }));
 });
 
