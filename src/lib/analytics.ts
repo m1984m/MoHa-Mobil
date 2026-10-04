@@ -13,6 +13,7 @@
 
 import { APP_VERSION } from './release';
 import { analyticsEnabled } from './settings';
+import { onboardingDone } from './onboarding';
 import { get } from 'svelte/store';
 
 type Dogodek =
@@ -79,6 +80,9 @@ let posiljanjeTeče = false;
 /** Pošlje, kar je v vrsti. Ob neuspehu vrsta ostane za naslednji poskus. */
 export async function flush(): Promise<void> {
   if (posiljanjeTeče || !vklopljeno()) return;
+  // Nič ne gre ven, dokler novi uporabnik ne konča vodiča — v njem izve za štetje in
+  // za stikalo (evalvacija 04.10.2026, N18). Dogodki do takrat čakajo v vrsti.
+  try { if (!get(onboardingDone)) return; } catch { return; }
   const vrsta = beriVrsto();
   if (vrsta.length === 0) return;
   posiljanjeTeče = true;
@@ -94,7 +98,8 @@ export async function flush(): Promise<void> {
     });
     // 4xx pomeni, da je oblika napačna — ponavljanje ne bi pomagalo, zato tudi
     // takrat vrsto počistimo. Samo omrežna napaka in 5xx jo pustita pri miru.
-    if (res.ok || (res.status >= 400 && res.status < 500)) pisiVrsto([]);
+    // Odstrani samo poslani začetek: dogodki, dodani med pošiljanjem, ostanejo.
+    if (res.ok || (res.status >= 400 && res.status < 500)) pisiVrsto(beriVrsto().slice(vrsta.length));
   } catch {
     // brez povezave — poskusimo ob dogodku 'online'
   } finally {
@@ -162,5 +167,9 @@ export function initAnalytics(): void {
 
   // Ob vrnitvi v ospredje poskusimo poslati, kar je ostalo brez povezave.
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void flush(); });
+  // Konec vodiča sprosti vrsto; izklop štetja jo počisti, da ob ponovnem vklopu ne
+  // odide nič, kar je nastalo med izklopom.
+  onboardingDone.subscribe(d => { if (d) void flush(); });
+  analyticsEnabled.subscribe(v => { if (!v) pisiVrsto([]); });
   void flush();
 }

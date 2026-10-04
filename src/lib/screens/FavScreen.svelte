@@ -2,7 +2,8 @@
   import { backdrop, sheet } from '../motion';
   import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
-  import { upcomingDepartures, nextServiceDeparture } from '../gtfs';
+  import { upcomingDepartures, nextServiceDeparture, rowTarget } from '../gtfs';
+  import DepartureStatus from '../ui/DepartureStatus.svelte';
   import Screen from '../ui/Screen.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -354,14 +355,22 @@
             {:else}
               <ul>
                 {#each b.deps as d}
+                  {@const cilj = rowTarget(gtfs, d.route.short, d.trip.headsign)}
                   <li class="border-t border-base">
                     <button class="pressable w-full text-left px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3"
                             on:click|capture={guardClick}
-                            on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}
-                            aria-label={$t('{line} proti {dest}', { line: d.route.short, dest: d.trip.headsign })}>
+                            on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}>
                       <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
-                      <div class="flex-1 min-w-0 {$compactLists ? 't-subhead' : 't-callout'} truncate">{d.trip.headsign}</div>
-                      <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
+                      <div class="flex-1 min-w-0">
+                        <div class="{$compactLists ? 't-subhead' : 't-callout'} truncate">{cilj.dest}</div>
+                        {#if cilj.via && !$compactLists}
+                          <div class="t-footnote text-muted truncate">{$t('prek {via}', { via: cilj.via })}</div>
+                        {/if}
+                      </div>
+                      <div class="flex flex-col items-end gap-0.5 shrink-0">
+                        <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
+                        <DepartureStatus live={false} />
+                      </div>
                     </button>
                   </li>
                 {/each}
@@ -369,14 +378,15 @@
             {/if}
             <div class="px-3 py-2 border-t border-base flex flex-col gap-1.5">
               {#each pinned as f}
+                {@const fc = rowTarget(gtfs, f.routeShort, f.headsign)}
                 <button type="button"
                         class="pressable w-full inline-flex items-center gap-2 min-h-[44px] pl-1 pr-3 rounded-xl border border-base"
                         style="background: var(--surface-2);"
                         on:pointerdown|stopPropagation
                         on:click|stopPropagation={() => openTimetableFor(f)}
-                        aria-label={$t('Vozni red linije {line} za {dest}', { line: f.routeShort, dest: f.headsign })}>
+                        aria-label={$t('Vozni red linije {line} za {dest}', { line: f.routeShort, dest: fc.dest })}>
                   <LineBadge short={f.routeShort} routeId={f.routeId} size="sm" />
-                  <span class="t-footnote flex-1 min-w-0 truncate text-left">{f.headsign}</span>
+                  <span class="t-footnote flex-1 min-w-0 truncate text-left">→ {fc.dest}</span>
                 </button>
               {/each}
               <button type="button"
@@ -421,6 +431,7 @@
           <ul class="surface-2 rounded-2xl overflow-hidden">
             {#each pickerChoices as c, i}
               {@const on = $favLines.some(f => f.stopId === pickerStop!.id && f.routeId === c.route.id && f.dir === c.dir)}
+              {@const cc = rowTarget(gtfs, c.route.short, c.headsign)}
               <li>
                 <button class="pressable w-full px-4 py-3 flex items-center gap-3 text-left {i > 0 ? 'border-t border-base' : ''}"
                         on:click={() => pinLine(pickerStop!, c)}
@@ -428,7 +439,10 @@
                   <LineBadge short={c.route.short} routeId={c.route.id} size="md" />
                   <!-- Prej je bila pod headsignom še vrstica "Smer A/B" — interni GTFS
                        dir, ki uporabniku ne pove ničesar; headsign nosi vso informacijo. -->
-                  <div class="flex-1 min-w-0 t-body font-medium truncate">{c.headsign}</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="t-body font-medium truncate">→ {cc.dest}</div>
+                    {#if cc.via}<div class="t-footnote text-muted truncate">{$t('prek {via}', { via: cc.via })}</div>{/if}
+                  </div>
                   {#if on}
                     <div class="w-5 h-5 rounded-full bg-accent grid place-items-center shrink-0">
                       <div class="w-2 h-2 rounded-full bg-white"></div>

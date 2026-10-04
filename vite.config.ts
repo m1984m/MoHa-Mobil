@@ -21,6 +21,8 @@ try {
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   base: process.env.NODE_ENV === 'production' ? '/MoHa-Mobil/' : '/',
-  server: { port: 9125, host: true },
+  // .omc/ piše vtičnik oh-my-claudecode (project-memory.json.lock) večkrat na minuto;
+  // brez izključitve je vsak zapis sprožil ponovno nalaganje strani v razvoju.
+  server: { port: 9125, host: true, watch: { ignored: ['**/.omc/**'] } },
   define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_SHA__: JSON.stringify(sha) },
 })

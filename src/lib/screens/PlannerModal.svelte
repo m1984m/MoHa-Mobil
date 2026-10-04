@@ -1,7 +1,8 @@
 <script lang="ts">
   import { backdrop, sheet } from '../motion';
-  import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight } from 'lucide-svelte';
+  import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight, ChevronDown, Ticket } from 'lucide-svelte';
   import { cropShape, loadShapes, routeColor, type GTFS, type Stop } from '../gtfs';
+  import { searchStops, normName, stopHint } from '../simpleStops';
   import { planAll, type Plan } from '../planner';
   import { walkRoute, walkMapForStops } from '../routing';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -21,6 +22,8 @@
   export let hasGeo: boolean;
   export let onClose: () => void;
   export let onShowPlan: (plan: Plan, geoms: any[], from: { lat: number; lon: number; name: string }, to: { lat: number; lon: number; name: string }) => void;
+  // Cenik iz rezultatov — prej je bil dosegljiv le prek Nastavitve → Pomoč.
+  export let onOpenFares: () => void = () => {};
 
   type Place = { lat: number; lon: number; name: string };
   let fromQuery = '';
@@ -63,12 +66,40 @@
   }
   $: timeModeLabel = timeMode === 'now' ? $t('Zdaj') : timeMode === 'depart' ? $t('Odhod ob {time}', { time: timeStr }) : $t('Prihod do {time}', { time: timeStr });
 
+  // Iskanje brez šumnikov in po besedah (»zelezniska« najde »Železniška«), enako kot v
+  // Preprostem pogledu — prej je bil podniz z šumniki (evalvacija 04.10.2026, N7).
   $: fromResults = gtfs && fromFocus && !fromPlace && fromQuery.trim()
-    ? gtfs.stops.filter(s => s.name.toLowerCase().includes(fromQuery.trim().toLowerCase())).slice(0, 6)
+    ? searchStops(gtfs, fromQuery, 6)
     : [];
   $: toResults = gtfs && toFocus && !toPlace && toQuery.trim()
-    ? gtfs.stops.filter(s => s.name.toLowerCase().includes(toQuery.trim().toLowerCase())).slice(0, 6)
+    ? searchStops(gtfs, toQuery, 6)
     : [];
+  // Postajališči z istim imenom (par čez cesto) loči opis linij in smeri. Dvojnik se
+  // išče med vsemi postajališči — med prikazanimi šestimi ga je rez lahko odrezal.
+  function twinHint(_list: Stop[], s: Stop): string {
+    return gtfs && gtfs.stops.filter(x => x.name === s.name).length > 1 ? stopHint(gtfs, s.id) : '';
+  }
+
+  // Ob odprtju je izhodišče privzeto »Moja lokacija« — prej je bilo polje prazno, gumb
+  // »Poišči pot« pa onemogočen brez pojasnila (evalvacija 04.10.2026, N4). Samo enkrat
+  // na odprtje, da izbrisano polje ne skoči nazaj.
+  //
+  // `fromIsMe`: izhodišče je trenutna lega, ne posnetek ob odprtju. Okno ostane
+  // naloženo tudi po izbiri poti, zato bi se sicer naslednjič računalo od tam, kjer je
+  // bil uporabnik prejšnjič (pregled kode 05.10.2026).
+  let fromIsMe = false;
+  let prefilled = false;
+  $: if (!open) prefilled = false;
+  $: if (open && !prefilled) {
+    prefilled = true;
+    if (hasGeo && ((!fromPlace && !fromQuery.trim()) || fromIsMe)) {
+      fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
+      fromQuery = tr('Moja lokacija');
+      fromIsMe = true;
+    }
+  }
+  $: missingFrom = !fromPlace && !fromQuery.trim();
+  $: missingTo = !toPlace && !toQuery.trim();
   $: favList = gtfs && $plannerShowFavs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [];
   $: showFromFavs = fromFocus && !fromPlace && !fromQuery.trim() && favList.length > 0;
   $: showToFavs = toFocus && !toPlace && !toQuery.trim() && favList.length > 0;
@@ -127,7 +158,7 @@
     toast.showUndo(tr('Pot odstranjena'), () => savedRoutes.add({ label: r.label, from: r.from, to: r.to }));
   }
 
-  function pickFromAddr(p: Place) { fromPlace = p; fromQuery = p.name; fromFocus = false; fromAddrResults = []; }
+  function pickFromAddr(p: Place) { fromPlace = p; fromQuery = p.name; fromFocus = false; fromAddrResults = []; fromIsMe = false; }
   function pickToAddr(p: Place) { toPlace = p; toQuery = p.name; toFocus = false; toAddrResults = []; }
 
   function useMyLocationAsFrom() {
@@ -135,10 +166,11 @@
     fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
     fromQuery = tr('Moja lokacija');
     fromFocus = false;
+    fromIsMe = true;
   }
-  function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name }; fromQuery = s.name; fromFocus = false; }
+  function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name }; fromQuery = s.name; fromFocus = false; fromIsMe = false; }
   function pickTo(s: Stop) { toPlace = { lat: s.lat, lon: s.lon, name: s.name }; toQuery = s.name; toFocus = false; }
-  function swap() { const f = fromPlace, q = fromQuery; fromPlace = toPlace; fromQuery = toQuery; toPlace = f; toQuery = q; }
+  function swap() { const f = fromPlace, q = fromQuery; fromPlace = toPlace; fromQuery = toQuery; toPlace = f; toQuery = q; fromIsMe = false; }
 
   async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
     try {
@@ -168,6 +200,7 @@
       fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
       fromQuery = tr('Moja lokacija');
       fromFocus = false;
+      fromIsMe = true;
     }
     // Auto-run: če sta oba konca zapolnjena, takoj izračunaj — ena interakcija manj.
     // Uporabnik še vedno vidi rezultat in lahko prilagodi čas / znova poišče.
@@ -203,14 +236,16 @@
         return;
       }
     }
+    // Trenutna lega ob iskanju, ne ob odprtju okna.
+    if (fromIsMe && hasGeo) fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
     if (!fromPlace && fromQuery.trim()) {
-      const ql = fromQuery.trim().toLowerCase();
-      const st = gtfs.stops.find(s => s.name.toLowerCase() === ql);
+      const ql = normName(fromQuery);
+      const st = gtfs.stops.find(s => normName(s.name) === ql);
       fromPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(fromQuery.trim());
     }
     if (!toPlace && toQuery.trim()) {
-      const ql = toQuery.trim().toLowerCase();
-      const st = gtfs.stops.find(s => s.name.toLowerCase() === ql);
+      const ql = normName(toQuery);
+      const st = gtfs.stops.find(s => normName(s.name) === ql);
       toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(toQuery.trim());
     }
     if (!fromPlace || !toPlace) { error = tr('Ne najdem izhodišča ali cilja.'); return; }
@@ -326,19 +361,30 @@
 
   function reset() {
     abortActive();
-    fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = [];
+    fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = []; fromIsMe = false;
     timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
     lastConsumedDest = null;
   }
 
   function handleClose() { reset(); onClose(); }
+
+  // Če je nad načrtovalnikom odprto drugo okno (npr. cene iz rezultatov), Escape zapre
+  // samo to — prej je zaprl in ponastavil tudi načrtovalnik (pregled kode 05.10.2026).
+  let rootEl: HTMLElement | undefined;
+  function onKey(e: KeyboardEvent) {
+    if (!open || e.key !== 'Escape') return;
+    const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+    const top = dialogs[dialogs.length - 1];
+    if (top && rootEl && top !== rootEl && !rootEl.contains(top)) return;
+    handleClose();
+  }
 </script>
 
-<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') handleClose(); }} />
+<svelte:window on:keydown={onKey} />
 
 {#if open}
   <div in:backdrop={{ alpha: 0.35, blur: 4 }} out:backdrop={{ out: true, alpha: 0.35, blur: 4 }} class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
-       role="dialog" aria-modal="true" aria-label={$t('Načrtuj pot')}>
+       role="dialog" aria-modal="true" aria-label={$t('Načrtuj pot')} bind:this={rootEl}>
     <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface rounded-b-3xl shadow-float"
          style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;"
          use:focusTrap>
@@ -358,7 +404,7 @@
                  tap v polje za pregled vnosa ne sme tiho zavreči izbranih koordinat. -->
             <input bind:value={fromQuery}
               on:focus={() => { fromFocus = true; }}
-              on:input={() => { if (fromPlace) fromPlace = null; }}
+              on:input={() => { if (fromPlace) fromPlace = null; fromIsMe = false; }}
               on:blur={() => setTimeout(() => fromFocus = false, 150)}
               class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
               placeholder={$t('Od — postaja, naslov ali moja lokacija')} />
@@ -385,9 +431,13 @@
                 {/each}
               {/if}
               {#each fromResults as s}
+                {@const hint = twinHint(fromResults, s)}
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFrom(s)}>
                   <MapPin size={14} color="var(--accent)" />
-                  <span>{s.name}</span>
+                  <span class="min-w-0">
+                    <span class="block">{s.name}</span>
+                    {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+                  </span>
                   <span class="ml-auto t-footnote text-muted">{$t('postaja')}</span>
                 </button></li>
               {/each}
@@ -434,9 +484,13 @@
                 {/each}
               {/if}
               {#each toResults as s}
+                {@const hint = twinHint(toResults, s)}
                 <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickTo(s)}>
                   <Flag size={14} color="var(--status-disrupt)" />
-                  <span>{s.name}</span>
+                  <span class="min-w-0">
+                    <span class="block">{s.name}</span>
+                    {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+                  </span>
                   <span class="ml-auto t-footnote text-muted">{$t('postaja')}</span>
                 </button></li>
               {/each}
@@ -487,8 +541,8 @@
                   on:click={() => timeExpanded = !timeExpanded}>
             <Clock size={16} color="var(--accent)" />
             <span class="t-body font-medium">{timeModeLabel}</span>
-            <span class="ml-auto t-title3 text-muted transition-transform"
-                  style="transform: rotate({timeExpanded ? 180 : 0}deg)">⌄</span>
+            <span class="ml-auto grid place-items-center transition-transform"
+                  style="transform: rotate({timeExpanded ? 180 : 0}deg)"><ChevronDown size={20} color="var(--text-muted)" /></span>
           </button>
           {#if timeExpanded}
             <div class="surface-2 rounded-xl border border-base mt-2 p-3 space-y-3">
@@ -522,6 +576,11 @@
             {$t('Poišči pot')}
           {/if}
         </button>
+        {#if !running && (missingFrom || missingTo)}
+          <div class="t-footnote text-muted px-1 -mt-1">
+            {missingFrom ? $t('Izberi, od kod greš.') : $t('Vpiši, kam greš.')}
+          </div>
+        {/if}
 
         {#if error}
           <div class="t-footnote px-1" style="color: var(--status-disrupt)">{error}</div>
@@ -551,11 +610,14 @@
                         <div class="t-footnote text-muted">{$t('prihod {time}', { time: fmtTime(p.arrSec) })}</div>
                       </div>
                       <div class="t-footnote text-muted mb-1.5">
-                        {#if p.transfers === 0 && busLegs(p).length === 0}{$t('peš')}
-                        {:else if p.transfers === 0}{$t('brez prestopanja')}
-                        {:else}{p.transfers} {plural(p.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}
+                        <!-- Prej »peš · 851 m peš« pri poti samo peš. -->
+                        {#if p.transfers === 0 && busLegs(p).length === 0}{$t('samo peš, {m} m', { m: Math.round(p.walkMeters) })}
+                        {:else}
+                          {#if p.transfers === 0}{$t('brez prestopanja')}
+                          {:else}{p.transfers} {plural(p.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}
+                          {/if}
+                          {#if p.walkMeters > 0} · {$t('{m} m peš', { m: Math.round(p.walkMeters) })}{/if}
                         {/if}
-                        {#if p.walkMeters > 0} · {$t('{m} m peš', { m: Math.round(p.walkMeters) })}{/if}
                       </div>
                       <div class="flex flex-wrap gap-1.5">
                         {#each busLegs(p) as bl}
@@ -565,11 +627,20 @@
                     </div>
                     {#if i === 0}
                       <div class="shrink-0 t-footnote rounded-full px-2 py-0.5" style="background: var(--accent); color: white;">{$t('priporočeno')}</div>
+                    {:else if p.lessWalk}
+                      <div class="shrink-0 t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('manj hoje')}</div>
                     {/if}
                   </button>
                 </li>
               {/each}
             </ul>
+            {#if candidates.some(c => busLegs(c).length > 0)}
+              <button type="button" class="pressable w-full mt-2 min-h-[44px] px-3 rounded-xl flex items-center gap-2 t-footnote text-muted"
+                      on:click={onOpenFares}>
+                <Ticket size={16} />
+                <span class="text-left">{$t('Cene in vozovnice')}</span>
+              </button>
+            {/if}
           </div>
         {/if}
       </div>

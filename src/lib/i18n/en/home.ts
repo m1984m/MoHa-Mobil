@@ -103,4 +103,10 @@ export default {
   'Potrdi': 'Confirm',
   'Prekliči': 'Cancel',
   'Razveljavi': 'Undo',
+  // 0.26.0 — cilj vožnje, oznaka stanja, izpad živih podatkov
+  'Krožna prek {kraj}': 'Circular via {kraj}',
+  '{linija}, smer {cilj}': '{linija} to {cilj}',
+  'vozni red': 'scheduled',
+  'Brez povezave. Prikazujemo vozni red, zamud ne poznamo.': 'No connection. Showing the timetable, delays are unknown.',
+  'Podatki v živo trenutno niso na voljo. Prikazujemo vozni red, zamud ne poznamo.': 'Live data is not available right now. Showing the timetable, delays are unknown.',
 };

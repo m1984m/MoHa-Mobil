@@ -308,8 +308,9 @@
     { id: 'home',       label: $t('Dom'),         icon: Home },
     { id: 'timetables', label: $t('Vozni redi'),  icon: CalendarClock },
     { id: 'map',        label: $t('Karta'),       icon: MapIcon },
-    { id: 'fav',        label: $t('Priljub.'),    icon: Star },
-    { id: 'settings',   label: $t('Nastav.'),     icon: SettingsIcon },
+    // Napis je okrajšan zaradi širine, bralnik zaslona pa prebere polno ime.
+    { id: 'fav',        label: $t('Priljub.'),    name: $t('Priljubljene'), icon: Star },
+    { id: 'settings',   label: $t('Nastav.'),     name: $t('Nastavitve'),   icon: SettingsIcon },
   ];
 
   async function tryLoadGtfs() {
@@ -658,7 +659,8 @@
       bind:candidates={plannerCandidates}
       {pendingDest}
       onClose={() => { plannerOpen = false; pendingDest = null; }}
-      onShowPlan={handleShowPlan} />
+      onShowPlan={handleShowPlan}
+      onOpenFares={() => faresOpen = true} />
   {/if}
 
   <WeatherModal open={weatherOpen} lat={origin.lat} lon={origin.lon}

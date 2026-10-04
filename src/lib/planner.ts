@@ -26,6 +26,8 @@ export type Plan = {
   arrSec: number;
   walkMeters: number;
   transfers: number;  // 0 = pure walk or single bus
+  // Pot z avtobusom, ki je počasnejša od hoje, a hojo bistveno skrajša (glej planAll).
+  lessWalk?: boolean;
 };
 
 // Hitrost se bere dinamično iz nastavitev — getWalkMps()
@@ -93,6 +95,8 @@ export function precomputePlannerIndexes(gtfs: GTFS): PlannerIndexes {
 }
 
 // Returns up to 3 plans: [fewest-transfers-fastest, fastest, middle-ground]
+// `opts.maxAccessM` omeji hojo do prve in od zadnje postaje; `opts.raw` vrne poti z
+// avtobusom brez filtra hoje (za iskanje možnosti »manj hoje«).
 export function planAll(
   gtfs: GTFS,
   from: { lat: number; lon: number },
@@ -101,8 +105,10 @@ export function planAll(
   when: Date = new Date(),
   accessMap?: WalkMap,
   egressMap?: WalkMap,
+  opts: { maxAccessM?: number; raw?: boolean } = {},
 ): Plan[] {
   const WALK_MPS = getWalkMps();
+  const maxAccessM = opts.maxAccessM ?? MAX_ACCESS_M;
   const active = todayServiceIds(gtfs, when);
   const stopById = new Map(gtfs.stops.map(s => [s.id, s]));
   const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
@@ -114,7 +120,7 @@ export function planAll(
   const origin0 = new Map<number, Label>();
   for (const s of gtfs.stops) {
     const m = dist(from, s);
-    if (m > MAX_ACCESS_M) continue;
+    if (m > maxAccessM) continue;
     const hit = accessMap?.get(s.id);
     const sec = hit ? hit.sec : (m * URBAN_DETOUR) / WALK_MPS;
     origin0.set(s.id, { time: depSec + sec, prev: { kind: 'origin' } });
@@ -125,7 +131,7 @@ export function planAll(
   const egress: { id: number; m: number; sec: number }[] = [];
   for (const s of gtfs.stops) {
     const m = dist(s, to);
-    if (m > MAX_ACCESS_M) continue;
+    if (m > maxAccessM) continue;
     const hit = egressMap?.get(s.id);
     const sec = hit ? hit.sec : (m * URBAN_DETOUR) / WALK_MPS;
     egress.push({ id: s.id, m: hit?.meters ?? m, sec });
@@ -237,6 +243,7 @@ export function planAll(
     const p = reconstruct(labelsByRound[c.round], c.stopId, stopById, routeById, from, to, depSec, c.arr);
     if (p) plans.push(p);
   }
+  if (opts.raw) return plans;
 
   // Walk-dominance filter: če transit plan ne prihrani vsaj 2 min vs. direktna hoja,
   // ga ne kažemo — uporabnik raje hodi kot da po nesmiselni zanki išče postajo.
@@ -245,8 +252,24 @@ export function planAll(
   // uporabnik pogosto raje seda v avtobus tudi če je marginalno podoben čas.
   const walkIsLong = walkDirectSec > 30 * 60;
   const MIN_TRANSIT_SAVING_SEC = 120;
+  // Avtobus kot druga možnost, kadar je hoja hitrejša (evalvacija 04.10.2026, N4): za
+  // Glavni trg → Europark (900 m) je bila edina možnost hoja — slepa ulica za starejše,
+  // ob dežju ali s prtljago. Ostane najhitrejša pot z avtobusom, ki hojo skrajša vsaj
+  // za tretjino in pride največ 15 min za hojo; zgornja nesmiselna zanka še vedno odpade.
+  // Najhitrejše poti iz prvega izračuna pogosto začnejo z dolgo hojo do »hitrejše«
+  // postaje (v 68 od 85 časov ni bilo nobene ustrezne; pregled 05.10.), zato se ob
+  // neuspehu izračun ponovi s hojo do postaje največ 400 m. Pod 400 m naravnost ne.
+  let lessWalk: Plan | null = null;
   if (!walkIsLong) {
+    const all = plans;
     plans = plans.filter(p => p.arrSec + MIN_TRANSIT_SAVING_SEC < walkDirectArr);
+    if (plans.length === 0 && walkDirectM >= 400) {
+      const walkSec = (p: Plan) => p.legs.reduce((s, l) => s + (l.kind === 'walk' ? l.sec : 0), 0);
+      const ok = (p: Plan) => walkSec(p) <= walkDirectSec * 0.67 && p.arrSec <= walkDirectArr + 15 * 60;
+      const best = (list: Plan[]) => list.filter(ok).sort((a, b) => a.arrSec - b.arrSec)[0] ?? null;
+      lessWalk = best(all)
+        ?? best(planAll(gtfs, from, to, depSec, when, accessMap, egressMap, { maxAccessM: 400, raw: true }));
+    }
   }
 
   if (walkPlan && !plans.some(p => p.transfers === 0 && p.legs.length === 1)) {
@@ -269,6 +292,7 @@ export function planAll(
     out.push(p);
     if (out.length >= 3) break;
   }
+  if (lessWalk) out.push({ ...lessWalk, lessWalk: true });
   return out;
 }
 

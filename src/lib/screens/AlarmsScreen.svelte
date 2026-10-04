@@ -1,7 +1,7 @@
 <script lang="ts">
   import { backdrop, sheet, page } from '../motion';
   import { ChevronLeft, Plus, Trash2, Pencil, AlarmClock, BellRing, BellOff, Smartphone, X, Send, AlertTriangle } from 'lucide-svelte';
-  import type { GTFS } from '../gtfs';
+  import { rowTarget, type GTFS } from '../gtfs';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import { focusTrap } from '../focusTrap';
@@ -40,6 +40,17 @@
 
   function nextFor(id: string): Occurrence | null {
     return occ.find(o => o.alarmId === id) ?? null;
+  }
+
+  // Opomnik iz pripete linije hrani cel opis vožnje (»izhodišče – vmes – cilj«),
+  // opomnik iz čarovnika Preprostega pogleda pa že ime cilja (tudi z vezajem,
+  // npr. »Pobreška - Europark«) — razreže se samo pravi opis vožnje.
+  const opisiVozenj = new WeakMap<GTFS, Set<string>>();
+  function smerOpomnika(routeShort: string, headsign: string): string {
+    if (!gtfs) return headsign;
+    let opisi = opisiVozenj.get(gtfs);
+    if (!opisi) { opisi = new Set(gtfs.trips.map(t => t.headsign)); opisiVozenj.set(gtfs, opisi); }
+    return opisi.has(headsign) ? rowTarget(gtfs, routeShort, headsign).dest : headsign;
   }
 
   function fmtLastSync(ms: number): string {
@@ -297,7 +308,7 @@
                     <LineBadge short={a.routeShort} routeId={a.routeId} size="sm" />
                     <div class="min-w-0 flex-1">
                       <div class="t-body font-medium truncate">{a.stopName}</div>
-                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: a.headsign })}</div>
+                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: smerOpomnika(a.routeShort, a.headsign) })}</div>
                     </div>
                     <button type="button"
                             class="pressable relative w-12 h-7 rounded-full transition-colors shrink-0"
@@ -386,7 +397,7 @@
                     <LineBadge short={f.routeShort} routeId={f.routeId} size="sm" />
                     <div class="flex-1 min-w-0">
                       <div class="t-subhead font-medium truncate">{f.stopName}</div>
-                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: f.headsign })}</div>
+                      <div class="t-footnote text-muted truncate">{$t('proti {dir}', { dir: smerOpomnika(f.routeShort, f.headsign) })}</div>
                     </div>
                     {#if sel}
                       <div class="w-5 h-5 rounded-full bg-accent grid place-items-center shrink-0">

@@ -86,6 +86,17 @@
     onThemeChange(t);
   }
 
+  // Puščice v skupini tem: izberejo sosednjo možnost in nanjo prestavijo fokus.
+  function themeKeys(e: KeyboardEvent) {
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const i = options.findIndex(o => o.id === theme);
+    const next = options[(i + step + options.length) % options.length];
+    pick(next.id);
+    queueMicrotask(() => (document.querySelector(`[data-theme-opt="${next.id}"]`) as HTMLElement | null)?.focus());
+  }
+
   let clearConfirmOpen = false;
 
   // Skriti vhod v statistiko: deset dotikov na ime razvijalca. Števec se
@@ -351,10 +362,14 @@
     </section>
     <section>
       <div class="t-footnote text-muted uppercase tracking-wider font-semibold mb-2.5 px-2">{$t('Tema')}</div>
-      <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
+      <!-- Izbira ene teme: radiogroup namesto <ul> z gumbi brez <li> (axe list). -->
+      <!-- Vzorec APG: puščice premikajo izbiro, v skupino vodi en sam tabulator. -->
+      <div class="surface rounded-2xl border border-base overflow-hidden shadow-card" role="radiogroup" aria-label={$t('Tema')}
+           tabindex="-1" on:keydown={themeKeys}>
         {#each options as o, i}
           {@const active = theme === o.id}
           <button class="pressable w-full min-h-[60px] px-4 py-3 flex items-center gap-3.5 text-left {i < options.length - 1 ? 'border-b border-base' : ''}"
+                  role="radio" aria-checked={active} tabindex={active ? 0 : -1} data-theme-opt={o.id}
                   on:click={() => pick(o.id)}>
             <svelte:component this={o.icon} size={20} color={active ? 'var(--accent)' : 'var(--text-muted)'} strokeWidth={active ? 2.2 : 1.75} />
             <div class="flex-1 t-body {active ? 'font-semibold' : ''}">{o.label}</div>
@@ -365,7 +380,7 @@
             {/if}
           </button>
         {/each}
-      </ul>
+      </div>
 
     </section>
     <section>
@@ -397,7 +412,8 @@
           <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$compactLists ? 'var(--accent)' : 'var(--surface-3)'}"
                   on:click={() => compactLists.update(v => !v)}
-                  aria-label={$t('Preklopi kompakten prikaz')}>
+                  aria-label={$t('Preklopi kompakten prikaz')}
+                  aria-pressed={$compactLists}>
             <span class="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-card transition-all"
                   style="left: {$compactLists ? '1.375rem' : '0.125rem'}"></span>
           </button>
@@ -620,6 +636,18 @@
           </button>
         </li>
       </ul>
+      <!-- Izjava o tem, kam gredo podatki (evalvacija 04.10.2026, N6): prej je vodič
+           trdil, da lokacija ostane na telefonu, seznama zunanjih storitev pa ni bilo. -->
+      <h2 class="t-footnote text-muted uppercase tracking-wide mt-6 mb-2 px-1">{$t('Kam gredo podatki')}</h2>
+      <div class="surface rounded-2xl border border-base shadow-card px-4 py-3 space-y-2.5 t-footnote">
+        <p>{$t('Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot in ime točke na karti gre natančna lega storitvama openrouteservice (prek strežnika aplikacije) in OpenStreetMap.')}</p>
+        <p>{$t('Priljubljene, kraji in nastavitve so shranjeni samo na tej napravi.')}</p>
+        <p>{$t('Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler opomnik obstaja.')}</p>
+        <p>{$t('Glasno branje: besedilo, ki ga Petra prebere, gre storitvi Microsoft Azure, brez lokacije.')}</p>
+        <p>{$t('Štetje uporabe (stikalo zgoraj): brez piškotkov, lokacije in podatka o napravi. Šteje zagone, zaslone in nastavitve.')}</p>
+        <p>{$t('Odhodi v živo: aplikacija za postajališča, ki jih gledaš, vpraša strežnik aplikacije (Cloudflare), ta pa Marprom. Strežnik šteje, katera postajališča se gledajo, brez podatka o napravi; tega stikalo ne izklopi.')}</p>
+        <p>{$t('Karte: tvoj brskalnik ploščice prenese neposredno od CARTO ali Esri.')}</p>
+      </div>
     </section>
 
         {:else if cat === 'pomoc'}

@@ -25,6 +25,9 @@
      kot TEKST na belem padeta na 2,2:1 / 2,1:1 kontrast ("zdaj", zamude). */
   --accent: #D32027;
   --accent-pressed: #A8181E;
+  /* Rdeča za napis na rdečkasti podlagi (aktivni zavihek na --glass-tint): #D32027 je
+     tam imel 4,45:1 (axe, evalvacija 04.10.2026); #C41E24 da 5,06:1. */
+  --accent-on-tint: #C41E24;
   /* #1B8A3F je imel na beli 4,42:1 in je za las padel pod AA (4,5) — izmerjeno
      21.09.2026, komentar spodaj je trdil nasprotno. #177A37 da 5,42:1 na beli
      in 4,86:1 na surface-2. */
@@ -87,6 +90,7 @@
   --text-muted: #4F4F54;        /* 8,14:1 na beli, 7,30:1 na surface-2 */
   --accent: #A8181E;            /* 7,46:1 */
   --accent-pressed: #7E1116;
+  --accent-on-tint: #A8181E;
   --status-ontime: #0F5D25;     /* 8,04:1 */
   --status-delay: #7E4100;      /* 7,94:1 */
   --status-disrupt: #A80010;    /* 7,86:1 */
@@ -135,11 +139,15 @@
   --surface-3: #3A3A3C;
   --text: #FFFFFF;
   --text-secondary: #EBEBF5;
-  --text-muted: #8E8E93;
+  /* #8E8E93 je imel na surface-2 4,27:1 (axe, evalvacija 04.10.2026); #98989F (iOS
+     secondaryLabel v temni temi) da 4,89:1 na #2C2C2E. */
+  --text-muted: #98989F;
   --border: #38383A;
   --border-strong: #48484A;
   --accent: #EF4F54;
   --accent-pressed: #D32027;
+  /* Aktivni zavihek: #EF4F54 na temnem rdečkastem odtenku je imel 3,87:1; #FF7A7E 5,48:1. */
+  --accent-on-tint: #FF7A7E;
   /* Svetle status barve so na temnem ozadju kontrastno v redu */
   --status-ontime: #34C759;
   --status-delay: #FF9500;
@@ -174,6 +182,7 @@
   --border-strong: #000000;
   --accent: #b4000a;
   --accent-pressed: #7a0007;
+  --accent-on-tint: #b4000a;
   --status-ontime: #00601f;
   --status-delay: #8a4a00;
   --status-disrupt: #a3000a;
@@ -205,6 +214,7 @@
   --border-strong: #555555;
   --accent: #000000;
   --accent-pressed: #2a2a2a;
+  --accent-on-tint: #000000;
   --status-ontime: #000000;
   --status-delay: #555555;
   --status-disrupt: #000000;
@@ -278,7 +288,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   }
 }
 
-input, textarea, select, button { font-family: inherit; color: inherit; }
+/* V plasti base: pravilo brez plasti je po pravilih kaskadnih plasti premagalo vse
+   Tailwindove pripomočke, zato je imel gumb »Poišči pot« kljub text-white napis
+   #1C1C1E na rdeči (3,25 : 1, evalvacija 04.10.2026). */
+@layer base {
+  input, textarea, select, button { font-family: inherit; color: inherit; }
+}
 
 /* ---------- Utilities ---------- */
 @utility surface { background: var(--surface); color: var(--text); }

@@ -1,3 +1,5 @@
+import { tr } from './i18n';
+
 export type Stop = { id: number; name: string; lat: number; lon: number; code: string | null };
 export type Route = { id: number; short: string; long: string; type: number };
 export type Trip = { id: number; route: number; service: number; headsign: string; short: string; dir: number; shape: number | null; stops: [number, number, number][] };
@@ -64,28 +66,60 @@ export function shapesForStop(gtfs: GTFS, stopId: number): { shape: number; rout
 }
 
 // Curated high-contrast palette (24 distinct hues) — zagotavlja razlikovanje
-// tudi pri sosednjih linijah kot sta P16 in G3.
+// tudi pri sosednjih linijah kot sta P16 in G3. Barve so lastne (ne Marpromove),
+// zato jih lahko prilagodimo za berljivost napisa.
 const ROUTE_PALETTE = [
   '#E53935', '#1E88E5', '#43A047', '#FB8C00', '#8E24AA', '#00ACC1',
   '#C62828', '#6D4C41', '#3949AB', '#7CB342', '#D81B60', '#00897B',
   '#5E35B1', '#C0CA33', '#F4511E', '#546E7A', '#AB47BC', '#26A69A',
   '#EC407A', '#66BB6A', '#FFA726', '#42A5F5', '#EF5350', '#5C6BC0',
 ];
+
+const DARK_TEXT = '#1C1C1E';
+
+// Relativna svetilnost po WCAG 2.x.
+function luminance(hex: string): number {
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(parseInt(hex.slice(1, 3), 16) / 255)
+       + 0.7152 * lin(parseInt(hex.slice(3, 5), 16) / 255)
+       + 0.0722 * lin(parseInt(hex.slice(5, 7), 16) / 255);
+}
+const contrastWhite = (L: number) => 1.05 / (L + 0.05);
+
+// Napis na znački linije mora imeti vsaj 4,5 : 1 (WCAG 1.4.3) — axe je 04.10.2026
+// našel bel napis na G3 2,64 : 1, G5 3,67 : 1 in G1 4,31 : 1. Svetle barve
+// (L ≥ 0,30) dobijo temen napis (≥ 5,7 : 1); ostale bel napis na toliko
+// potemnjeni barvi, da kontrast doseže 4,6 : 1. Potemnitev je množenje kanalov,
+// zato odtenek ostane prepoznaven.
+const LIGHT_FROM = 0.30;
+function accessible(hex: string): { bg: string; fg: string } {
+  if (luminance(hex) >= LIGHT_FROM) return { bg: hex, fg: DARK_TEXT };
+  const ch = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  for (let f = 1; f > 0.3; f -= 0.01) {
+    const c = '#' + ch.map(v => Math.round(v * f).toString(16).padStart(2, '0')).join('');
+    if (contrastWhite(luminance(c)) >= 4.6) return { bg: c.toUpperCase(), fg: '#ffffff' };
+  }
+  return { bg: hex, fg: '#ffffff' };
+}
+const ROUTE_BADGES = ROUTE_PALETTE.map(accessible);
+
 // Deterministic color per route id; multiplier 17 razprši sosednje ID-je.
+function badgeOf(routeId: number) {
+  const idx = ((routeId * 17) % ROUTE_BADGES.length + ROUTE_BADGES.length) % ROUTE_BADGES.length;
+  return ROUTE_BADGES[idx];
+}
 export function routeColor(routeId: number): string {
-  const idx = ((routeId * 17) % ROUTE_PALETTE.length + ROUTE_PALETTE.length) % ROUTE_PALETTE.length;
-  return ROUTE_PALETTE[idx];
+  return badgeOf(routeId).bg;
 }
 
-// Tekst na barvni znački linije: bel na temnih, temen na svetlih barvah palete
-// (lime #C0CA33, oranžne ipd. z belim tekstom padejo pod 2:1 kontrast).
+// Tekst na barvni znački linije (bel ali temen, glej accessible).
 export function routeTextColor(routeId: number): string {
-  const hex = routeColor(routeId);
-  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const L = 0.2126 * lin(parseInt(hex.slice(1, 3), 16) / 255)
-          + 0.7152 * lin(parseInt(hex.slice(3, 5), 16) / 255)
-          + 0.0722 * lin(parseInt(hex.slice(5, 7), 16) / 255);
-  return L > 0.35 ? '#1C1C1E' : '#ffffff';
+  return badgeOf(routeId).fg;
+}
+
+// Isto pravilo za poljubno barvo (napis na avtobusu na karti, ki pozna samo barvo).
+export function textOnColor(hex: string): string {
+  return /^#[0-9a-f]{6}$/i.test(hex) && luminance(hex) >= LIGHT_FROM ? DARK_TEXT : '#ffffff';
 }
 
 // Crop a shape polyline to the segment between two stops by nearest-point snapping.
@@ -390,21 +424,60 @@ export function matchesCenter(
 // ---------------------------------------------------------------------------
 // Krajši zapis cilja.
 //
-// `headsign` v tem feedu ni cilj, ampak cel opis linije
-// ("Pobreška Europark - Univerzitetni kampus - Kamnica"). Pri navadni velikosti
-// besedila se to obreže s tremi pikami, pri +50 % pa se razlomi v pet vrstic in
-// vrstica zraste na 173 px (izmerjeno). Zato ga razdelimo: v ospredje končna
-// postaja, vmesne v drobnejšo vrstico.
+// `headsign` v tem feedu ni cilj, ampak cel opis linije v obliki
+// »izhodišče – vmes – cilj« ("Pobreška Europark - Univerzitetni kampus - Kamnica";
+// preverjeno 04.10.2026: vseh 83 vzorcev razen krožne G3 ima ta vrstni red).
+// Cel opis, odrezan s tremi pikami, je pokazal izhodišče namesto cilja — na
+// postajališčih z istim imenom na obeh straneh ceste je bila to napačna smer.
+// Zato: cilj je zadnji del opisa (tako kot na avtobusu in enako za žive prihode in
+// vozni red), »prek« so samo vmesni deli, izhodišča ni nikjer.
 //
-// `destination` je ime zadnje postaje vožnje, kadar ga poznamo (odhod iz
-// voznega reda). Živ prihod iz OBA vožnje nima, zato se vzame zadnji del opisa.
+// `destination` (ime zadnje postaje vožnje) je samo rezerva za opis brez delov.
+// Krožna linija se konča tam, kjer začne: cilj je »Krožna prek <prva točka za
+// izhodiščem>« — ta loči obe smeri kroga (sama »Krožna linija« je na paru
+// postajališč čez cesto obe strani označila enako; pregled kode 05.10.2026).
 // ---------------------------------------------------------------------------
-export function splitHeadsign(headsign: string, destination?: string): { dest: string; via: string } {
-  const parts = headsign.split(/\s+[-–—]\s+/).map(p => p.trim()).filter(Boolean);
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ');
-  const dest = (destination ?? parts[parts.length - 1] ?? headsign).trim();
-  const via = parts.filter(p => norm(p) !== norm(dest)).join(', ');
-  return { dest: dest || headsign, via };
+export function splitHeadsign(headsign: string, destination?: string, circular = false): { dest: string; via: string } {
+  const h = String(headsign ?? '');
+  // Vezaj loči dele samo s presledkom na vsaj eni strani (»Prlek- Gosposvetska«),
+  // »Limbuš-Pekre« ostane eno ime.
+  const parts = h.split(/\s+[-–—]\s*|\s*[-–—]\s+/).map(p => p.trim()).filter(Boolean);
+  if (circular && parts.length > 1) {
+    return { dest: tr('Krožna prek {kraj}', { kraj: parts[1] }), via: parts.slice(2).join(', ') };
+  }
+  if (parts.length <= 1) return { dest: (destination || parts[0] || h).trim(), via: '' };
+  return { dest: parts[parts.length - 1], via: parts.slice(1, -1).join(', ') };
+}
+
+// Krožne linije: večina voženj se konča na postajališču z imenom, s katerim se začne.
+const circularCache = new WeakMap<GTFS, Set<string>>();
+export function isCircularRoute(gtfs: GTFS | null, routeShort: string): boolean {
+  if (!gtfs) return false;
+  let set = circularCache.get(gtfs);
+  if (!set) {
+    const name = new Map(gtfs.stops.map(s => [s.id, s.name.trim().toLowerCase()]));
+    const count = new Map<number, { all: number; loop: number }>();
+    for (const t of gtfs.trips) {
+      const a = t.stops[0], b = t.stops[t.stops.length - 1];
+      if (!a || !b) continue;
+      const c = count.get(t.route) ?? { all: 0, loop: 0 };
+      c.all++;
+      if (name.get(a[0]) === name.get(b[0])) c.loop++;
+      count.set(t.route, c);
+    }
+    set = new Set(gtfs.routes.filter(r => {
+      const c = count.get(r.id);
+      return !!c && c.loop * 2 > c.all;
+    }).map(r => r.short.trim().toLowerCase()));
+    circularCache.set(gtfs, set);
+  }
+  return set.has(routeShort.trim().toLowerCase());
+}
+
+// Cilj in vmesne točke za prikaz odhoda (vse vrstice odhodov v aplikaciji).
+// Brez podanega `gtfs` (glasno branje, koraki poti) se vzame naloženi vozni red.
+export function rowTarget(gtfs: GTFS | null, routeShort: string, headsign: string, destination?: string) {
+  return splitHeadsign(headsign, destination, isCircularRoute(gtfs ?? cached, String(routeShort ?? '')));
 }
 
 // Ime zadnje postaje vožnje — pravi cilj, neodvisen od zapisa opisa linije.

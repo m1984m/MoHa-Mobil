@@ -8,6 +8,7 @@
   import { favStops } from '../favorites';
   import { pushBack } from '../backstack';
   import type { GTFS, Route, Stop } from '../gtfs';
+  import { searchStops, normName } from '../simpleStops';
   import { t } from '../i18n';
 
   export let gtfs: GTFS | null;
@@ -27,19 +28,14 @@
     ? [...gtfs.routes].sort((a, b) => a.short.localeCompare(b.short, 'sl', { numeric: true }))
     : [];
 
-  $: filteredRoutes = query.trim()
-    ? routes.filter(r =>
-        r.short.toLowerCase().includes(query.trim().toLowerCase()) ||
-        r.long.toLowerCase().includes(query.trim().toLowerCase()))
+  // Iskanje brez šumnikov in po besedah (»limbus« najde »Limbuš«), enako povsod v
+  // aplikaciji (evalvacija 04.10.2026, N7).
+  $: q = normName(query);
+  $: filteredRoutes = q
+    ? routes.filter(r => normName(r.short).includes(q) || normName(r.long).includes(q))
     : routes;
 
-  $: stops = gtfs
-    ? query.trim()
-      ? gtfs.stops
-          .filter(s => s.name.toLowerCase().includes(query.trim().toLowerCase()))
-          .slice(0, 40)
-      : []
-    : [];
+  $: stops = gtfs && query.trim() ? searchStops(gtfs, query, 40) : [];
 
   // Sistemski "nazaj" (Android) mora zapreti vozni red, ne aplikacije. Ta zaslon
   // je bil edini z modali brez te vezave — back gumb je uporabnika vrgel iz PWA.
@@ -97,7 +93,8 @@
         </div>
       {/if}
     {:else}
-      {#if !query.trim()}
+      <!-- Iskanje začne pri dveh črkah; ena črka ni »Ni zadetkov« (pregled 05.10.). -->
+      {#if q.length < 2}
         <div class="t-body text-muted text-center py-12">{$t('Vnesi ime postaje za iskanje voznega reda.')}</div>
       {:else if stops.length === 0}
         <div class="t-body text-muted text-center py-12">{$t('Ni zadetkov.')}</div>

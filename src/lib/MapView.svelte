@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import maplibregl, { Map } from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  import type { Stop, Shape } from './gtfs';
+  import { textOnColor, type Stop, type Shape } from './gtfs';
   import type { BikeStation } from './bikes';
   import { MARIBOR } from './geo';
   import { mapLabelSize, mapLabelFactor } from './settings';
@@ -16,6 +16,10 @@
   export let planLegs: { kind: 'walk' | 'bus'; coords: [number, number][]; color: string }[] = [];
   export let planEndpoints: { lat: number; lon: number; kind: 'origin' | 'dest' }[] = [];
   export let vehicles: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[] = [];
+  // Vozila so ocenjena iz voznega reda (ni živih podatkov). Narišejo se bledeje,
+  // s sivim robom in brez sija — prej so bila videti enako kot živa (evalvacija
+  // 04.10.2026, N15), razliko je povedal le napis na vrhu karte.
+  export let vehiclesEstimated = false;
   export let mapStyle: 'map' | 'satellite' = 'map';
   export let showCrosshair: boolean = false;
   export let onStopTap: (s: Stop) => void = () => {};
@@ -200,12 +204,13 @@
     };
   }
 
-  function vehiclesFC(vs: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[]): any {
+  function vehiclesFC(vs: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[], est: boolean): any {
     return {
       type: 'FeatureCollection',
       features: vs.map((v, i) => ({
         type: 'Feature',
-        properties: { i, color: v.color, label: v.routeShort, bearing: v.bearing },
+        // tc: napis na krogu po istem pravilu kontrasta kot značke linij.
+        properties: { i, color: v.color, tc: textOnColor(v.color), label: v.routeShort, bearing: v.bearing, est },
         geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
       })),
     };
@@ -507,7 +512,8 @@
 
     // Vehicles (above stops/plan, below user)
     if (!map.getSource('vehicles')) {
-      map.addSource('vehicles', { type: 'geojson', data: vehiclesFC(vehicles) });
+      map.addSource('vehicles', { type: 'geojson', data: vehiclesFC(vehicles, vehiclesEstimated) });
+      const est = ['to-boolean', ['get', 'est']];
       map.addLayer({
         id: 'vehicles-halo',
         type: 'circle',
@@ -515,10 +521,10 @@
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 8, 14, 13, 17, 18],
           'circle-color': ['get', 'color'],
-          'circle-opacity': 0.25,
+          'circle-opacity': ['case', est, 0, 0.25],
           'circle-blur': 0.3,
         },
-      });
+      } as any);
       map.addLayer({
         id: 'vehicles-dot',
         type: 'circle',
@@ -526,10 +532,12 @@
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 7, 14, 11, 17, 15],
           'circle-color': ['get', 'color'],
-          'circle-stroke-color': '#ffffff',
+          // 0,7: pri 0,5 je napis linije na piki izgubil kontrast (pregled 05.10.).
+          'circle-opacity': ['case', est, 0.7, 1],
+          'circle-stroke-color': ['case', est, '#8E8E93', '#ffffff'],
           'circle-stroke-width': 2.5,
         },
-      });
+      } as any);
       // Smer gibanja (puščica) — zunaj kroga v smeri vožnje, majhna zelena.
       // text-offset [0, -1.6] v rotiranem map frame pomeni "naprej" po bearing-u.
       // Skrita pri manjših zoomih, kjer bi bila vizualno šum.
@@ -554,9 +562,9 @@
           'text-color': '#10b981',
           'text-halo-color': 'rgba(255,255,255,0.9)',
           'text-halo-width': 1.2,
-          'text-opacity': 0.95,
+          'text-opacity': ['case', est, 0.45, 0.95],
         },
-      });
+      } as any);
       map.addLayer({
         id: 'vehicles-label',
         type: 'symbol',
@@ -569,12 +577,13 @@
           'text-ignore-placement': true,
         },
         paint: {
-          'text-color': '#ffffff',
+          'text-color': ['get', 'tc'],
           'text-halo-color': ['get', 'color'],
           'text-halo-width': 1.2,
+          'text-opacity': ['case', est, 0.85, 1],
         },
         minzoom: 12,
-      });
+      } as any);
     }
 
     // User location (pulse + dot)
@@ -757,7 +766,7 @@
     (map.getSource('bikes') as any).setData(bikesFC(bikes));
   }
   $: if (map && styleReady && map.getSource('vehicles')) {
-    (map.getSource('vehicles') as any).setData(vehiclesFC(vehicles));
+    (map.getSource('vehicles') as any).setData(vehiclesFC(vehicles, vehiclesEstimated));
   }
 
   export function fitBounds(coords: [number, number][], maxZoom = 16) {

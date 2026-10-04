@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { allDeparturesForStop, feedCoversDate } from './gtfs';
+import { allDeparturesForStop, feedCoversDate, rowTarget } from './gtfs';
 import type { GTFS } from './gtfs';
 import { fmtClock, fmtDuration } from './time';
 import { tr, locale } from './i18n';
@@ -210,7 +210,9 @@ export function computeOccurrences(
         fireAt,
         depAt,
         title: occurrenceTitle(a),
-        body: occurrenceBody(a, hit.depSec, hit.trip.headsign),
+        // Cilj, ne cel opis vožnje: ta se začne z izhodiščem in se na zaklenjenem
+        // zaslonu odreže ravno tam (pregled kode 05.10.2026).
+        body: occurrenceBody(a, hit.depSec, rowTarget(gtfs, a.routeShort, hit.trip.headsign).dest),
         tag: `${a.id}:${depAt}`,
       });
     }

@@ -31,8 +31,13 @@ const EMOJI_MAP: Record<number, [string, () => string]> = {
 };
 const FALLBACK: [string, () => string] = ['🌡️', () => tr('Vreme')];
 
+// Za vreme zadošča približna lega: koordinate gredo storitvi Open-Meteo zaokrožene na
+// dve decimalki (~1 km). Prej so šle natančne, vsakih 15 minut, vodič pa je trdil, da
+// lokacija ostane na telefonu (evalvacija 04.10.2026, N6).
+const approx = (x: number) => Math.round(x * 100) / 100;
+
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${approx(lat)}&longitude=${approx(lon)}&current=temperature_2m,weather_code&timezone=auto`;
   try {
     const r = await fetch(url);
     if (!r.ok) return null;
@@ -57,7 +62,7 @@ export type DayWeather = {
 };
 
 export async function fetchDayWeather(lat: number, lon: number): Promise<DayWeather | null> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${approx(lat)}&longitude=${approx(lon)}`
     + `&current=temperature_2m,weather_code`
     + `&hourly=temperature_2m,weather_code,precipitation`
     + `&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,wind_speed_10m_max,uv_index_max,weather_code`

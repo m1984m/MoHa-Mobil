@@ -1,5 +1,5 @@
 import { tr, plural, locale } from './i18n';
-import { splitHeadsign } from './gtfs';
+import { rowTarget } from './gtfs';
 import { fmtClock, fmtDayOffset } from './time';
 import type { DepartureRow } from './departures';
 import type { PlanLeg, Plan } from './planner';
@@ -47,15 +47,16 @@ function duration(min: number, sklon: 'tož' | 'im' = 'tož'): string {
   return r ? tr('{h} in {m}', { h: ure, m: word(r, mins, MIN_EN) }) : ure;
 }
 
-function dest(headsign: string, destination?: string): string {
-  return splitHeadsign(headsign, destination).dest;
+// Isti cilj kot na zaslonu (rowTarget): zadnji del opisa, krožna linija »Krožna prek …«.
+function dest(line: string, headsign: string, destination?: string): string {
+  return rowTarget(null, line, headsign, destination).dest;
 }
 
 // ── Odhodi s postajališča ───────────────────────────────────────────────────
 
 // "Linija G6, smer Kamnica, čez 4 minute. Zamuja 2 minuti."
 function rowSentence(r: DepartureRow): string {
-  const d0 = dest(r.headsign, r.destination);
+  const d0 = dest(r.routeShort, r.headsign, r.destination);
   let s: string;
   if (r.minutesFromNow <= 0) s = tr('Linija {line}, smer {dest}, prihaja zdaj.', { line: r.routeShort, dest: d0 });
   else if (r.minutesFromNow < 60) s = tr('Linija {line}, smer {dest}, čez {n} {enota}.', { line: r.routeShort, dest: d0, n: r.minutesFromNow, enota: minuteWord(r.minutesFromNow) });
@@ -97,7 +98,7 @@ export function vehicleSpeech(v: {
   nextStop?: string | null; etaMin?: number | null; delayMin?: number | null;
   stops: { name: string; sec: number }[];
 }): string {
-  let s = tr('Avtobus linije {line}, smer {dest}.', { line: v.line, dest: dest(v.headsign) });
+  let s = tr('Avtobus linije {line}, smer {dest}.', { line: v.line, dest: dest(v.line, v.headsign) });
   if (v.nextStop) {
     const eta = v.etaMin;
     if (eta == null) s += ' ' + tr('Naslednja postaja {stop}.', { stop: v.nextStop });
@@ -153,7 +154,7 @@ export function planSpeech(legs: PlanLeg[], cilj: string): string {
       const wait = l.depSec - clock;
       if (wait >= 60) out.push(tr('Počakaj {trajanje}.', { trajanje: duration(wait / 60) }));
       out.push(tr('Ob {time} na postajališču {stop} vstopi na avtobus linije {line}, smer {dest}.', {
-        time: fmtClock(l.depSec), stop: l.from.name, line: l.route.short, dest: dest(l.headsign),
+        time: fmtClock(l.depSec), stop: l.from.name, line: l.route.short, dest: dest(l.route.short, l.headsign),
       }));
       out.push(tr('Izstopi na postajališču {stop} ob {time}, po {n} {enota}.', {
         stop: l.to.name, time: fmtClock(l.arrSec), n: l.stopCount,
@@ -213,7 +214,7 @@ export function stopTimetableSpeech(stop: string, day: string, deps: Dep[], nowS
 export function lineTimetableSpeech(o: {
   line: string; dir: string; day: string; stop: string | null; times: number[]; nowSec: number | null;
 }): string {
-  const parts = [tr('Linija {line}, smer {dir}, {dan}.', { line: o.line, dir: dest(o.dir), dan: o.day.toLowerCase() })];
+  const parts = [tr('Linija {line}, smer {dir}, {dan}.', { line: o.line, dir: dest(o.line, o.dir), dan: o.day.toLowerCase() })];
   if (o.stop) parts.push(tr('Postajališče {stop}.', { stop: o.stop }));
   const times = [...o.times].sort((a, b) => a - b);
   if (times.length === 0) { parts.push(tr('Ni voženj za izbrani dan.')); return parts.join(' '); }

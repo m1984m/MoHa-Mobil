@@ -87,6 +87,11 @@
           <input type="checkbox" class="mm-wl-switch" bind:checked={$simpleView} />
         </label>
       </div>
+      <!-- Na prvi kartici, ker »Preskoči« in Esc preskočita ostale — obvestilo o štetju
+           mora uporabnik videti pred prvim poslanim dogodkom (pregled kode 05.10.2026). -->
+      <p class="t-footnote text-muted text-center max-w-xs mt-2">
+        {$t('Aplikacija anonimno šteje uporabo, brez lokacije in piškotkov. Izklopiš v Nastavitvah.')}
+      </p>
     </section>
 
     <!-- 2: glas Petra (prebere odhode, pot, vozni red) -->
@@ -122,8 +127,10 @@
             {$t('Lokacija ni dovoljena. Vklopiš jo v nastavitvah brskalnika ali telefona za to stran.')}
           </p>
         {:else}
+          <!-- Prej: »Lokacija ostane na tvojem telefonu«, kar ni držalo (vreme, pešpoti;
+               evalvacija 04.10.2026, N6). Podrobnosti so v Nastavitve → Zasebnost. -->
           <p class="t-footnote text-muted text-center max-w-xs mt-2">
-            {$t('Lokacija ostane na tvojem telefonu — uporabimo jo le za bližnja postajališča.')}
+            {$t('Lokacijo uporabimo za bližnja postajališča, vreme in pešpot. Ne shranjujemo je.')}
           </p>
         {/if}
       {:else}

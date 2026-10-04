@@ -3,9 +3,10 @@
   import { MapPinned, CloudOff, ArrowDownToDot, ArrowUpFromDot } from 'lucide-svelte';
   import {
     nearestStops, upcomingDepartures, loadMeta, feedCoversDate,
-    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination, nextServiceDeparture,
+    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination, nextServiceDeparture, rowTarget,
     type GTFS, type Stop, type CenterDir, type CenterIndex,
   } from '../gtfs';
+  import { online } from '../online';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
@@ -38,6 +39,10 @@
   // OBA ne smejo vecno prekrivati svezih GTFS podatkov.
   let liveAt: Record<number, number> = {};
   let lastFetchedKey = '';
+  // Zadnji krog poizvedb je v celoti padel (strežnik ali Marprom ne odgovarja).
+  // Prej je to povedal le siv napis »Po voznem redu«, časi po voznem redu pa so
+  // bili videti enako kot živi (evalvacija 04.10.2026, N3).
+  let liveDown = false;
 
   // Datum veljavnosti voznih redov iz meta.json (prej hardkodiran string,
   // ki je ob vsaki osvezitvi GTFS zastarel).
@@ -106,11 +111,15 @@
     ? new Map(gtfs.routes.map(r => [r.short.toLowerCase(), r.id]))
     : new Map<string, number>();
 
+  // Krog časovnika in krog ob spremembi postaj se lahko končata v drugem vrstnem redu;
+  // o izpadu odloča samo zadnji začeti krog.
+  let liveSeq = 0;
   async function refreshLive() {
     if (!gtfs) return;
     if (document.hidden) return; // app v ozadju — ne trosi proxy kvote
     const ids = Array.from(new Set([...nearStops.map(s => s.id), ...favStopList.map(s => s.id)]));
-    if (ids.length === 0) return;
+    if (ids.length === 0) { liveDown = false; return; }
+    const seq = ++liveSeq;
     const results = await Promise.allSettled(
       ids.map(async id => [id, await fetchArrivalsForStopPoint(id)] as const)
     );
@@ -122,6 +131,17 @@
       }
     }
     liveByStop = next;
+    if (seq === liveSeq) liveDown = results.every(r => r.status === 'rejected');
+  }
+
+  // Ob izpadu ali brez povezave vrstice takoj preklopijo na vozni red — sicer bi do
+  // dve minuti pisalo »prikazujemo vozni red«, vrstice pa bi kazale »v živo« (pregled 05.10.).
+  $: liveOff = liveDown || !$online;
+  // Ko se povezava vrne, ne čakaj na 30-sekundni krog.
+  let wasOnline = true;
+  $: if ($online !== wasOnline) {
+    wasOnline = $online;
+    if ($online) refreshLive();
   }
 
   // Imena postaj za "cilj" v načinu za starejše — zadnja postaja vožnje je
@@ -147,6 +167,8 @@
         depSec: (hh || 0) * 3600 + (mm || 0) * 60,
         delayMin: a.delayMin,
         delayKnown: a.delayKnown,
+        // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
+        live: a.predicted,
       });
       if (out.length === maxRows) break;
     }
@@ -177,7 +199,7 @@
     // Zivi podatki veljajo 2 min od zadnjega uspesnega fetcha; starejsi
     // padejo nazaj na GTFS (etaMin iz starega fetcha je ze zlagan).
     const fresh = Date.now() - (liveAt[stopId] ?? 0) < 120_000;
-    if (live && live.length > 0 && fresh) {
+    if (!liveOff && live && live.length > 0 && fresh) {
       const rows = liveRows(stopId, live);
       // OBA vrne le bližnje prihode; če filter med njimi ne najde nič, ima vozni
       // red lahko primeren odhod malo kasneje.
@@ -186,16 +208,10 @@
     return gtfsRows(stopId);
   }
 
-  // Ali je za katero od prikazanih postaj na voljo živ podatek — od tega je odvisno,
-  // ali pika ob naslovu utripa zeleno ("V živo") ali miruje ("Po voznem redu").
-  function anyLive(list: { id: number }[], _live: typeof liveByStop, _tick: number): boolean {
-    return list.some(s => (liveByStop[s.id]?.length ?? 0) > 0 && Date.now() - (liveAt[s.id] ?? 0) < 120_000);
-  }
-
   // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnosti jasne.
   function makeBoards<T extends Stop>(
     g: GTFS | null, list: T[], _live: typeof liveByStop, _tick: number,
-    _idx: CenterIndex | null, filter: CenterDir | null, _senior: boolean,
+    _idx: CenterIndex | null, filter: CenterDir | null, _senior: boolean, _off: boolean,
   ) {
     if (!g) return [];
     // Postajališči z istim imenom sta par čez cesto — brez namiga o smeri ju
@@ -204,10 +220,13 @@
     for (const s of list) nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
     return list.map(s => {
       const rows = rowsFor(s.id);
+      // Smer je cilj prvega odhoda, ne cel opis — ta se začne z izhodiščem.
+      const first = rows[0];
       return {
         stop: s as Stop,
         rows,
-        directionHint: (nameCount.get(s.name) ?? 0) > 1 ? (rows[0]?.headsign ?? '') : '',
+        directionHint: (nameCount.get(s.name) ?? 0) > 1 && first
+          ? rowTarget(g, first.routeShort, first.headsign, first.destination).dest : '',
       };
     // Ob vklopljenem filtru kartica brez odhodov ni odgovor na vprašanje
     // "kje ujamem avtobus v center" — raje je ni.
@@ -220,10 +239,12 @@
       empty: gtfs && b.rows.length === 0 ? noMoreToday(nextServiceDeparture(gtfs, b.stop.id)) : undefined,
     })));
   }
-  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
-  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter, $seniorMode);
-  $: nearLive = anyLive(nearStops, liveByStop, tick);
-  $: favLive = anyLive(favStopList, liveByStop, tick);
+  $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter, $seniorMode, liveOff);
+  $: favBoards = makeBoards(gtfs, favStopList, liveByStop, tick, centerIndex, centerFilter, $seniorMode, liveOff);
+  // »V živo« ob naslovu samo, če je vsaj ena prikazana vrstica res živa (dodeljeno
+  // vozilo) — prej je zadoščal odgovor vira, vrstice pa so bile lahko vse »vozni red«.
+  $: nearLive = boards.some(b => b.rows.some(r => r.live));
+  $: favLive = favBoards.some(b => b.rows.some(r => r.live));
 
   $: CENTER_CHIPS = [
     { id: 'to', label: $t('V center'), icon: ArrowDownToDot },
@@ -298,6 +319,19 @@
         </button>
       {/each}
     </div>
+
+    <!-- Izpad živih podatkov: povej naravnost, da so časi po voznem redu in zamud ne
+         poznamo — siv napis »Po voznem redu« ob naslovu je bil premalo. -->
+    {#if gtfs && liveOff}
+      <div class="surface-2 border border-base rounded-2xl px-4 py-3 flex items-start gap-3" role="status">
+        <span class="shrink-0 mt-0.5"><CloudOff size={20} color="var(--status-delay)" /></span>
+        <div class="t-subhead">
+          {!$online
+            ? $t('Brez povezave. Prikazujemo vozni red, zamud ne poznamo.')
+            : $t('Podatki v živo trenutno niso na voljo. Prikazujemo vozni red, zamud ne poznamo.')}
+        </div>
+      </div>
+    {/if}
 
     <!-- Nearby boards (toggable v nastavitvah) -->
     {#if $homeShowNearby}

@@ -7,14 +7,17 @@
     headsign: string;
     minutesFromNow: number;
     depSec: number;
-    // Ime končne postaje, kadar ga poznamo (odhod iz voznega reda). Uporabi ga
-    // način za starejše, ki cel opis linije ne pokaže — glej splitHeadsign.
+    // Ime končne postaje, kadar ga poznamo (odhod iz voznega reda) — rezerva za
+    // opis brez delov, glej splitHeadsign.
     destination?: string;
     // Zamuda iz živega vira. `delayKnown` loči "vemo, da vozi točno" (0) od
     // "zamude ne poznamo" (undefined) — brez tega bi vsak odhod po voznem redu
     // izgledal kot točen.
     delayMin?: number;
     delayKnown?: boolean;
+    // Odhodu je dodeljeno vozilo (OBA BusCode) — šele to je »v živo«; prihod iz OBA
+    // brez vozila je tudi le vozni red.
+    live?: boolean;
   };
 </script>
 
@@ -22,9 +25,10 @@
   import { Bus, Star, MoonStar } from 'lucide-svelte';
   import LineBadge from './LineBadge.svelte';
   import DepartureTime from './DepartureTime.svelte';
+  import DepartureStatus from './DepartureStatus.svelte';
   import { compactLists } from '../settings';
   import { largeUI } from '../simple';
-  import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
+  import { nextServiceDeparture, rowTarget, type GTFS, type Stop } from '../gtfs';
   import { fmtClock, fmtDayOffset } from '../time';
   import { t } from '../i18n';
 
@@ -96,36 +100,27 @@
   {:else}
     <ul class="mm-board" class:mm-board-roomy={$largeUI}>
       {#each rows as r}
-        {@const split = $largeUI ? splitHeadsign(r.headsign, r.destination) : null}
+        <!-- Cilj naprej v vseh načinih: opis »izhodišče – vmes – cilj«, odrezan s tremi
+             pikami, je kazal izhodišče, in to na postajališčih z istim imenom na obeh
+             straneh ceste (evalvacija 04.10.2026, resnost 4). -->
+        {@const split = rowTarget(gtfs, r.routeShort, r.headsign, r.destination)}
         <li class={$largeUI ? '' : 'border-t border-base'}>
+          <!-- Brez aria-label: bralnik zaslona prebere vsebino vrstice (linija, cilj,
+               »prek«, čas, stanje); oznaka jo je prepisala in čas je izpadel (pregled 05.10.). -->
           <button type="button"
                   class="pressable w-full text-left px-4 {rowPad} flex items-center gap-3"
                   style="touch-action: manipulation; min-height: var(--row-min);"
-                  on:click={() => onSelect(stop)}
-                  aria-label={$t('{linija} proti {smer}', { linija: r.routeShort, smer: r.headsign })}>
+                  on:click={() => onSelect(stop)}>
             <LineBadge short={r.routeShort} routeId={r.routeId} size={badgeSize} />
             <div class="flex-1 min-w-0">
-              {#if split}
-                <div class="{rowText} font-semibold">{split.dest}</div>
-                {#if split.via}
-                  <div class="t-footnote text-muted truncate mt-0.5">{$t('prek {via}', { via: split.via })}</div>
-                {/if}
-              {:else}
-                <div class="{rowText} font-medium truncate">{r.headsign}</div>
+              <div class="{rowText} {$largeUI ? 'font-semibold' : 'font-medium truncate'}">{split.dest}</div>
+              {#if split.via && (!$compactLists || $largeUI)}
+                <div class="t-footnote text-muted truncate mt-0.5">{$t('prek {via}', { via: split.via })}</div>
               {/if}
             </div>
             <div class="flex flex-col items-end gap-0.5 shrink-0">
               <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-              {#if r.delayKnown && Math.abs(r.delayMin ?? 0) >= 1}
-                {@const d = r.delayMin ?? 0}
-                {@const barva = Math.abs(d) > 5 ? 'var(--status-disrupt)' : Math.abs(d) >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}
-                <span class="px-1.5 rounded-full t-footnote font-semibold leading-tight"
-                      style="background: color-mix(in oklab, {barva} 16%, transparent); color: {barva}">
-                  {d > 0 ? '+' : ''}{d} min
-                </span>
-              {:else if r.delayKnown}
-                <span class="t-footnote" style="color: var(--status-ontime)">{$t('točno')}</span>
-              {/if}
+              <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} />
             </div>
           </button>
         </li>

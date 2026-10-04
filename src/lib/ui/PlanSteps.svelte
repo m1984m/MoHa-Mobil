@@ -4,7 +4,7 @@
   import LineBadge from './LineBadge.svelte';
   import { fmtClock, fmtDuration } from '../time';
   import { t, plural } from '../i18n';
-  import { splitHeadsign } from '../gtfs';
+  import { rowTarget } from '../gtfs';
   import type { PlanLeg } from '../planner';
 
   // Pot po korakih kot časovnica, ne kot seznam vrstic.
@@ -168,7 +168,7 @@
             </div>
           </div>
         {:else}
-          {@const cilj = splitHeadsign(leg.headsign)}
+          {@const cilj = rowTarget(null, leg.route.short, leg.headsign)}
           {@const prek = vmesne(cilj.via, leg.from.name, leg.to.name)}
           <span class="mm-vozlisce mm-vozlisce-bus"><LineBadge short={leg.route.short} routeId={leg.route.id} size="sm" /></span>
           <div class="mm-vsebina">

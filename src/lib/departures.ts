@@ -13,6 +13,7 @@ export type DepartureRow = {
   destination?: string;
   delayMin?: number;
   delayKnown?: boolean;
+  live?: boolean;
 };
 
 // Živi prihodi veljajo dve minuti od zadnjega uspešnega klica; starejši ETA je
@@ -30,6 +31,8 @@ export function liveDepartureRows(arr: StopArrival[], routeIdByShort: Map<string
       depSec: (hh || 0) * 3600 + (mm || 0) * 60,
       delayMin: a.delayMin,
       delayKnown: a.delayKnown,
+      // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
+      live: a.predicted,
     };
   });
 }

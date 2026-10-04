@@ -99,4 +99,7 @@ export default {
   'Informacije, ki jih deliš:': 'What you\'re sharing:',
   'Kopiraj vse': 'Copy all',
   'Samo povezavo': 'Link only',
+  // 0.26.0 — »Offline« samo ob dejanski izgubi povezave
+  'Brez povezave · vozni red': 'Offline · timetable',
+  'Ni živih podatkov · vozni red': 'No live data · timetable',
 };

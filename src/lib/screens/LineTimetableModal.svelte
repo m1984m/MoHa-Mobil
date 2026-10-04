@@ -4,7 +4,7 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { lineTimetableSpeech } from '../readAloud';
-  import { allTripsForRouteDirection, dayKindToDate, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
+  import { allTripsForRouteDirection, dayKindToDate, rowTarget, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t, plural } from '../i18n';
@@ -50,6 +50,7 @@
   })() : new Map<number, string>();
 
   $: dirOptions = [...dirHeadsigns.entries()].sort((a, b) => a[0] - b[0]);
+  $: smer = rowTarget(gtfs, route?.short ?? '', dirHeadsigns.get(dir) || '');
 
   // Vse postaje, ki jih ta linija v izbrani smeri obišče (union vseh trip-ov),
   // urejeno po vrstnem redu v najdaljšem trip-u (canonical sequence).
@@ -149,9 +150,12 @@
       </div>
 
       <div class="px-5 pb-2 shrink-0 flex items-center gap-2">
+        <!-- Smer je cilj, ne cel opis: ta se začne z izhodiščem in odrezan kaže napačno
+             stran (pregled kode 05.10.2026). -->
         <div class="flex-1 min-w-0 surface-2 rounded-xl px-3 py-2">
           <div class="t-footnote text-muted">{$t('Smer')}</div>
-          <div class="t-body font-semibold truncate">{dirHeadsigns.get(dir) || '—'}</div>
+          <div class="t-body font-semibold truncate">{smer.dest || '—'}</div>
+          {#if smer.via}<div class="t-footnote text-muted truncate">{$t('prek {via}', { via: smer.via })}</div>{/if}
         </div>
         {#if dirOptions.length > 1}
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
@@ -201,7 +205,10 @@
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-5 pb-5">
+      <!-- Drsni seznam brez gumbov mora biti dosegljiv s tipkovnico, sicer ga s puščicami
+           ni mogoče pomikati (axe scrollable-region-focusable, evalvacija 04.10.2026). -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="flex-1 overflow-y-auto px-5 pb-5" tabindex="0" role="region" aria-label={$t('Odhodi')}>
         <!-- Ob menjavi (izbira postaje, smer, dan) vsebina rahlo zdrsne na mesto, namesto
              da bi se v hipu zamenjala. -->
         {#key `${pickerOpen}|${dir}|${day}|${selectedStopId}`}
@@ -237,7 +244,7 @@
                 <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                   <div class="tabular-nums font-bold text-lg w-14">{fmtTime(sec)}</div>
                   <div class="flex-1 min-w-0">
-                    <div class="t-footnote text-muted truncate">→ {trip.headsign}</div>
+                    <div class="t-footnote text-muted truncate">→ {rowTarget(gtfs, route?.short ?? '', trip.headsign).dest}</div>
                     <div class="t-footnote text-muted">{$t('konča {cas}', { cas: fmtTime(lastSec) })}</div>
                   </div>
                 </li>
@@ -257,7 +264,7 @@
                 <div class="tabular-nums font-bold w-12">{fmtTime(first?.[2] ?? 0)}</div>
                 <div class="t-footnote text-muted">→</div>
                 <div class="tabular-nums font-bold w-12">{fmtTime(last?.[1] ?? 0)}</div>
-                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)}′ · {$t('{n} post.', { n: trip.stops.length })}</div>
+                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)} min · {trip.stops.length} {plural(trip.stops.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
               </li>
             {/each}
           </ul>

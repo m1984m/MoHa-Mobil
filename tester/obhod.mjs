@@ -24,12 +24,14 @@ import { prestrezi, SCENARIJI } from './scenariji.mjs';
 const tu = dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.MM_URL || 'https://m1984m.github.io/MoHa-Mobil/';
 
+// Dostopno ime zavihka (aria-label). Od 0.26.0 ima okrajšan napis »Priljub.« /
+// »Nastav.« polno ime za bralnik zaslona.
 const ZAVIHKI = [
   { id: 'home',       label: 'Dom' },
   { id: 'timetables', label: 'Vozni redi' },
   { id: 'map',        label: 'Karta' },
-  { id: 'fav',        label: 'Priljub.' },
-  { id: 'settings',   label: 'Nastav.' },
+  { id: 'fav',        label: 'Priljubljene' },
+  { id: 'settings',   label: 'Nastavitve' },
 ];
 
 // Maribor, Glavni trg — da »najbližja postajališča« sploh kaj vrnejo.

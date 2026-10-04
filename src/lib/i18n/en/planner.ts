@@ -78,4 +78,9 @@ export default {
   'Shrani': 'Save',
   'Počisti vse priljubljene postaje?': 'Clear all saved stops?',
   'Shranjene poti ostanejo. Dejanje lahko takoj razveljaviš.': 'Saved routes are kept. You can undo this straight away.',
+  // 0.26.0 — načrtovalnik
+  'Izberi, od kod greš.': 'Choose where you start from.',
+  'Vpiši, kam greš.': 'Enter where you are going.',
+  'samo peš, {m} m': 'walk only, {m} m',
+  'manj hoje': 'less walking',
 };

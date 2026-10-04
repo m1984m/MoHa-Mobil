@@ -37,4 +37,7 @@ export default {
   'Za pot do poljubne točke tapni rdeči gumb z bucikom, premakni karto pod buciko in potrdi.': 'To get directions to any place, tap the red pin button, move the map under the pin and confirm.',
   'Z zvezdico shraniš postajališče med priljubljene — njegovi odhodi so potem vedno na Domu.': 'Tap the star to save this stop — its departures will then always be on Home.',
   'Lokacija ni dovoljena. Vklopiš jo v nastavitvah brskalnika ali telefona za to stran.': 'Location is not allowed. Turn it on for this site in your browser or phone settings.',
+  // 0.26.0 — točna izjava o lokaciji in štetju
+  'Lokacijo uporabimo za bližnja postajališča, vreme in pešpot. Ne shranjujemo je.': 'We use your location for nearby stops, weather and walking routes. We do not store it.',
+  'Aplikacija anonimno šteje uporabo, brez lokacije in piškotkov. Izklopiš v Nastavitvah.': 'The app counts usage anonymously, without location or cookies. You can turn it off in Settings.',
 };

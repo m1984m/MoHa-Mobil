@@ -5,6 +5,39 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.26.0 — 2026-10-05
+
+Faza 1 popravkov po zunanji UX evalvaciji 04.10.2026 (`../evalvacija_2026-10-04/EVALVACIJA_UX.md`).
+
+- Cilj vožnje (N1): Marpromovi opisi smeri imajo obliko »izhodišče – vmes – cilj«; aplikacija jih je kazala od začetka
+  in odrezala, zato je bil viden izhodišče. Zdaj je povsod (Dom, Priljubljene, Preprost pogled, karta, opomniki, vozni red
+  linije, potisno obvestilo, glasno branje) na prvem mestu cilj, »prek« so samo vmesne točke, »smer« na kartici je cilj;
+  krožna G3 je »Krožna prek …« (prva točka za izhodiščem loči obe smeri kroga).
+  `splitHeadsign` / `rowTarget` / `isCircularRoute` v `gtfs.ts`.
+- Stanje odhoda (N3, N15–N17): enotna oznaka `DepartureStatus` (»točno«, »+3 min«, »v živo«, »vozni red«) povsod, raste
+  z Večjim besedilom; »v živo« samo z dodeljenim vozilom; list avtobusa ne kaže več »ocena« pri živem vozilu. Ob izpadu
+  živih podatkov ali povezave Dom pokaže obvestilo; karta loči »Brez povezave« od »Ni živih podatkov«, ocenjena vozila so
+  bledejša. Čas povsod po istem pravilu (»1 h 17« namesto »77 min«), brez zapisa »20′«.
+- Načrtovalnik (N4, N7): izhodišče privzeto »Moja lokacija«, pod onemogočenim gumbom razlog; kadar je hoja hitrejša,
+  ostane avtobus kot možnost »manj hoje« (hoja vsaj tretjino krajša, prihod največ 15 min za hojo); iskanje brez šumnikov
+  in po besedah povsod (načrtovalnik, vozni redi, karta); postajališča z istim imenom imajo opis linij in smeri; povezava na
+  cene iz rezultatov; »samo peš, 851 m« namesto »peš · 851 m peš«.
+- Dostopnost in zasebnost (N5, N6, N18, N19): paleta linij z napisom vsaj 4,6 : 1 (G3 temen napis, G5/G1/G4/P16 potemnjeni);
+  `app.css` pravilo za gumbe v `@layer base` (»Poišči pot« spet bel napis); vreme dobi koordinate zaokrožene na ~1 km,
+  vodič ne trdi več, da lokacija ostane na telefonu, v Nastavitve → Zasebnost je opis, kam gredo podatki; štetje uporabe
+  pošlje prvi dogodek šele po koncu vodiča; zavihka imata za bralnik zaslona polni imeni.
+- Gumb »Zapri« v listih postajališča in avtobusa (Matej, N14): namesto rdečega gumba z reliefom ploščata kapsula z ikono X
+  na `--surface-2`, visoka kot sosednji gumbi; v Preprostem pogledu v slogu ostalih velikih gumbov z napisom.
+- Po pregledu kode: obvestilo o izpadu velja takoj (vrstice ne kažejo več starih živih podatkov, ob vrnitvi povezave
+  takojšnja osvežitev, shramba `online` ob ponovni naročnini prebere stanje), velja tudi v Preprostem pogledu; glava
+  »V živo« samo, kadar ima vsaj ena vrstica dodeljeno vozilo; »manj hoje« išče tudi poti z dostopom do 400 m (Glavni
+  trg → Europark: avtobus v 63 od 85 časov namesto 17); »Moja lokacija« vzame koordinate ob iskanju, ne ob odprtju;
+  oznaka stanja na neprosojnem ozadju (AA tudi na `surface-2` in listu avtobusa); obvestilo o štetju že na prvi kartici
+  vodiča (velja tudi za »Preskoči«), izklop štetja počisti vrsto; Zasebnost omeni štetje postajališč na strežniku;
+  vrstice brez `aria-label` (bralnik prebere čas in stanje); Esc nad cenikom ne zapre načrtovalnika; izbira teme s
+  puščičnimi tipkami; obhod v testerju z novima imenoma zavihkov.
+- Razvoj: `vite.config.ts` ne opazuje več mape `.omc/` — zapis vtičnika OMC je večkrat na minuto osvežil stran.
+
 ## 0.25.0 — 2026-10-01
 
 - Preprost pogled: v urejanju opomnikov gumb »Popravi« odpre čarovnik predizpolnjen (na pregledu); shranjevanje

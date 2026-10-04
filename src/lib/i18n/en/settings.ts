@@ -96,6 +96,22 @@ export default {
   'Koliko ljudi aplikacijo uporablja in kateri zasloni. Brez piškotkov, brez lokacije in brez podatka, ki bi te prepoznal.':
     'How many people use the app and which screens. No cookies, no location and nothing that could identify you.',
   'Preklopi anonimno štetje uporabe': 'Toggle anonymous usage count',
+  // 0.26.0 — kam gredo podatki
+  'Kam gredo podatki': 'Where your data goes',
+  'Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot in ime točke na karti gre natančna lega storitvama openrouteservice (prek strežnika aplikacije) in OpenStreetMap.':
+    'Location: nearby stops are worked out on your phone. Weather (Open-Meteo) gets your position rounded to about 1 km. For walking routes and naming a point on the map, the exact position goes to openrouteservice (via the app server) and OpenStreetMap.',
+  'Priljubljene, kraji in nastavitve so shranjeni samo na tej napravi.':
+    'Saved stops, places and settings are stored only on this device.',
+  'Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler opomnik obstaja.':
+    'Reminders: alert times and the notification subscription are kept on the app server (Cloudflare) for as long as the reminder exists.',
+  'Glasno branje: besedilo, ki ga Petra prebere, gre storitvi Microsoft Azure, brez lokacije.':
+    'Read aloud: the text Petra reads goes to Microsoft Azure, without your location.',
+  'Štetje uporabe (stikalo zgoraj): brez piškotkov, lokacije in podatka o napravi. Šteje zagone, zaslone in nastavitve.':
+    'Usage count (switch above): no cookies, location or device data. It counts app starts, screens and settings.',
+  'Odhodi v živo: aplikacija za postajališča, ki jih gledaš, vpraša strežnik aplikacije (Cloudflare), ta pa Marprom. Strežnik šteje, katera postajališča se gledajo, brez podatka o napravi; tega stikalo ne izklopi.':
+    'Live departures: for the stops you view, the app asks the app server (Cloudflare), which asks Marprom. The server counts which stops are viewed, without device data; the switch does not turn this off.',
+  'Karte: tvoj brskalnik ploščice prenese neposredno od CARTO ali Esri.':
+    'Maps: your browser downloads map tiles directly from CARTO or Esri.',
   'Počisti vse podatke': 'Clear all data',
   'Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve':
     'Removes saved stops, departure reminders and saved journeys, and resets settings',
@@ -243,6 +259,11 @@ export default {
   'Na Karti so postaje MBajk s prostimi kolesi, ob postajališču pa najbližja postaja': 'The Map shows MBajk bike stations with available bikes, and each stop shows the nearest one',
   'Nov razdelek Cene in vozovnice: cenik Marproma in kje kupiti vozovnico': 'New Fares & tickets section: Marprom prices and where to buy tickets',
   'Kratek vodič ob prvem zagonu in namigi — znova ga odpreš v Nastavitvah': 'A short guide on first launch plus tips — reopen it from Settings',
+  // Novosti 0.26.0
+  'Pri odhodih je na prvem mestu cilj vožnje, smer na kartici pove, kam avtobus pelje': 'Departures now lead with the destination, and the direction on a stop card tells you where the bus is going',
+  'Ko podatkov v živo ni, Dom to jasno pove; pri vsakem odhodu piše, ali je v živo ali po voznem redu': 'When live data is unavailable, Home says so clearly; each departure shows whether it is live or scheduled',
+  'Načrtovalnik začne pri tvoji lokaciji, ponudi tudi avtobus z manj hoje in najde postajališča brez šumnikov': 'The planner starts from your location, also offers a bus with less walking and finds stops typed without diacritics',
+  'Bolj berljive oznake linij in stanja, gumb Zapri v slogu aplikacije in natančnejši opis zasebnosti': 'More readable line and status labels, a Close button that fits the app, and a more accurate privacy description',
   // Novosti 0.25.0
   'Opomnik v Preprostem pogledu zdaj popraviš z gumbom Popravi, ni ga treba brisati': 'You can now edit a reminder in Simple view with the Edit button, no need to delete it',
   'Pošlji preizkusno obvestilo in kratko navodilo, kako vklopiš zvok obvestil': 'Send a test notification, plus short instructions for turning on notification sound',

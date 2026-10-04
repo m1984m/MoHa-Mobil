@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { ComponentType } from 'svelte';
   import { seniorMode } from '../settings';
-  export let tabs: { id: string; label: string; icon: ComponentType; iconActive?: ComponentType }[] = [];
+  // `name` je polno ime za bralnik zaslona, kadar je napis okrajšan (»Priljub.«).
+  export let tabs: { id: string; label: string; name?: string; icon: ComponentType; iconActive?: ComponentType }[] = [];
   export let active: string;
   export let onChange: (id: string) => void;
 
@@ -25,17 +26,19 @@
       <button class="mm-tab pressable relative flex flex-col items-center justify-center gap-0.5"
               style="min-height: var(--tabbar-h); padding: 4px 2px;"
               on:click={() => onChange(t.id)}
-              aria-label={t.label}
+              aria-label={t.name ?? t.label}
               aria-current={isActive ? 'page' : undefined}>
         {#if isActive}
           <span class="mm-tab-pill" aria-hidden="true"></span>
         {/if}
         <span class="relative flex flex-col items-center gap-0.5">
+          <!-- --accent-on-tint: aktivni zavihek leži na rdečkasti kapsuli, kjer je imel
+               --accent le 4,45 : 1 (evalvacija 04.10.2026). -->
           <svelte:component this={(isActive && t.iconActive) || t.icon}
                             size={iconSize}
                             strokeWidth={isActive ? 2.25 : 1.75}
-                            color={isActive ? 'var(--accent)' : 'var(--text-muted)'} />
-          <span class="t-footnote mm-tab-label" style="color: {isActive ? 'var(--accent)' : 'var(--text-muted)'}; font-weight: {isActive ? 600 : 400};">
+                            color={isActive ? 'var(--accent-on-tint, var(--accent))' : 'var(--text-muted)'} />
+          <span class="t-footnote mm-tab-label" style="color: {isActive ? 'var(--accent-on-tint, var(--accent))' : 'var(--text-muted)'}; font-weight: {isActive ? 600 : 400};">
             {t.label}
           </span>
         </span>

@@ -2,9 +2,10 @@
   import { onMount, onDestroy, tick as flush } from 'svelte';
   import {
     Home, MapPin, Search, Map as MapIcon, LayoutGrid, Pencil, Trash2, Plus, ChevronRight, Star,
-    Bell, BellOff, TriangleAlert,
+    Bell, BellOff, TriangleAlert, CloudOff,
   } from 'lucide-svelte';
-  import { nearestStops, type GTFS, type Stop } from '../gtfs';
+  import { nearestStops, rowTarget, type GTFS, type Stop } from '../gtfs';
+  import { online } from '../online';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
   import { nearbyRadiusM } from '../settings';
@@ -145,24 +146,36 @@
   $: stopKey = stops.map(s => s.id).join(',');
   $: if (gtfs && stopKey && stopKey !== lastKey) { lastKey = stopKey; refreshLive(); }
 
+  // Izpad živih podatkov: tudi tu jasno obvestilo — starejši so ciljna skupina, ki
+  // ji siv napis »Po voznem redu« ne pove dovolj (pregled kode 05.10.2026).
+  let liveDown = false;
+  let liveSeq = 0;
   async function refreshLive() {
     if (!gtfs || document.hidden) return;
     const ids = stops.map(s => s.id);
-    if (!ids.length) return;
+    if (!ids.length) { liveDown = false; return; }
+    const seq = ++liveSeq;
     const res = await Promise.allSettled(ids.map(async id => [id, await fetchArrivalsForStopPoint(id)] as const));
     const next = { ...liveByStop };
     for (const r of res) {
       if (r.status === 'fulfilled') { next[r.value[0]] = r.value[1]; liveAt[r.value[0]] = Date.now(); lastLiveAt = Date.now(); }
     }
     liveByStop = next;
+    if (seq === liveSeq) liveDown = res.every(r => r.status === 'rejected');
+  }
+  $: liveOff = liveDown || !$online;
+  let wasOnline = true;
+  $: if ($online !== wasOnline) {
+    wasOnline = $online;
+    if ($online) refreshLive();
   }
 
   $: routeIds = routeIdIndex(gtfs);
   $: stopNames = gtfs ? new Map(gtfs.stops.map(s => [s.id, s.name])) : new Map<number, string>();
 
-  function rowsFor(stopId: number, max: number, _live: typeof liveByStop, _tick: number): DepartureRow[] {
+  function rowsFor(stopId: number, max: number, _live: typeof liveByStop, _tick: number, off: boolean): DepartureRow[] {
     const live = liveByStop[stopId];
-    if (live && live.length && Date.now() - (liveAt[stopId] ?? 0) < LIVE_FRESH_MS) {
+    if (!off && live && live.length && Date.now() - (liveAt[stopId] ?? 0) < LIVE_FRESH_MS) {
       return liveDepartureRows(live, routeIds, max);
     }
     return gtfs ? scheduleDepartureRows(gtfs, stopId, max, stopNames) : [];
@@ -170,11 +183,14 @@
 
   // Dve postajališči z istim imenom sta par čez cesto — smer ju loči.
   $: boards = stops.map(s => {
-    const rows = rowsFor(s.id, rowsPerBoard(stops.length), liveByStop, tick);
+    const rows = rowsFor(s.id, rowsPerBoard(stops.length), liveByStop, tick, liveOff);
     const twin = stops.filter(x => x.name === s.name).length > 1;
-    return { stop: s, rows, hint: twin ? (rows[0]?.headsign ?? '') : '' };
+    // Smer je cilj prvega odhoda — cel opis se začne z izhodiščem.
+    const first = rows[0];
+    return { stop: s, rows, hint: twin && first ? rowTarget(gtfs, first.routeShort, first.headsign, first.destination).dest : '' };
   });
-  $: anyLive = boards.some(b => (liveByStop[b.stop.id]?.length ?? 0) > 0 && Date.now() - (liveAt[b.stop.id] ?? 0) < LIVE_FRESH_MS);
+  // »V živo« samo, če je vsaj ena prikazana vrstica res živa (dodeljeno vozilo).
+  $: anyLive = boards.some(b => b.rows.some(r => r.live));
 
   function clockOf(ms: number): string {
     const d = new Date(ms);
@@ -229,6 +245,16 @@
             {/if}
           </div>
         {:else}
+          {#if liveOff}
+            <div class="surface-2 border border-base rounded-2xl p-4 flex items-start gap-3" role="status">
+              <span class="shrink-0 mt-0.5"><CloudOff size={26} color="var(--status-delay)" /></span>
+              <p class="t-body">
+                {!$online
+                  ? $t('Brez povezave. Prikazujemo vozni red, zamud ne poznamo.')
+                  : $t('Podatki v živo trenutno niso na voljo. Prikazujemo vozni red, zamud ne poznamo.')}
+              </p>
+            </div>
+          {/if}
           {#each boards as b (b.stop.id)}
             <StopBoard {gtfs} stop={b.stop} rows={b.rows} directionHint={b.hint}
                        distanceM={b.stop.d ?? null} starred={$favStops.has(b.stop.id)}

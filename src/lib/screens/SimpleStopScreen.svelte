@@ -2,7 +2,7 @@
   import { page } from '../motion';
   import { onDestroy } from 'svelte';
   import { ArrowLeft, Star, Map as MapIcon, MoonStar, Bike } from 'lucide-svelte';
-  import { nextServiceDeparture, splitHeadsign, type GTFS, type Stop } from '../gtfs';
+  import { nextServiceDeparture, rowTarget, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
   import { showBikes } from '../settings';
@@ -16,6 +16,7 @@
   import { t } from '../i18n';
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
+  import DepartureStatus from '../ui/DepartureStatus.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
 
@@ -69,6 +70,8 @@
     return liveNow ? liveDepartureRows(live, routeIds, MAX_ROWS) : scheduleDepartureRows(g, s.id, MAX_ROWS, stopNames);
   }
   $: rows = makeRows(stop, gtfs, isLive, tick);
+  // »V živo« ob imenu samo, če je vsaj ena vrstica res živa (dodeljeno vozilo).
+  $: headerLive = rows.some(r => r.live);
   $: nextDay = (stop && gtfs && rows.length === 0) ? nextServiceDeparture(gtfs, stop.id) : null;
   $: starred = stop ? $favStops.has(stop.id) : false;
 
@@ -97,7 +100,7 @@
            style="padding-bottom: calc(env(safe-area-inset-bottom) + 2rem);">
         <div>
           <h1 class="t-title1">{stop.name}</h1>
-          <div class="mt-1"><LiveDot live={isLive} label={isLive ? $t('V živo') : $t('Po voznem redu')} /></div>
+          <div class="mt-1"><LiveDot live={headerLive} label={headerLive ? $t('V živo') : $t('Po voznem redu')} /></div>
         </div>
 
         <div class="flex flex-wrap gap-3">
@@ -125,7 +128,7 @@
         {:else}
           <ul class="space-y-2" aria-label={$t('Odhodi')}>
             {#each rows as r}
-              {@const split = splitHeadsign(r.headsign, r.destination)}
+              {@const split = rowTarget(gtfs, r.routeShort, r.headsign, r.destination)}
               <li class="mm-ss-row">
                 <LineBadge short={r.routeShort} routeId={r.routeId} size="lg" />
                 <div class="flex-1 min-w-0">
@@ -134,12 +137,7 @@
                 </div>
                 <div class="flex flex-col items-end gap-1 shrink-0">
                   <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} />
-                  {#if r.delayKnown && Math.abs(r.delayMin ?? 0) >= 1}
-                    {@const d = r.delayMin ?? 0}
-                    <span class="t-footnote font-semibold" style="color: {Math.abs(d) > 5 ? 'var(--status-disrupt)' : Math.abs(d) >= 3 ? 'var(--status-delay)' : 'var(--status-ontime)'}">{d > 0 ? '+' : ''}{d} min</span>
-                  {:else if r.delayKnown}
-                    <span class="t-footnote" style="color: var(--status-ontime)">{$t('točno')}</span>
-                  {/if}
+                  <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} />
                 </div>
               </li>
             {/each}
