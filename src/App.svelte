@@ -426,7 +426,7 @@
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
       chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      syncArrivalWithWalks(chosen);
+      if (walks.every(w => !w?.estimated)) syncArrivalWithWalks(chosen);   // ob izpadu ORS prihod načrtovalnika
       onDone(chosen, geoms, from, to);
       return true;
     } catch {

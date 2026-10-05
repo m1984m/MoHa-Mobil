@@ -65,7 +65,8 @@ export function liveDepartures(gtfs: GTFS, stopId: number, arr: StopArrival[], w
   if (out.length === arr.length) return arr;
   const ended = new Set(arr.filter(a => !out.includes(a)).map(a => a.lineCode.toLowerCase()));
   const have = new Set(out.map(a => a.lineCode.toLowerCase()));
-  for (const d of upcomingDepartures(gtfs, stopId, when, 30)) {
+  // Velik k: na Avtobusni postaji je naslednji odhod linije lahko šele na 35. mestu.
+  for (const d of upcomingDepartures(gtfs, stopId, when, 500)) {
     const short = d.route.short.toLowerCase();
     if (!ended.has(short) || have.has(short)) continue;
     have.add(short);

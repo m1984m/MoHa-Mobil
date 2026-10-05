@@ -1215,7 +1215,8 @@
 
         <div class="flex items-center justify-between mb-2">
           <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Naslednji odhodi')}</h2>
-          <LiveDot live={liveArrivals.length > 0} label={liveArrivals.length > 0 ? $t('V živo') : $t('Po voznem redu')} />
+          <!-- »V živo« samo z vozilom: seznam ima lahko tudi odhod iz voznega reda (liveDepartures). -->
+          <LiveDot live={liveArrivals.some(a => a.predicted)} label={liveArrivals.some(a => a.predicted) ? $t('V živo') : $t('Po voznem redu')} />
         </div>
         {#if liveArrivals.length > 0}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">

@@ -339,7 +339,9 @@
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
       shown.walkMeters = shown.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      syncArrivalWithWalks(shown);
+      // Ob izpadu ORS (zračna črta) ostane prihod načrtovalnika: zadnji odsek ima v nogah
+      // zračni čas, prihod pa obvoz (kontrolni pregled 05.10.2026).
+      if (walks.every(w => !w?.estimated)) syncArrivalWithWalks(shown);
       onShowPlan(shown, geoms, fromPlace!, toPlace!);
       onClose();
     } catch (e: any) {

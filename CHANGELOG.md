@@ -5,6 +5,17 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.26.2 — 2026-10-05
+
+Drobni popravki po kontrolnem pregledu kode 0.26.1 (APPROVE, samo nizke najdbe).
+
+- Ob izpadu openrouteservice se prihod izbrane poti ne usklajuje s peš odseki (ti imajo tedaj zračni čas brez
+  obvoza, prihod načrtovalnika pa ga ima), sicer je bil prihod pri poteh z avtobusom prekratek.
+- List postajališča na karti: »V živo« samo, kadar ima vsaj en prihod vozilo; seznam ima lahko tudi odhod iz
+  voznega reda, ki ga doda `liveDepartures`.
+- `liveDepartures` išče naslednji odhod izpadle linije v vseh današnjih odhodih (prej prvih 30; na Avtobusni
+  postaji je bil včasih šele 35.).
+
 ## 0.26.1 — 2026-10-05
 
 Popravki po ponovnem obhodu in neodvisni ponovni oceni 0.26.0 na produkciji
