@@ -2,15 +2,15 @@
   import { page } from '../motion';
   import { onDestroy } from 'svelte';
   import { ArrowLeft, Star, Map as MapIcon, MoonStar, Bike } from 'lucide-svelte';
-  import { nextServiceDeparture, rowTarget, type GTFS, type Stop } from '../gtfs';
+  import { nextServiceDeparture, rowTarget, departsFromStop, type GTFS, type Stop } from '../gtfs';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
   import { showBikes } from '../settings';
   import { bikeStations, startBikes, nearestBikeStation } from '../bikes';
   import {
-    liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
+    liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow, liveDepartures,
   } from '../departures';
-  import { departuresSpeech, noMoreToday } from '../readAloud';
+  import { departuresSpeech, noMoreToday, emptyStopSpeech } from '../readAloud';
   import { fmtClock, fmtDayOffset } from '../time';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
@@ -43,7 +43,8 @@
     const id = stop.id;
     try {
       const r = await fetchArrivalsForStopPoint(id);
-      if (stop?.id === id) { live = r; liveAt = Date.now(); }
+      // Brez voženj, ki se tu končajo (prazen seznam → vozni red).
+      if (stop?.id === id) { live = gtfs ? liveDepartures(gtfs, id, r) : r; liveAt = Date.now(); }
     } catch {}
   }
 
@@ -106,7 +107,7 @@
         <div class="flex flex-wrap gap-3">
           <!-- resetKey s `hidden`: ob odhodu na karto utihne. -->
           <ReadAloud variant="big" resetKey={`${stop.id}:${hidden}`}
-                     text={() => stop ? departuresSpeech([{ name: stop.name, rows, empty: noMoreToday(nextDay) }]) : ''} />
+                     text={() => stop ? departuresSpeech([{ name: stop.name, rows, empty: gtfs ? emptyStopSpeech(gtfs, stop.id) : noMoreToday(nextDay) }]) : ''} />
           <button type="button" class="pressable mm-ss-btn" on:click={() => stop && favStops.toggle(stop.id)}>
             <Star size={24} strokeWidth={2} fill={starred ? 'var(--status-delay)' : 'none'} color={starred ? 'var(--status-delay)' : 'currentColor'} />
             {starred ? $t('Shranjeno med moje') : $t('Shrani med moje')}
@@ -117,7 +118,9 @@
           <div class="surface-2 rounded-2xl p-5 flex items-center gap-3">
             <MoonStar size={26} color="var(--text-muted)" />
             <div class="t-body">
-              {#if nextDay}
+              {#if gtfs && stop && !departsFromStop(gtfs, stop.id)}
+                {$t('Končna postaja: od tu avtobusi ne odpeljejo.')}
+              {:else if nextDay}
                 {$t('Danes ni več odhodov · prvi {dan} ob', { dan: fmtDayOffset(nextDay.dayOffset, nextDay.weekday) })}
                 <b>{fmtClock(nextDay.depSec)}</b>
               {:else}

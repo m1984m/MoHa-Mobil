@@ -2,7 +2,7 @@
   import { backdrop, sheet } from '../motion';
   import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
-  import { upcomingDepartures, nextServiceDeparture, rowTarget } from '../gtfs';
+  import { upcomingDepartures, rowTarget, departsFromStop } from '../gtfs';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
   import Screen from '../ui/Screen.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
@@ -10,7 +10,7 @@
   import DepartureTime from '../ui/DepartureTime.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
-  import { departuresSpeech, gtfsRow, noMoreToday } from '../readAloud';
+  import { departuresSpeech, gtfsRow, emptyStopSpeech } from '../readAloud';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
   import { favLines, type FavLine } from '../favLines';
@@ -181,7 +181,8 @@
     const out: LineChoice[] = [];
     const routeById = new Map(g.routes.map(r => [r.id, r]));
     for (const t of g.trips) {
-      if (!t.stops.some(st => st[0] === stopId)) continue;
+      // Zadnja postaja vožnje je prihod: smer, ki se tu samo konča, pripeta ne bi imela odhodov.
+      if (!t.stops.some((st, i) => st[0] === stopId && i < t.stops.length - 1)) continue;
       const k = `${t.route}:${t.dir}`;
       if (seen.has(k)) continue;
       seen.add(k);
@@ -319,7 +320,7 @@
         <div class="flex items-center gap-2">
           <ReadAloud text={() => departuresSpeech(boards.map(b => ({
             name: b.stop.name, rows: b.deps.map(gtfsRow),
-            empty: gtfs && b.deps.length === 0 ? noMoreToday(nextServiceDeparture(gtfs, b.stop.id)) : undefined,
+            empty: gtfs && b.deps.length === 0 ? emptyStopSpeech(gtfs, b.stop.id) : undefined,
           })))} />
           <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
             <Trash2 size={14} /> {$t('Počisti')}
@@ -351,7 +352,9 @@
               <div class="t-title3 font-semibold flex-1 truncate">{b.stop.name}</div>
             </button>
             {#if b.deps.length === 0}
-              <div class="px-4 pb-3 t-footnote text-muted">{$t('Danes ni več odhodov')}</div>
+              <div class="px-4 pb-3 t-footnote text-muted">
+                {gtfs && !departsFromStop(gtfs, b.stop.id) ? $t('Končna postaja: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov')}
+              </div>
             {:else}
               <ul>
                 {#each b.deps as d}

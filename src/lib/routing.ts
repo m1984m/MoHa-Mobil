@@ -9,7 +9,8 @@ import { writable } from 'svelte/store';
 import { getWalkMps } from './settings';
 
 type LL = { lat: number; lon: number };
-export type WalkRoute = { coords: [number, number][]; meters: number; sec: number };
+// `estimated`: zračna črta brez openrouteservice (izpad, kvota) — prekratka za čas hoje.
+export type WalkRoute = { coords: [number, number][]; meters: number; sec: number; estimated?: boolean };
 
 // Dva načina delovanja:
 //  - VITE_ORS_PROXY (priporočeno): klici gredo na lasten Cloudflare Worker, ki ključ
@@ -56,8 +57,9 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
 
   if (!ORS_ENABLED) {
     markDegraded();
-    cache.set(k, straight);
-    return straight;
+    const est = { ...straight, estimated: true };
+    cache.set(k, est);
+    return est;
   }
 
   try {
@@ -93,8 +95,9 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
   } catch (e: any) {
     if (e?.name === 'AbortError' && signal?.aborted) throw e;
     markDegraded();
-    cache.set(k, straight);
-    return straight;
+    const est = { ...straight, estimated: true };
+    cache.set(k, est);
+    return est;
   }
 }
 

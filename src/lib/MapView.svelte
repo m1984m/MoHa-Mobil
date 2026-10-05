@@ -769,17 +769,26 @@
     (map.getSource('vehicles') as any).setData(vehiclesFC(vehicles, vehiclesEstimated));
   }
 
-  export function fitBounds(coords: [number, number][], maxZoom = 16) {
+  // `pad`: odmik zgoraj/spodaj v px, kadar karto prekriva kaj drugega kot spodnji list
+  // (kartica izbrane poti je zgoraj); privzeto 80 zgoraj in pol višine spodaj.
+  export function fitBounds(coords: [number, number][], maxZoom = 16, pad?: { top?: number; bottom?: number }) {
     if (coords.length === 0) return;
-    if (!map) { pendingCam = () => fitBounds(coords, maxZoom); return; }
+    if (!map) { pendingCam = () => fitBounds(coords, maxZoom, pad); return; }
     let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
     for (const [lon, lat] of coords) {
       if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
       if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
     }
     const h = map.getContainer().clientHeight ?? 0;
+    // flyTo/easeTo pustita odmik v kameri (spodnji list), MapLibre pa ga prišteje odmiku
+    // spodaj: po izbiri postaje je za pot ostalo premalo prostora in karta se ni premaknila
+    // (pregled kode 05.10.2026). Pri podanem `pad` (izbrana pot) zato najprej brez odmika,
+    // zgornji pa pusti vsaj 35 % višine. Brez `pad` ostane kot prej.
+    if (pad) map.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
+    const bottom = pad?.bottom ?? Math.round(h * 0.5);
+    const top = Math.max(0, Math.min(pad?.top ?? 80, h - bottom - Math.round(h * 0.35)));
     map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
-      padding: { top: 80, bottom: Math.round(h * 0.5), left: 40, right: 40 },
+      padding: { top, bottom, left: 40, right: 40 },
       duration: 700, maxZoom,
     });
   }

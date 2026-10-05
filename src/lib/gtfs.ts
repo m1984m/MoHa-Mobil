@@ -269,7 +269,10 @@ export function allDeparturesForStop(
     if (!route) continue;
     // Brez break: krožne linije obiščejo isto postajo večkrat v enem tripu
     // (158 tripov v feedu) — celoten vozni red mora pokazati VSE obiske.
-    for (const st of t.stops) {
+    // Razen zadnje postaje vožnje: to je prihod, ne odhod (vozni red postaje in opomniki
+    // za odhod; enako upcomingDepartures).
+    for (let i = 0; i < t.stops.length - 1; i++) {
+      const st = t.stops[i];
       if (st[0] === stopId) out.push({ trip: t, route, depSec: st[2] });
     }
   }
@@ -310,7 +313,8 @@ export function nextServiceDeparture(
       if (!active.has(t.service)) continue;
       const route = routeById.get(t.route);
       if (!route) continue;
-      for (const st of t.stops) {
+      for (let i = 0; i < t.stops.length - 1; i++) {   // zadnja postaja je prihod
+        const st = t.stops[i];
         if (st[0] !== stopId) continue;
         if (!best || st[2] < best.depSec) best = { trip: t, route, depSec: st[2] };
         break;
@@ -437,11 +441,13 @@ export function matchesCenter(
 // izhodiščem>« — ta loči obe smeri kroga (sama »Krožna linija« je na paru
 // postajališč čez cesto obe strani označila enako; pregled kode 05.10.2026).
 // ---------------------------------------------------------------------------
+// Vezaj loči dele samo s presledkom na vsaj eni strani (»Prlek- Gosposvetska«),
+// »Limbuš-Pekre« ostane eno ime.
+const HEADSIGN_SEP = /\s+[-–—]\s*|\s*[-–—]\s+/;
+
 export function splitHeadsign(headsign: string, destination?: string, circular = false): { dest: string; via: string } {
   const h = String(headsign ?? '');
-  // Vezaj loči dele samo s presledkom na vsaj eni strani (»Prlek- Gosposvetska«),
-  // »Limbuš-Pekre« ostane eno ime.
-  const parts = h.split(/\s+[-–—]\s*|\s*[-–—]\s+/).map(p => p.trim()).filter(Boolean);
+  const parts = h.split(HEADSIGN_SEP).map(p => p.trim()).filter(Boolean);
   if (circular && parts.length > 1) {
     return { dest: tr('Krožna prek {kraj}', { kraj: parts[1] }), via: parts.slice(2).join(', ') };
   }
@@ -480,6 +486,51 @@ export function rowTarget(gtfs: GTFS | null, routeShort: string, headsign: strin
   return splitHeadsign(headsign, destination, isCircularRoute(gtfs ?? cached, String(routeShort ?? '')));
 }
 
+// Izhodišče vožnje (prvi del opisa) za glavo voznega reda linije, kjer izbirnik postaje
+// piše »od izhodišča«; '' pri opisu brez delov.
+export function headsignOrigin(headsign: string): string {
+  const parts = String(headsign ?? '').split(HEADSIGN_SEP).map(p => p.trim()).filter(Boolean);
+  return parts.length > 1 ? parts[0] : '';
+}
+
+// Kje se vožnje končajo in od kod odpeljejo, po postajališču in ključu (linija + opis).
+// Živ prihod OBA ne pove, ali se vožnja tu konča; ime cilja ni zanesljivo (P13 »Avtobusna
+// postaja - Stražun« gre mimo enega Stražuna in se konča na drugem; P10 »… Mlinska AP« se
+// konča na »Avtobusna postaja«; pregled kode 05.10.2026), zato odloča vozni red.
+type StopTripIndex = Map<number, { ends: Set<string>; departs: Set<string> }>;
+const stopTripIndex = new WeakMap<GTFS, StopTripIndex>();
+function tripIndex(g: GTFS): StopTripIndex {
+  let idx = stopTripIndex.get(g);
+  if (!idx) {
+    idx = new Map();
+    const short = new Map(g.routes.map(r => [r.id, r.short]));
+    for (const t of g.trips) {
+      const k = departureKey(short.get(t.route) ?? '', t.headsign);
+      t.stops.forEach((st, i) => {
+        let e = idx!.get(st[0]);
+        if (!e) idx!.set(st[0], e = { ends: new Set(), departs: new Set() });
+        (i === t.stops.length - 1 ? e.ends : e.departs).add(k);
+      });
+    }
+    stopTripIndex.set(g, idx);
+  }
+  return idx;
+}
+
+// Živ prihod vožnje, ki se na tem postajališču konča (in s tem opisom od tu nikoli ne
+// odpelje). Neznan opis iz OBA se ne skrije.
+export function endsAtStopId(g: GTFS, stopId: number, routeShort: string, headsign: string): boolean {
+  const e = tripIndex(g).get(stopId);
+  const k = departureKey(String(routeShort ?? ''), String(headsign ?? ''));
+  return !!e && e.ends.has(k) && !e.departs.has(k);
+}
+
+// Ali s postajališča sploh kaj odpelje (katerikoli dan). Nekatera so samo za izstop
+// na končni postaji (npr. Nova vas za G2): tam »Danes ni več odhodov« ne drži.
+export function departsFromStop(g: GTFS, stopId: number): boolean {
+  return (tripIndex(g).get(stopId)?.departs.size ?? 0) > 0;
+}
+
 // Ime zadnje postaje vožnje — pravi cilj, neodvisen od zapisa opisa linije.
 export function tripDestination(gtfs: GTFS, trip: Trip, stopNames?: Map<number, string>): string {
   const last = trip.stops[trip.stops.length - 1];
@@ -505,7 +556,10 @@ export function upcomingDepartures(
     if (!route) continue;
     // Pri krožnih linijah trip obišče isto postajo dvakrat — če je prvi obisk
     // že mimo, velja naslednji (prej: break na prvem → drugi obisk neviden).
-    for (const st of t.stops) {
+    // Zadnja postaja vožnje je prihod, ne odhod: na končni postaji je bil sicer med
+    // odhodi avtobus, ki se tu konča (ponovna ocena 05.10.2026).
+    for (let i = 0; i < t.stops.length - 1; i++) {
+      const st = t.stops[i];
       if (st[0] !== stopId) continue;
       const dep = st[2];
       if (dep < nowSec) continue;

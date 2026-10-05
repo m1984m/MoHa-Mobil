@@ -2,8 +2,8 @@
   import { backdrop, sheet } from '../motion';
   import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight, ChevronDown, Ticket } from 'lucide-svelte';
   import { cropShape, loadShapes, routeColor, type GTFS, type Stop } from '../gtfs';
-  import { searchStops, normName, stopHint } from '../simpleStops';
-  import { planAll, type Plan } from '../planner';
+  import { searchStops, normName, twinStopHint } from '../simpleStops';
+  import { planAll, syncArrivalWithWalks, type Plan } from '../planner';
   import { walkRoute, walkMapForStops } from '../routing';
   import LineBadge from '../ui/LineBadge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
@@ -77,7 +77,7 @@
   // Postajališči z istim imenom (par čez cesto) loči opis linij in smeri. Dvojnik se
   // išče med vsemi postajališči — med prikazanimi šestimi ga je rez lahko odrezal.
   function twinHint(_list: Stop[], s: Stop): string {
-    return gtfs && gtfs.stops.filter(x => x.name === s.name).length > 1 ? stopHint(gtfs, s.id) : '';
+    return gtfs ? twinStopHint(gtfs, s) : '';
   }
 
   // Ob odprtju je izhodišče privzeto »Moja lokacija« — prej je bilo polje prazno, gumb
@@ -318,16 +318,18 @@
     running = true;
     try {
       const shMap = await loadShapes();
-      const walkPromises = chosen.legs.map(l => l.kind === 'walk'
+      // Kopija: seznam predlogov ostane pri ocenah (»Vsi predlogi«), izbrana pot dobi pešpoti.
+      const shown: Plan = { ...chosen, legs: chosen.legs.map(l => ({ ...l })) };
+      const walkPromises = shown.legs.map(l => l.kind === 'walk'
         ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }, ctl.signal)
         : Promise.resolve(null));
       const walks = await Promise.all(walkPromises);
       if (ctl.signal.aborted) return;
-      const geoms = chosen.legs.map((leg, i) => {
+      const geoms = shown.legs.map((leg, i) => {
         if (leg.kind === 'walk') {
           const wr = walks[i]!;
-          (leg as any).meters = wr.meters;
-          (leg as any).sec = wr.sec;
+          // Zračna črta ob izpadu ORS je krajša od ocene načrtovalnika z obvozom — ta ostane.
+          if (!wr.estimated) { leg.meters = wr.meters; leg.sec = wr.sec; }
           return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
         }
         const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
@@ -336,8 +338,9 @@
           : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
-      chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      onShowPlan(chosen, geoms, fromPlace!, toPlace!);
+      shown.walkMeters = shown.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
+      syncArrivalWithWalks(shown);
+      onShowPlan(shown, geoms, fromPlace!, toPlace!);
       onClose();
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
@@ -406,7 +409,7 @@
               on:focus={() => { fromFocus = true; }}
               on:input={() => { if (fromPlace) fromPlace = null; fromIsMe = false; }}
               on:blur={() => setTimeout(() => fromFocus = false, 150)}
-              class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
+              class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
               placeholder={$t('Od — postaja, naslov ali moja lokacija')} />
           </div>
           {#if fromFocus && !fromPlace && (hasGeo || fromResults.length > 0 || fromAddrResults.length > 0 || showFromFavs)}
@@ -467,7 +470,7 @@
               on:focus={() => { toFocus = true; }}
               on:input={() => { if (toPlace) toPlace = null; }}
               on:blur={() => setTimeout(() => toFocus = false, 150)}
-              class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
+              class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
               placeholder={$t('Do — postaja ali naslov')} />
           </div>
           {#if toFocus && !toPlace && (toResults.length > 0 || toAddrResults.length > 0 || showToFavs)}

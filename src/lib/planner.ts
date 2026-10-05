@@ -30,6 +30,23 @@ export type Plan = {
   lessWalk?: boolean;
 };
 
+// Prihod po dejanski pešpoti, ko imajo peš odseki že `sec` iz openrouteservice (ob izbiri
+// poti), ne po oceni iz zračne razdalje: kartica poti je sicer v glavi kazala 13 min, pri
+// hoji pa 14 min (922 m; ponovna ocena 05.10.2026). Na prihod vplivajo samo peš odseki za
+// zadnjim avtobusom (lahko sta dva: prehod do druge postaje in hoja do cilja).
+export function syncArrivalWithWalks(p: Plan): void {
+  let i = p.legs.length - 1, walkSec = 0;
+  for (; i >= 0; i--) {
+    const l = p.legs[i];
+    if (l.kind !== 'walk') break;
+    walkSec += l.sec;
+  }
+  if (i === p.legs.length - 1) return;                  // konča se z avtobusom
+  const bus = i >= 0 ? p.legs[i] : null;
+  if (!bus) p.arrSec = p.depSec + walkSec;              // samo peš
+  else if (bus.kind === 'bus') p.arrSec = bus.arrSec + walkSec;
+}
+
 // Hitrost se bere dinamično iz nastavitev — getWalkMps()
 const MAX_ACCESS_M = 1000;
 const MAX_TRANSFER_M = 400;
@@ -272,9 +289,20 @@ export function planAll(
     }
   }
 
+  // »Manj hoje« brez prestopa, ki pride celo prej kot hoja, je boljša na obeh merilih (in ni
+  // zanka iz filtra zgoraj): postane navaden predlog in s tem priporočena, hoja ostane kot
+  // možnost. Prej je bila »priporočena« počasnejša hoja (ponovna ocena 05.10.2026). S
+  // prestopom ostane druga možnost z oznako, ker razvrstitev da prednost manj prestopom.
+  let keepWalk = false;
+  if (lessWalk && lessWalk.transfers === 0 && lessWalk.arrSec <= walkDirectArr) {
+    plans = [lessWalk];
+    lessWalk = null;
+    keepWalk = true;
+  }
+
   if (walkPlan && !plans.some(p => p.transfers === 0 && p.legs.length === 1)) {
     // Only insert walk plan if it wins on time vs fastest transit plan
-    if (!plans.length || walkDirectArr < plans[0].arrSec) plans.unshift(walkPlan);
+    if (!plans.length || keepWalk || walkDirectArr < plans[0].arrSec) plans.unshift(walkPlan);
   }
 
   if (plans.length === 0 && walkPlan) plans.push(walkPlan);
@@ -286,7 +314,10 @@ export function planAll(
   const seen = new Set<string>();
   const out: Plan[] = [];
   for (const p of plans) {
-    const k = `${p.transfers}|${Math.round(p.arrSec / 60)}`;
+    // Hoja ima svoj ključ: povišana »manj hoje« pride v isti minuti kot hoja in bi jo
+    // sicer izrinila (pregled kode 05.10.2026: v 13 od 72 primerov).
+    const walkOnly = p.legs.length === 1 && p.legs[0].kind === 'walk';
+    const k = walkOnly ? 'walk' : `${p.transfers}|${Math.round(p.arrSec / 60)}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(p);

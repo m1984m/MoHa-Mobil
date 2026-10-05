@@ -4,7 +4,8 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { stopTimetableSpeech } from '../readAloud';
-  import { allDeparturesForStop, dayKindToDate, type GTFS, type Stop, type DayKind } from '../gtfs';
+  import { allDeparturesForStop, dayKindToDate, rowTarget, type GTFS, type Stop, type DayKind } from '../gtfs';
+  import { twinStopHint } from '../simpleStops';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
@@ -23,6 +24,12 @@
   export let onOpenLine: ((routeId: number, dir: number) => void) | null = null;
 
   let day: DayKind = detectToday();
+
+  // Glava: smer filtra je cilj (cel opis se začne z izhodiščem), pod imenom pa opis
+  // linij in smeri, kadar ima postajališče dvojnika čez cesto (ponovna ocena 05.10.2026).
+  $: filterDest = filterHeadsign
+    ? rowTarget(gtfs, gtfs?.routes.find(r => r.id === filterRouteId)?.short ?? '', filterHeadsign).dest : '';
+  $: twinHint = gtfs && stop ? twinStopHint(gtfs, stop) : '';
 
   function detectToday(): DayKind {
     const d = new Date().getDay();
@@ -82,9 +89,10 @@
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <div class="min-w-0 flex-1">
           <div class="t-footnote text-muted uppercase tracking-wide">
-            {$t('Vozni red')}{#if filterRouteId != null && filterHeadsign} · {filterHeadsign}{/if}
+            {$t('Vozni red')}{#if filterRouteId != null && filterDest} · {$t('smer {smer}', { smer: filterDest })}{/if}
           </div>
           <div class="t-title2 line-clamp-2">{stop.name}</div>
+          {#if twinHint}<div class="t-footnote text-muted line-clamp-2">{twinHint}</div>{/if}
         </div>
         <ReadAloud resetKey={`${stop.id}:${day}:${filterRouteId}`} text={readText} />
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"

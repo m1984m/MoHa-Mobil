@@ -391,7 +391,7 @@
           <div class="flex-1">
             <div class="t-body {$seniorMode ? 'font-semibold' : ''}">{$t('Večje besedilo')}</div>
             <div class="t-footnote text-muted mt-0.5">
-              {$t('Besedilo in gumbi za polovico večji, močnejši kontrast. Pri odhodih je v ospredju končna postaja.')}
+              {$t('Besedilo in gumbi za polovico večji, močnejši kontrast.')}
             </div>
           </div>
           <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors shrink-0"
@@ -647,6 +647,7 @@
         <p>{$t('Štetje uporabe (stikalo zgoraj): brez piškotkov, lokacije in podatka o napravi. Šteje zagone, zaslone in nastavitve.')}</p>
         <p>{$t('Odhodi v živo: aplikacija za postajališča, ki jih gledaš, vpraša strežnik aplikacije (Cloudflare), ta pa Marprom. Strežnik šteje, katera postajališča se gledajo, brez podatka o napravi; tega stikalo ne izklopi.')}</p>
         <p>{$t('Karte: tvoj brskalnik ploščice prenese neposredno od CARTO ali Esri.')}</p>
+        <p>{$t('Števci uporabe in postajališč se hranijo tri mesece. Vprašanja o podatkih pošlji prek Pomoč → Predlagaj izboljšavo.')}</p>
       </div>
     </section>
 

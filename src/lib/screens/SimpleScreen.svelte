@@ -4,7 +4,7 @@
     Home, MapPin, Search, Map as MapIcon, LayoutGrid, Pencil, Trash2, Plus, ChevronRight, Star,
     Bell, BellOff, TriangleAlert, CloudOff,
   } from 'lucide-svelte';
-  import { nearestStops, rowTarget, type GTFS, type Stop } from '../gtfs';
+  import { nearestStops, type GTFS, type Stop } from '../gtfs';
   import { online } from '../online';
   import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
   import { favStops } from '../favorites';
@@ -15,7 +15,8 @@
   import { pushState, enablePush } from '../push';
   import SimpleAlarmWizard from './SimpleAlarmWizard.svelte';
   import {
-    liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow,
+    liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, liveDepartures, boardDirection,
+    type DepartureRow,
   } from '../departures';
   import { departuresSpeech } from '../readAloud';
   import { pushBack, type BackRelease } from '../backstack';
@@ -27,7 +28,7 @@
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import SimpleStopSearch from './SimpleStopSearch.svelte';
-  import { stopHint } from '../simpleStops';
+  import { stopHint, hasTwin } from '../simpleStops';
   import { toast } from '../toast';
 
   // Preprost pogled — en zaslon, največ šest dejanj, najpomembnejše na sredini.
@@ -158,7 +159,8 @@
     const res = await Promise.allSettled(ids.map(async id => [id, await fetchArrivalsForStopPoint(id)] as const));
     const next = { ...liveByStop };
     for (const r of res) {
-      if (r.status === 'fulfilled') { next[r.value[0]] = r.value[1]; liveAt[r.value[0]] = Date.now(); lastLiveAt = Date.now(); }
+      // Brez voženj, ki se tu končajo (prazen seznam → vozni red).
+      if (r.status === 'fulfilled') { next[r.value[0]] = liveDepartures(gtfs, r.value[0], r.value[1]); liveAt[r.value[0]] = Date.now(); lastLiveAt = Date.now(); }
     }
     liveByStop = next;
     if (seq === liveSeq) liveDown = res.every(r => r.status === 'rejected');
@@ -181,13 +183,11 @@
     return gtfs ? scheduleDepartureRows(gtfs, stopId, max, stopNames) : [];
   }
 
-  // Dve postajališči z istim imenom sta par čez cesto — smer ju loči.
+  // Dve postajališči z istim imenom sta par čez cesto — smer ju loči (enako kot na Domu:
+  // dvojnik v celem voznem redu, do dva cilja, ponoči cilji iz voznega reda).
   $: boards = stops.map(s => {
     const rows = rowsFor(s.id, rowsPerBoard(stops.length), liveByStop, tick, liveOff);
-    const twin = stops.filter(x => x.name === s.name).length > 1;
-    // Smer je cilj prvega odhoda — cel opis se začne z izhodiščem.
-    const first = rows[0];
-    return { stop: s, rows, hint: twin && first ? rowTarget(gtfs, first.routeShort, first.headsign, first.destination).dest : '' };
+    return { stop: s, rows, hint: gtfs && hasTwin(gtfs, s) ? boardDirection(gtfs, s.id, rows) : '' };
   });
   // »V živo« samo, če je vsaj ena prikazana vrstica res živa (dodeljeno vozilo).
   $: anyLive = boards.some(b => b.rows.some(r => r.live));
@@ -315,7 +315,9 @@
               <span class="block t-headline">{s.name}</span>
               {#if gtfs}
                 {@const hint = stopHint(gtfs, s.id)}
-                {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+                <!-- Dve vrstici: pri postajališču z veliko linijami je enovrstičen opis odrezal
+                     ravno smer (»G1, G2, G4, G6 … · smer …«; ponovna ocena 05.10.2026). -->
+                {#if hint}<span class="t-footnote text-muted line-clamp-2">{hint}</span>{/if}
               {/if}
             </span>
             <ChevronRight size={28} color="var(--text-muted)" />

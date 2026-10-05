@@ -25,6 +25,10 @@
      kot TEKST na belem padeta na 2,2:1 / 2,1:1 kontrast ("zdaj", zamude). */
   --accent: #D32027;
   --accent-pressed: #A8181E;
+  /* Kartica »Kam greš?« (bel napis na prelivu) ima svoji barvi: v temni temi je --accent
+     svetlejši (#EF4F54) in bel napis je imel na njem le 3,55 : 1 (ponovna ocena 05.10.2026). */
+  --hero-from: var(--accent);
+  --hero-to: var(--accent-pressed);
   /* Rdeča za napis na rdečkasti podlagi (aktivni zavihek na --glass-tint): #D32027 je
      tam imel 4,45:1 (axe, evalvacija 04.10.2026); #C41E24 da 5,06:1. */
   --accent-on-tint: #C41E24;
@@ -146,6 +150,8 @@
   --border-strong: #48484A;
   --accent: #EF4F54;
   --accent-pressed: #D32027;
+  --hero-from: #D32027;         /* bel napis 5,25:1 */
+  --hero-to: #A8181E;
   /* Aktivni zavihek: #EF4F54 na temnem rdečkastem odtenku je imel 3,87:1; #FF7A7E 5,48:1. */
   --accent-on-tint: #FF7A7E;
   /* Svetle status barve so na temnem ozadju kontrastno v redu */

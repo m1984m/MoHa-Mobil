@@ -10,12 +10,12 @@
   import PlanSteps from '../ui/PlanSteps.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
-  import { departuresSpeech, noMoreToday, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
-  import { liveDepartureRows, routeIdIndex } from '../departures';
-  import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
+  import { liveDepartureRows, routeIdIndex, liveDepartures } from '../departures';
+  import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
   import { online } from '../online';
-  import { searchStops } from '../simpleStops';
+  import { searchStops, twinStopHint } from '../simpleStops';
   import { activeVehicles, findTripForLiveBus, nearestTripStopIdx, precomputeVehiclesIndexes, type Vehicle } from '../vehicles';
   import type { Plan } from '../planner';
   import { favStops } from '../favorites';
@@ -211,12 +211,19 @@
     }
   }
 
+  // Za katero postajališče je odgovor že prišel: »Nalagam …« samo pred prvim odgovorom.
+  // Po dolžini seznama je na končni postaji (prazen filtriran seznam) utripalo vsakih 15 s.
+  let arrivalsFor: number | null = null;
   async function refreshArrivals(stopId: number) {
     if (document.hidden) return; // app v ozadju — ne troši proxy kvote
-    liveArrivalsLoading = liveArrivals.length === 0;
+    liveArrivalsLoading = arrivalsFor !== stopId;
     try {
       const arr = await fetchArrivalsForStopPoint(stopId);
-      if (selectedStop?.id === stopId) liveArrivals = arr;
+      // Avtobus, ki se tu konča, ni odhod (seznam, »Čakanje« in branje jemljejo od tu).
+      if (selectedStop?.id === stopId) {
+        liveArrivals = gtfs ? liveDepartures(gtfs, stopId, arr) : arr;
+        arrivalsFor = stopId;
+      }
     } catch {
       // GTFS fallback stays visible
     } finally {
@@ -282,6 +289,7 @@
     const seq = ++stopChangeSeq;
     if (liveArrivalsTimer) { clearInterval(liveArrivalsTimer); liveArrivalsTimer = null; }
     liveArrivals = [];
+    arrivalsFor = null;
     if (s) {
       selectedVehicle = null;
       await tick();
@@ -327,11 +335,26 @@
     }
   }
 
+  // Kartica izbrane poti je zgoraj in je z gumbom »Vsi predlogi« višja: s stalnim
+  // odmikom 80 px je prekrila začetek pešpoti (ponovna ocena 05.10.2026). Odmik je
+  // zato spodnji rob kartice; spodaj je med prikazom poti samo vrstica zavihkov.
+  let planCardEl: HTMLDivElement | null = null;
+  // --tabbar-space je calc() z env() in getPropertyValue ga ne izračuna; izmeri ga element.
+  // V Preprostem pogledu z gumbom za vrnitev je za 84 px višji (:root.mm-simple-back).
+  function tabbarSpacePx(): number {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:var(--tabbar-space)';
+    document.body.appendChild(el);
+    const h = el.offsetHeight;
+    el.remove();
+    return h || 96;
+  }
   $: if (activePlan) {
     requestAnimationFrame(() => {
       if (!activePlan) return; // plan lahko izgine pred izvedbo frame-a
       const all = activePlan.geoms.flatMap(g => g.coords);
-      if (all.length) mapRef?.fitBounds(all);
+      const top = planCardEl ? planCardEl.offsetTop + planCardEl.offsetHeight + 24 : 80;
+      if (all.length) mapRef?.fitBounds(all, 16, { top, bottom: tabbarSpacePx() + 24 });
       sheetRef?.setSnap(0);
     });
     selectedVehicle = null;
@@ -531,7 +554,7 @@
     const rows = liveArrivals.length > 0
       ? liveDepartureRows(liveArrivals, routeIdIndex(gtfs), 5)
       : departures.map(gtfsRow);
-    return departuresSpeech([{ name: selectedStop.name, rows, empty: noMoreToday(nextDayDep) }]);
+    return departuresSpeech([{ name: selectedStop.name, rows, empty: gtfs ? emptyStopSpeech(gtfs, selectedStop.id) : noMoreToday(nextDayDep) }]);
   }
   function vehicleText(): string {
     if (!selectedVehicle) return '';
@@ -737,7 +760,7 @@
 
   <!-- Active plan floating card (expands inline) -->
   {#if activePlan}
-    <div class="absolute left-0 right-0 px-4 z-30"
+    <div class="absolute left-0 right-0 px-4 z-30" bind:this={planCardEl}
          style="top: calc(env(safe-area-inset-top) + {simple ? '6rem' : '0.75rem'}); max-height: calc(100dvh - env(safe-area-inset-top) - 6.5rem);">
       <div class="surface rounded-2xl border border-base shadow-elev overflow-hidden max-w-screen-sm mx-auto flex flex-col"
            style="max-height: calc(100dvh - env(safe-area-inset-top) - 6.5rem);">
@@ -765,8 +788,12 @@
                 <div class="t-footnote text-muted truncate">{activePlan.from.name} → {activePlan.to.name}</div>
                 <div class="t-title3 font-semibold">{$t('{dur} · prihod {time}', { dur: fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec), time: fmtTime(activePlan.plan.arrSec) })}</div>
                 <div class="t-footnote text-muted mt-0.5">
-                  {#if planSummary.transfers === 0}{$t('brez prestopanja')}{:else}{planSummary.transfers} {plural(planSummary.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}{/if}
-                  {#if planSummary.walkMin > 0} · {$t('{min} min peš ({m} m)', { min: planSummary.walkMin, m: Math.round(planSummary.walkM) })}{/if}
+                  <!-- Pot samo peš: »brez prestopanja« tam ne pove nič (enako kot v načrtovalniku). -->
+                  {#if planSummary.busCount === 0}{$t('samo peš, {m} m', { m: Math.round(planSummary.walkM) })}
+                  {:else}
+                    {#if planSummary.transfers === 0}{$t('brez prestopanja')}{:else}{planSummary.transfers} {plural(planSummary.transfers, ['prestop', 'prestopa', 'prestopi', 'prestopov'], ['change', 'changes'])}{/if}
+                    {#if planSummary.walkMin > 0} · {$t('{min} min peš ({m} m)', { min: planSummary.walkMin, m: Math.round(planSummary.walkM) })}{/if}
+                  {/if}
                 </div>
               </div>
               <div class="shrink-0 self-center transition-transform" style="transform: rotate({planExpanded ? 180 : 0}deg)">
@@ -774,7 +801,8 @@
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-wrap mt-2">
-              {#each activePlan.plan.legs as leg, i}
+              <!-- Hoja pod 30 m ni korak (enako kot PlanSteps): sicer čip »0 min« med postajama. -->
+              {#each activePlan.plan.legs.filter(l => !(l.kind === 'walk' && l.meters < 30)) as leg, i}
                 {#if i > 0}<span class="text-muted">›</span>{/if}
                 {#if leg.kind === 'walk'}
                   <span class="inline-flex items-center gap-1 px-2 h-7 rounded-lg surface-2 t-footnote">
@@ -980,10 +1008,12 @@
 
   <!-- Live indicator -->
   {#if !activePlan}
-    <div class="absolute z-20 pointer-events-none {simple ? 'right-4' : 'left-1/2 -translate-x-1/2'}"
+    <div class="absolute z-20 pointer-events-none w-max {simple ? 'right-4' : 'left-1/2 -translate-x-1/2'}"
          style="top: calc(env(safe-area-inset-top) + {simple ? '1.25rem' : '0.75rem'})">
       <!-- min-h namesto fiksne višine: daljši napis (ali Večje besedilo) se prelomi znotraj
-           kapsule, namesto da bi segel čeznjo; širina ne sme pokriti gumbov ob straneh. -->
+           kapsule, namesto da bi segel čeznjo; širina ne sme pokriti gumbov ob straneh.
+           w-max: absoluten okvir z left-1/2 ima sicer na voljo le pol zaslona, zato se je
+           »Ni živih podatkov · vozni red« pri 390 px prelomil, čeprav je prostora dovolj. -->
       <div class="surface rounded-full border border-base shadow-card px-3 py-1 min-h-8 flex items-center gap-2"
            style="max-width: calc(100vw - 10rem);">
         <span class="w-2 h-2 rounded-full"
@@ -1106,19 +1136,21 @@
               </button>
             </div>
           {:else}
-          <div class="flex items-center gap-2 mt-2.5">
-            <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card"
+          <!-- Ikonski gumbi ne smejo pod 44 px (pri 320 px jih je napis »Zapri« stisnil na 43):
+               shrink-0, manjši razmik, ob premalo prostora gre »Zapri« v novo vrstico. -->
+          <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+            <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card shrink-0"
                     style="background: var(--accent); color: #ffffff"
                     on:click={() => onPlanToStop(selectedStop!)}
                     aria-label={$t('Načrtuj pot do te postaje')}>
               <Navigation size={18} color="#ffffff" />
             </button>
-            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
                     on:click={() => stopTimetableOpen = true}
                     aria-label={$t('Vozni red postaje')}>
               <CalendarClock size={18} />
             </button>
-            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
                     on:click={() => favStops.toggle(selectedStop!.id)}
                     aria-label={isFav ? $t('Odstrani iz priljubljenih') : $t('Dodaj med priljubljena')}>
               <Star size={18} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'var(--text-muted)'} />
@@ -1223,7 +1255,9 @@
           <div class="surface-2 rounded-2xl p-4 flex items-center gap-3">
             <MoonStar size={20} color="var(--text-muted)" />
             <div class="flex-1 min-w-0">
-              <div class="t-callout text-muted">{$t('Danes ni več odhodov s te postaje.')}</div>
+              <div class="t-callout text-muted">
+                {gtfs && selectedStop && !departsFromStop(gtfs, selectedStop.id) ? $t('Končna postaja: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov s te postaje.')}
+              </div>
               {#if nextDayDep}
                 <div class="t-footnote mt-0.5">
                   {$t('Prvi {day} ob', { day: fmtDayOffset(nextDayDep.dayOffset, nextDayDep.weekday) })}
@@ -1318,7 +1352,7 @@
           </div>
           <div class="flex items-center gap-2">
             <ReadAloud resetKey={selectedVehicle.tripId} text={vehicleText} />
-            <button class="pressable w-11 h-11 rounded-full grid place-items-center"
+            <button class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0"
                     style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
                     on:click={() => followBus = !followBus}
                     aria-label={followBus ? $t('Prenehaj slediti') : $t('Sledim avtobus')}>
@@ -1400,7 +1434,7 @@
             <!-- svelte-ignore a11y-autofocus -->
             <input bind:value={stopQuery}
                    autofocus
-                   class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
+                   class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
                    placeholder={$t('Ime postaje…')}
                    aria-label={$t('Ime postaje')} />
           </div>
@@ -1417,13 +1451,15 @@
           {:else}
             <ul class="surface-2 rounded-2xl overflow-hidden">
               {#each stopSearchResults as s, i}
+                {@const hint = gtfs ? twinStopHint(gtfs, s) : ''}
                 <li>
                   <button class="pressable w-full px-4 min-h-[52px] py-3 flex items-center gap-3 text-left {i > 0 ? 'border-t border-base' : ''}"
                           on:click={() => pickSearchedStop(s)}>
                     <MapPin size={18} color="var(--accent)" />
                     <div class="flex-1 min-w-0">
                       <div class="t-body font-medium truncate">{s.name}</div>
-                      {#if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
+                      {#if hint}<div class="t-footnote text-muted truncate">{hint}</div>
+                      {:else if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
                     </div>
                   </button>
                 </li>

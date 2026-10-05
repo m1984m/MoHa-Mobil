@@ -28,7 +28,7 @@
   import DepartureStatus from './DepartureStatus.svelte';
   import { compactLists } from '../settings';
   import { largeUI } from '../simple';
-  import { nextServiceDeparture, rowTarget, type GTFS, type Stop } from '../gtfs';
+  import { nextServiceDeparture, rowTarget, departsFromStop, type GTFS, type Stop } from '../gtfs';
   import { fmtClock, fmtDayOffset } from '../time';
   import { t } from '../i18n';
 
@@ -51,6 +51,8 @@
   // Izračuna se samo, kadar danes ni več odhodov — takrat je "Danes ni več odhodov"
   // slepa ulica brez podatka, kdaj gre naslednji.
   $: nextDay = (rows.length === 0 && gtfs) ? nextServiceDeparture(gtfs, stop.id) : null;
+  // Postajališče samo za izstop na končni postaji: »Danes ni več odhodov« bi tam pisalo ves dan.
+  $: terminal = rows.length === 0 && !!gtfs && !departsFromStop(gtfs, stop.id);
 
   $: rowPad = $compactLists ? 'py-1.5' : 'py-2.5';
   $: rowText = $compactLists ? 't-subhead' : 't-callout';
@@ -82,7 +84,9 @@
 
   {#if rows.length === 0}
     <div class="px-4 pb-3 pt-1 border-t border-base">
-      {#if nextDay}
+      {#if terminal}
+        <div class="t-footnote text-muted">{$t('Končna postaja: od tu avtobusi ne odpeljejo.')}</div>
+      {:else if nextDay}
         <div class="flex items-center gap-2">
           <MoonStar size={15} color="var(--text-muted)" />
           <div class="t-footnote text-muted">

@@ -13,8 +13,8 @@ export default {
     'Large print and only the essentials on one screen: my buses, the way home and my places.',
   'Preklopi preprost pogled': 'Toggle simple view',
   'Večje besedilo': 'Larger text',
-  'Besedilo in gumbi za polovico večji, močnejši kontrast. Pri odhodih je v ospredju končna postaja.':
-    'Text and buttons half as large again, stronger contrast. Departures show the final stop first.',
+  'Besedilo in gumbi za polovico večji, močnejši kontrast.':
+    'Text and buttons half as large again, stronger contrast.',
   'Preklopi večje besedilo': 'Toggle larger text',
   'Preprost pogled z velikim tiskom': 'Simple view with large print',
 

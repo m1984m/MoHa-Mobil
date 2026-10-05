@@ -112,6 +112,8 @@ export default {
     'Live departures: for the stops you view, the app asks the app server (Cloudflare), which asks Marprom. The server counts which stops are viewed, without device data; the switch does not turn this off.',
   'Karte: tvoj brskalnik ploščice prenese neposredno od CARTO ali Esri.':
     'Maps: your browser downloads map tiles directly from CARTO or Esri.',
+  'Števci uporabe in postajališč se hranijo tri mesece. Vprašanja o podatkih pošlji prek Pomoč → Predlagaj izboljšavo.':
+    'Usage and stop counts are kept for three months. Send questions about data via Help → Suggest an improvement.',
   'Počisti vse podatke': 'Clear all data',
   'Odstrani priljubljene, opomnike za odhod, shranjene poti in ponastavi nastavitve':
     'Removes saved stops, departure reminders and saved journeys, and resets settings',

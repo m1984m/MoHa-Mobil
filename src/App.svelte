@@ -398,7 +398,7 @@
     if (!gtfs) return false;
     routeRunning = true;
     try {
-      const { planAll } = await import('./lib/planner');
+      const { planAll, syncArrivalWithWalks } = await import('./lib/planner');
       const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
       const { walkRoute, walkMapForStops } = await import('./lib/routing');
       const now = new Date();
@@ -415,8 +415,8 @@
       const geoms = chosen.legs.map((leg, i) => {
         if (leg.kind === 'walk') {
           const wr = walks[i]!;
-          (leg as any).meters = wr.meters;
-          (leg as any).sec = wr.sec;
+          // Zračna črta ob izpadu ORS je krajša od ocene načrtovalnika z obvozom — ta ostane.
+          if (!wr.estimated) { leg.meters = wr.meters; leg.sec = wr.sec; }
           return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
         }
         const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
@@ -426,6 +426,7 @@
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
       chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
+      syncArrivalWithWalks(chosen);
       onDone(chosen, geoms, from, to);
       return true;
     } catch {

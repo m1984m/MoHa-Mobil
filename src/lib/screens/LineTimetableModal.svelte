@@ -4,7 +4,7 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { lineTimetableSpeech } from '../readAloud';
-  import { allTripsForRouteDirection, dayKindToDate, rowTarget, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
+  import { allTripsForRouteDirection, dayKindToDate, rowTarget, headsignOrigin, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t, plural } from '../i18n';
@@ -51,6 +51,10 @@
 
   $: dirOptions = [...dirHeadsigns.entries()].sort((a, b) => a[0] - b[0]);
   $: smer = rowTarget(gtfs, route?.short ?? '', dirHeadsigns.get(dir) || '');
+  // Izhodišče pod smerjo: izbirnik postaje piše »od izhodišča«, a ga brez tega ni bilo
+  // nikjer več (ponovna ocena 05.10.2026). Prva postaja seznama spodaj (izbrani dan), ne
+  // opis prve vožnje, ki se pri različicah smeri lahko začne drugje.
+  $: izhodisce = lineStops[0]?.name ?? headsignOrigin(dirHeadsigns.get(dir) || '');
 
   // Vse postaje, ki jih ta linija v izbrani smeri obišče (union vseh trip-ov),
   // urejeno po vrstnem redu v najdaljšem trip-u (canonical sequence).
@@ -155,7 +159,11 @@
         <div class="flex-1 min-w-0 surface-2 rounded-xl px-3 py-2">
           <div class="t-footnote text-muted">{$t('Smer')}</div>
           <div class="t-body font-semibold truncate">{smer.dest || '—'}</div>
-          {#if smer.via}<div class="t-footnote text-muted truncate">{$t('prek {via}', { via: smer.via })}</div>{/if}
+          {#if izhodisce || smer.via}
+            <div class="t-footnote text-muted truncate">
+              {#if izhodisce}{$t('od {kraj}', { kraj: izhodisce })}{/if}{#if izhodisce && smer.via} · {/if}{#if smer.via}{$t('prek {via}', { via: smer.via })}{/if}
+            </div>
+          {/if}
         </div>
         {#if dirOptions.length > 1}
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"

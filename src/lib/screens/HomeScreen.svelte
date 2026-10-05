@@ -3,10 +3,12 @@
   import { MapPinned, CloudOff, ArrowDownToDot, ArrowUpFromDot } from 'lucide-svelte';
   import {
     nearestStops, upcomingDepartures, loadMeta, feedCoversDate,
-    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination, nextServiceDeparture, rowTarget,
+    buildCenterIndex, stopServesCenter, matchesCenter, tripDestination,
     type GTFS, type Stop, type CenterDir, type CenterIndex,
   } from '../gtfs';
   import { online } from '../online';
+  import { hasTwin } from '../simpleStops';
+  import { liveDepartures, boardDirection } from '../departures';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
@@ -21,7 +23,7 @@
   import { t, tr } from '../i18n';
   import Hint from '../ui/Hint.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
-  import { departuresSpeech, noMoreToday } from '../readAloud';
+  import { departuresSpeech, emptyStopSpeech } from '../readAloud';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -55,7 +57,7 @@
     if (m?.built) {
       const d = new Date(m.built);
       // Rodilnik ("julija"), ne Intl imenovalnik ("julij") — glej lib/time.ts.
-      if (!isNaN(d.getTime())) feedLabel = tr('Velja od {mesec}', { mesec: fmtMonthYearGenitive(d) });
+      if (!isNaN(d.getTime())) feedLabel = tr('Vozni red velja od {mesec}', { mesec: fmtMonthYearGenitive(d) });
     }
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
@@ -126,7 +128,8 @@
     const next: Record<number, StopArrival[]> = { ...liveByStop };
     for (const r of results) {
       if (r.status === 'fulfilled') {
-        next[r.value[0]] = r.value[1];
+        // Brez voženj, ki se tu končajo (prazen seznam → vozni red).
+        next[r.value[0]] = gtfs ? liveDepartures(gtfs, r.value[0], r.value[1]) : r.value[1];
         liveAt[r.value[0]] = Date.now();
       }
     }
@@ -216,18 +219,11 @@
     if (!g) return [];
     // Postajališči z istim imenom sta par čez cesto — brez namiga o smeri ju
     // uporabnik ne razlikuje (na Domu sta prej dvakrat pisala "UKC - Pobreška").
-    const nameCount = new Map<string, number>();
-    for (const s of list) nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
+    // Dvojnik se išče v celem voznem redu: s filtrom »V center« ostane samo ena
+    // stran, ki je potem kazala šifro (ponovna ocena 05.10.2026).
     return list.map(s => {
       const rows = rowsFor(s.id);
-      // Smer je cilj prvega odhoda, ne cel opis — ta se začne z izhodiščem.
-      const first = rows[0];
-      return {
-        stop: s as Stop,
-        rows,
-        directionHint: (nameCount.get(s.name) ?? 0) > 1 && first
-          ? rowTarget(g, first.routeShort, first.headsign, first.destination).dest : '',
-      };
+      return { stop: s as Stop, rows, directionHint: hasTwin(g, s) ? boardDirection(g, s.id, rows) : '' };
     // Ob vklopljenem filtru kartica brez odhodov ni odgovor na vprašanje
     // "kje ujamem avtobus v center" — raje je ni.
     }).filter(b => !filter || b.rows.length > 0);
@@ -236,7 +232,7 @@
   function boardsSpeech(list: { stop: Stop; rows: BoardRow[] }[]): string {
     return departuresSpeech(list.map(b => ({
       name: b.stop.name, rows: b.rows,
-      empty: gtfs && b.rows.length === 0 ? noMoreToday(nextServiceDeparture(gtfs, b.stop.id)) : undefined,
+      empty: gtfs && b.rows.length === 0 ? emptyStopSpeech(gtfs, b.stop.id) : undefined,
     })));
   }
   $: boards = makeBoards(gtfs, nearStops, liveByStop, tick, centerIndex, centerFilter, $seniorMode, liveOff);
@@ -289,14 +285,15 @@
 
     <!-- Quick action: plan a route -->
     <button class="pressable w-full rounded-2xl p-4 text-left shadow-card flex items-center gap-3"
-            style="background: linear-gradient(135deg, var(--accent), var(--accent-pressed)); color: white;"
+            style="background: linear-gradient(135deg, var(--hero-from), var(--hero-to)); color: white;"
             on:click={onOpenPlanner}>
       <div class="w-11 h-11 rounded-xl grid place-items-center" style="background: rgba(255,255,255,0.18)">
         <MapPinned size={22} strokeWidth={2} />
       </div>
       <div class="flex-1 min-w-0">
         <div class="t-headline">{$t('Kam greš?')}</div>
-        <div class="t-footnote" style="opacity: 0.85">{$t('Načrtuj pot z avtobusom ali peš')}</div>
+        <!-- Polno bel: s prosojnostjo 0,85 je imel na začetku preliva le 4,1 : 1. -->
+        <div class="t-footnote">{$t('Načrtuj pot z avtobusom ali peš')}</div>
       </div>
     </button>
 

@@ -8,7 +8,7 @@
   import { favStops } from '../favorites';
   import { pushBack } from '../backstack';
   import type { GTFS, Route, Stop } from '../gtfs';
-  import { searchStops, normName } from '../simpleStops';
+  import { searchStops, normName, twinStopHint } from '../simpleStops';
   import { t } from '../i18n';
 
   export let gtfs: GTFS | null;
@@ -72,7 +72,7 @@
     <div class="relative surface-2 rounded-xl border border-base mb-4">
       <Search size={18} color="var(--text-muted)" class="absolute left-3 top-1/2 -translate-y-1/2" />
       <input bind:value={query}
-             class="w-full h-12 bg-transparent pl-10 pr-3 t-body"
+             class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
              placeholder={mode === 'lines' ? $t('Poišči linijo (npr. P16)…') : $t('Poišči postajo…')} />
     </div>
 
@@ -102,13 +102,15 @@
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
           {#each stops as s, i}
             {@const isFav = $favStops.has(s.id)}
+            {@const hint = gtfs ? twinStopHint(gtfs, s) : ''}
             <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
               <button class="pressable flex-1 text-left px-4 py-3 flex items-center gap-3 min-w-0"
                       on:click={() => openStop(s)}>
                 <MapPin size={18} color="var(--accent)" />
                 <div class="flex-1 min-w-0">
                   <div class="t-body font-medium truncate">{s.name}</div>
-                  {#if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
+                  {#if hint}<div class="t-footnote text-muted truncate">{hint}</div>
+                  {:else if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
                 </div>
               </button>
               <button class="pressable px-4 grid place-items-center"

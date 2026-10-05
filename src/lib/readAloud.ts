@@ -1,5 +1,5 @@
 import { tr, plural, locale } from './i18n';
-import { rowTarget } from './gtfs';
+import { rowTarget, departsFromStop, nextServiceDeparture, type GTFS } from './gtfs';
 import { fmtClock, fmtDayOffset } from './time';
 import type { DepartureRow } from './departures';
 import type { PlanLeg, Plan } from './planner';
@@ -68,6 +68,11 @@ function rowSentence(r: DepartureRow): string {
 }
 
 type NextDay = { dayOffset: number; weekday: number; depSec: number; route: { short: string } } | null;
+
+// Prazno postajališče: končna postaja, s katere nič ne odpelje, ali »danes ni več odhodov«.
+export function emptyStopSpeech(g: GTFS, stopId: number): string {
+  return departsFromStop(g, stopId) ? noMoreToday(nextServiceDeparture(g, stopId)) : tr('Končna postaja: od tu avtobusi ne odpeljejo.');
+}
 
 // Ko danes ni več odhodov: kdaj je prvi naslednji.
 export function noMoreToday(next: NextDay = null): string {

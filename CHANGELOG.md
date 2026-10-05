@@ -5,6 +5,31 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.26.1 — 2026-10-05
+
+Popravki po ponovnem obhodu in neodvisni ponovni oceni 0.26.0 na produkciji
+(`../evalvacija_2026-10-04/posnetki-0.26.0/`, ocena 7,18) ter po pregledu kode.
+
+- Končne postaje: vožnja, ki se na postajališču konča, ni več med odhodi (priljubljena »Avtobusna postaja« je
+  kazala »P13 Avtobusna postaja«). Vozni red izpusti zadnjo postajo vožnje (`upcomingDepartures`,
+  `nextServiceDeparture`, `allDeparturesForStop`, torej tudi vozni red postaje in opomniki). Živi prihodi se
+  filtrirajo ob prejemu po indeksu voznega reda (`endsAtStopId`: id postajališča + linija + opis, ime cilja ni
+  zanesljivo); linija, ki ji je prihod izpadel, dobi naslednji odhod iz voznega reda (`liveDepartures`).
+  Postajališča samo za izstop (Nova vas, Mladinska - Vrbanska, Morski jarek - Rošpoh) pišejo »Končna postaja:
+  od tu avtobusi ne odpeljejo.« namesto »Danes ni več odhodov«.
+- Načrtovalnik: avtobus brez prestopa z manj hoje, ki pride prej kot hoja, je priporočen (prej je bila
+  »priporočena« počasnejša hoja), hoja ostane (ne izpade več pri deduplikaciji); prihod izbrane poti po dejanski
+  pešpoti (`syncArrivalWithWalks`, prej 13 proti 14 min), ob izpadu openrouteservice ostane ocena z obvozom;
+  kartica poti samo peš piše »samo peš, 922 m«, brez čipa »0 min«; karta se prilega pod kartico poti.
+- Smer in dvojniki: smer na kartici Doma in v Preprostem pogledu našteje do dva cilja, velja tudi s filtrom
+  »V center« in ponoči (`boardDirection`, prej šifra s010); iskanje v Voznih redih in na karti ter glava voznega
+  reda postajališča imajo opis linij in smeri namesto šifre (`twinStopHint`); vozni red linije pokaže izhodišče;
+  pripenjanje linije ne ponuja smeri, ki se na postajališču samo končajo.
+- Videz in dostopnost: kapsula »Ni živih podatkov · vozni red« pri 390 px v eni vrstici (`w-max`); fokusni okvir
+  iskalnih polj zaobljen; kartica »Kam greš?« v temni temi s temnejšim prelivom in polno belim podnaslovom (prej
+  3,3–4,1 : 1); ikonski gumbi lista postajališča pri 320 px ostanejo 44 px; »Vozni red velja od …«; opis Večjega
+  besedila brez zastarele trditve; Zasebnost doda rok hrambe števcev (tri mesece) in kam z vprašanji.
+
 ## 0.26.0 — 2026-10-05
 
 Faza 1 popravkov po zunanji UX evalvaciji 04.10.2026 (`../evalvacija_2026-10-04/EVALVACIJA_UX.md`).

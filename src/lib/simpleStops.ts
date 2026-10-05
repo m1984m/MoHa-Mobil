@@ -41,14 +41,40 @@ function build(g: GTFS): Map<number, Info> {
   return out;
 }
 
-export function stopHint(g: GTFS, stopId: number): string {
+function stopInfo(g: GTFS, stopId: number): Info | undefined {
   let m = cache.get(g);
   if (!m) { m = build(g); cache.set(g, m); }
-  const info = m.get(stopId);
+  return m.get(stopId);
+}
+
+// Cilji odhodov s postajališča po pogostosti (za smer na kartici, kadar odhodov ni).
+export function stopDests(g: GTFS, stopId: number): string[] {
+  return stopInfo(g, stopId)?.dests ?? [];
+}
+
+export function stopHint(g: GTFS, stopId: number): string {
+  const info = stopInfo(g, stopId);
   if (!info) return '';
   const lines = info.lines.slice(0, 4).join(', ') + (info.lines.length > 4 ? ' …' : '');
   const dests = info.dests.slice(0, 2).join(', ');
   return dests ? `${lines} · ${tr('smer {dest}', { dest: dests })}` : lines;
+}
+
+// Opis samo za dvojnike (isto ime na več postajališčih): v zadetkih iskanja jih sicer
+// loči le šifra s905/s906, ki potniku ne pove nič (evalvacija 04.10.2026, N7). Dvojnik
+// se išče med vsemi postajališči, ne med prikazanimi zadetki.
+const nameCount = new WeakMap<GTFS, Map<string, number>>();
+export function hasTwin(g: GTFS, s: Stop): boolean {
+  let m = nameCount.get(g);
+  if (!m) {
+    m = new Map();
+    for (const x of g.stops) m.set(x.name, (m.get(x.name) ?? 0) + 1);
+    nameCount.set(g, m);
+  }
+  return (m.get(s.name) ?? 0) > 1;
+}
+export function twinStopHint(g: GTFS, s: Stop): string {
+  return hasTwin(g, s) ? stopHint(g, s.id) : '';
 }
 
 // ── Iskanje po imenu ────────────────────────────────────────────────────────

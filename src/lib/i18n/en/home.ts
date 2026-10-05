@@ -2,7 +2,7 @@
 // weather.ts, BottomSheet, ui/* (StopBoard, ConfirmDialog, Countdown, LiveDot, Toast)
 export default {
   // HomeScreen
-  'Velja od {mesec}': 'Valid from {mesec}',
+  'Vozni red velja od {mesec}': 'Timetable valid from {mesec}',
   'V center': 'To centre',
   'Iz centra': 'From centre',
   'v center': 'to centre',
@@ -48,6 +48,7 @@ export default {
   'Zapri': 'Close',
   'Smer': 'Direction',
   'Zamenjaj smer': 'Switch direction',
+  'od {kraj}': 'from {kraj}',
   'Postaja': 'Stop',
   'Vse postaje (od izhodišča)': 'All stops (from start)',
   'Odpri postajo na karti': 'Show stop on map',
@@ -97,6 +98,7 @@ export default {
   '{linija} proti {smer}': '{linija} to {smer}',
   'prek {via}': 'via {via}',
   'točno': 'on time',
+  'Končna postaja: od tu avtobusi ne odpeljejo.': 'Last stop: buses do not depart from here.',
 
   // BottomSheet, ui/*
   'Podrobnosti': 'Details',
