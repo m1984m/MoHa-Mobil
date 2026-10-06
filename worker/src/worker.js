@@ -287,38 +287,47 @@ async function handleOba(request, env, ctx, path, cors) {
   // ── Klic navzgor ───────────────────────────────────────────────────────────
   // Kljub posredniku ostane ključ predpomnilnika Marpromov naslov: ob menjavi ali
   // odstranitvi posrednika shranjeni odgovori ostanejo veljavni.
-  const relay = String(env.OBA_RELAY ?? '').replace(/\/$/, '');
-  let fetchUrl = upstream.toString();
-  const fetchHeaders = { ...OBA_HEADERS };
-  if (relay) {
-    const viaRelay = new URL(relay + '/oba/' + method);
-    for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
-    fetchUrl = viaRelay.toString();
-    fetchHeaders['x-relay-key'] = String(env.RELAY_KEY ?? '');
-  }
-  const preko = relay ? 'relay' : 'direct';
+  // OBA_RELAY je seznam posrednikov, ločen z vejicami, v vrstnem redu poskusov
+  // (Deno, nato Vercel). Ob napaki prvega gre isti klic na drugega — septembra je
+  // Deno po dveh dneh porabil kvoto in prihodi so utihnili, ker rezerve ni bilo.
+  const relays = String(env.OBA_RELAY ?? '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
+  const cilji = relays.length
+    ? relays.map((relay, i) => {
+        const viaRelay = new URL(relay + '/oba/' + method);
+        for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
+        return {
+          url: viaRelay.toString(),
+          headers: { ...OBA_HEADERS, 'x-relay-key': String(env.RELAY_KEY ?? '') },
+          preko: i === 0 ? 'relay' : 'relay' + (i + 1),
+        };
+      })
+    : [{ url: upstream.toString(), headers: { ...OBA_HEADERS }, preko: 'direct' }];
+  const preko = cilji.map(c => c.preko).join('>');
 
   // Poskus navzgor, ki sam zabeleži svoj izid in napolni oba predpomnilnika.
   // Nikoli ne vrže: vrne telo ob uspehu in `null` ob neuspehu. Tako ga je mogoče
   // enako uporabiti v ospredju (uporabnik čaka) kot v ozadju (ne čaka nihče).
   const poskusiNavzgor = () => (async () => {
-    let res, poskus;
-    try {
-      ({ res, poskus } = await fetchUpstream(fetchUrl, { headers: fetchHeaders },
-        { timeoutMs: OBA_TIMEOUT_MS, poskusi: OBA_POSKUSI }));
-    } catch {
-      stej('nedosegljiv', 502, preko);
-      return null;
+    for (const c of cilji) {
+      let res, poskus;
+      try {
+        ({ res, poskus } = await fetchUpstream(c.url, { headers: c.headers },
+          { timeoutMs: OBA_TIMEOUT_MS, poskusi: OBA_POSKUSI }));
+      } catch {
+        stej('nedosegljiv', 502, c.preko);
+        continue;
+      }
+      if (!res.ok) {
+        stej('napaka', res.status, c.preko);
+        continue;
+      }
+      const telo = await res.text();
+      stej('ok', 200, c.preko, poskus);
+      memPut(cacheKeyUrl, telo, ttl);
+      await cache.put(cacheKey, zaPredpomnilnik(telo, ttl));
+      return telo;
     }
-    if (!res.ok) {
-      stej('napaka', res.status, preko);
-      return null;
-    }
-    const telo = await res.text();
-    stej('ok', 200, preko, poskus);
-    memPut(cacheKeyUrl, telo, ttl);
-    await cache.put(cacheKey, zaPredpomnilnik(telo, ttl));
-    return telo;
+    return null;
   })();
 
   // Svež zadetek gre ven takoj. Če je že čez polovico življenjske dobe, se v
@@ -853,6 +862,7 @@ export default {
         ttsConfigured: !!(env.AZURE_SPEECH_KEY && env.AZURE_SPEECH_REGION),
         allowedOrigins: allowedOrigins(env).length,
         obaVia: env.OBA_RELAY ? 'relay' : 'direct',
+        relays: String(env.OBA_RELAY ?? '').split(',').filter(s => s.trim()).length,
         relayKeyConfigured: !!env.RELAY_KEY,
         analytics: !!env.ANALYTICS,
         statConfigured: !!(env.STAT_KEY && env.CF_API_TOKEN && env.CF_ACCOUNT_ID),

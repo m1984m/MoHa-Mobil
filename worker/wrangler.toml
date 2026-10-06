@@ -23,7 +23,10 @@ AZURE_SPEECH_REGION = "germanywestcentral"
 # vracal 503 USAGE_EXCEEDED, zato so zivi prihodi v aplikaciji utihnili.
 # Ce bi Marprom kdaj spet blokiral Cloudflare, odkomentiraj spodnjo vrstico in
 # postavi skrivnost RELAY_KEY (npx wrangler secret put RELAY_KEY).
-# OBA_RELAY = "https://moha-oba.m1984m.deno.net"
+# 05.10.2026 zvecer spet blokada (Worker 502, neposredno 200 v 0,2 s) -> posrednik vklopljen.
+# Seznam posrednikov v vrstnem redu poskusov: Deno (Google), nato Vercel (AWS Stockholm,
+# ../relay-vercel). Iz AWS Frankfurt Marprom ne odgovori, zato je Vercel zaklenjen na arn1.
+OBA_RELAY = "https://moha-oba.m1984m.deno.net,https://moha-oba-vercel.vercel.app"
 
 # Javni kljuÄŤ VAPID. Ta SME biti v repozitoriju â€” brskalnik ga tako ali tako
 # dobi ob naroÄŤanju (`applicationServerKey`), Worker pa ga vrne na

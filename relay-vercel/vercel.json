@@ -1,0 +1,7 @@
+{
+  "regions": ["arn1"],
+  "rewrites": [
+    { "source": "/health", "destination": "/api/relay?m=__health" },
+    { "source": "/oba/:method", "destination": "/api/relay?m=:method" }
+  ]
+}

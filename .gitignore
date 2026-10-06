@@ -33,5 +33,8 @@ public/sw.js
 *.sw?
 relay/.env
 worker/.wrangler/
+worker/.dev.vars
 relay/.deno-token
+relay/.vercel-token
+relay-vercel/.vercel/
 .omc/
