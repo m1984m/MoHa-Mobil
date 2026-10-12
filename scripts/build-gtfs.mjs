@@ -193,8 +193,22 @@ if (shapes.length) {
 }
 
 // === meta.json ===
+// Obdobje voznega reda za napis na Domu. Prej je Dom pisal datum gradnje, ki se ob
+// ponovni gradnji istega reda premakne (»velja od oktobra« za septembrski red).
+// Vir je feed_info.txt, sicer najzgodnejši začetek in najpoznejši konec služb.
+let feedStart = '', feedEnd = '';
+if (fs.existsSync(path.join(RAW, 'feed_info.txt'))) {
+  const fi = parseCSV('feed_info.txt')[0];
+  feedStart = fi?.feed_start_date ?? '';
+  feedEnd = fi?.feed_end_date ?? '';
+}
+if (!/^\d{8}$/.test(feedStart)) feedStart = serviceOut.map(s => s.start).sort()[0] ?? '';
+if (!/^\d{8}$/.test(feedEnd)) feedEnd = serviceOut.map(s => s.end).sort().at(-1) ?? '';
+
 fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({
   built: new Date().toISOString(),
+  feedStart,
+  feedEnd,
   counts: { stops: stopsOut.length, routes: routesOut.length, trips: tripsOut.length, services: serviceOut.length },
   // 0 on a clean feed; non-zero means the source shipped backwards stop_times (see above).
   anomalies: anomalies.length,
