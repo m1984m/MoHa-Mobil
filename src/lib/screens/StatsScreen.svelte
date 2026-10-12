@@ -93,9 +93,11 @@
 
   $: vsehZagonov = podatki ? vsota(podatki.zagoni) : 0;
   $: namescenih = podatki ? vsota(podatki.zagoni.filter(z => z.nacin === 'namescena')) : 0;
-  $: klicevZaledja = podatki ? vsota(podatki.zaledje) : 0;
+  // »prekinjen« = posrednik, ki ga je prehitel drugi (vzporedni klic od 12.10.2026) — ni
+  // klic uporabnika, zato ne šteje v vsoto; »prazno« = ponoči brez avtobusov, ni napaka.
+  $: klicevZaledja = podatki ? vsota(podatki.zaledje.filter(v => v.izid !== 'prekinjen')) : 0;
   $: napakZaledja = podatki
-    ? vsota(podatki.zaledje.filter(v => v.izid === 'napaka' || v.izid === 'nedosegljiv')) : 0;
+    ? vsota(podatki.zaledje.filter(v => v.izid === 'napaka' || v.izid === 'nedosegljiv' || v.izid === 'neznano')) : 0;
   $: medianaMs = odziv.length ? Math.round(odziv.reduce((a, b) => a + b.n, 0) / odziv.length) : 0;
 
   $: razlicice = (podatki?.zagoni ?? []).map(z => ({
@@ -326,12 +328,13 @@
               <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zaledje po dnevih</h2>
               <ul class="surface rounded-2xl border border-base overflow-hidden">
                 {#each podatki.zaledje as v, i}
-                  {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv'}
+                  {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv' || v.izid === 'neznano'}
+                  {@const nevtralno = v.izid === 'prekinjen' || v.izid === 'prazno'}
                   <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                     <div class="flex-1 min-w-0">
                       <div class="t-subhead font-medium truncate">
                         {datum(String(v.dan))} · {v.storitev}
-                        <span style="color: {slabo ? 'var(--status-disrupt)' : 'var(--status-ontime)'}">{v.izid}</span>
+                        <span style="color: {slabo ? 'var(--status-disrupt)' : nevtralno ? 'var(--text-muted)' : 'var(--status-ontime)'}">{v.izid}</span>
                       </div>
                       <div class="t-footnote text-muted">mediana {stevilo(v.ms_p50)} ms</div>
                     </div>

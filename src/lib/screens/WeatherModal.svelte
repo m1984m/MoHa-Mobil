@@ -3,7 +3,8 @@
   import { onMount } from 'svelte';
   import { X, Sunrise, Sunset, Wind, Droplets, Sun } from 'lucide-svelte';
   import { fetchDayWeather, type DayWeather } from '../weather';
-  import { t } from '../i18n';
+  import { t, locale } from '../i18n';
+  import { focusTrap } from '../focusTrap';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { weatherSpeech } from '../readAloud';
 
@@ -14,14 +15,26 @@
 
   let data: DayWeather | null = null;
   let loading = false;
+  let loadedAt = 0;
+  // En poskus na odprtje. Prej je ob napaki reaktivni blok klical load() znova in znova
+  // (`loading` pade na false, `data` ostane null): 858 zahtev Open-Meteo v 3 s, brez
+  // povezave pa vroča zanka, ki prazni baterijo (pregled 12.10.2026). Znova poskusi
+  // gumb »Poskusi znova« ali naslednje odprtje; podatki, starejši od pol ure, se osvežijo.
+  let tried = false;
+  const STALE_MS = 30 * 60_000;
 
   async function load() {
+    tried = true;
     loading = true;
-    data = await fetchDayWeather(lat, lon);
+    const d = await fetchDayWeather(lat, lon);
+    if (d) { data = d; loadedAt = Date.now(); }
     loading = false;
   }
 
-  $: if (open && !data && !loading) load();
+  $: if (!open) tried = false;
+  $: if (open && !loading && !tried && (!data || Date.now() - loadedAt > STALE_MS)) load();
+
+  const num = (v: number, digits = 1) => v.toLocaleString(locale(), { maximumFractionDigits: digits });
 
   onMount(() => {});
 
@@ -30,6 +43,10 @@
   }
 </script>
 
+<!-- Escape na <svelte:window>: overlay div nikoli ne dobi fokusa, zato se okno s tipko
+     ni zaprlo (enako kot pri ostalih oknih od 0.9.0). -->
+<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') close(); }} />
+
 {#if open}
   <div in:backdrop out:backdrop={{ out: true }} class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
        style="background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);"
@@ -37,9 +54,11 @@
        on:keydown={(e) => { if (e.key === 'Escape') close(); }}
        role="dialog"
        aria-modal="true"
+       aria-label={$t('Vreme danes')}
        tabindex="-1">
     <div in:sheet out:sheet={{ out: true }} class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float overflow-hidden"
-         style="padding-bottom: env(safe-area-inset-bottom);">
+         style="padding-bottom: env(safe-area-inset-bottom);"
+         use:focusTrap>
       <div class="flex items-center justify-between px-5 pt-4 pb-2">
         <div class="t-title2">{$t('Vreme danes')}</div>
         <div class="flex items-center gap-2">
@@ -57,7 +76,11 @@
       {#if loading && !data}
         <div class="px-5 pb-6 t-body text-muted">{$t('Nalagam…')}</div>
       {:else if !data}
-        <div class="px-5 pb-6 t-body text-muted">{$t('Podatki niso na voljo.')}</div>
+        <div class="px-5 pb-6 flex items-center justify-between gap-3">
+          <div class="t-body text-muted">{$t('Podatki niso na voljo.')}</div>
+          <button class="pressable min-h-[44px] px-4 rounded-xl surface-2 border border-base t-callout font-medium shrink-0"
+                  on:click={load} disabled={loading}>{$t('Poskusi znova')}</button>
+        </div>
       {:else}
         <div class="px-5 pt-2 pb-5">
           <div class="flex items-center gap-4">
@@ -93,7 +116,7 @@
             <Droplets size={18} color="var(--accent)" />
             <div>
               <div class="t-footnote text-muted">{$t('Padavine')}</div>
-              <div class="t-body font-semibold">{data.precipSumMm} mm</div>
+              <div class="t-body font-semibold">{num(data.precipSumMm)} mm</div>
             </div>
           </div>
           <div class="surface-2 rounded-xl p-3 flex items-center gap-2">
@@ -123,7 +146,7 @@
                     <div class="text-xl leading-none my-1">{h.emoji}</div>
                     <div class="t-subhead font-semibold">{h.tempC}°</div>
                     {#if h.precipMm > 0}
-                      <div class="t-footnote" style="color: var(--accent)">{h.precipMm.toFixed(1)}</div>
+                      <div class="t-footnote" style="color: var(--accent)">{num(h.precipMm)}</div>
                     {/if}
                   </div>
                 {/each}

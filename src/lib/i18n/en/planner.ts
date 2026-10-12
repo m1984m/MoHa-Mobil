@@ -9,7 +9,6 @@ export default {
   'Pot odstranjena': 'Route removed',
   'Moja lokacija': 'My location',
   'Izbrana lokacija ({lat}, {lon})': 'Selected location ({lat}, {lon})',
-  'Izbrani čas prihoda je že mimo — izberi poznejšega.': 'That arrival time has already passed — choose a later one.',
   'Ne najdem izhodišča ali cilja.': 'Could not find the start or destination.',
   'Izhodišče je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.': 'The start is too far from the nearest stop (over 1.2 km). Choose a closer point.',
   'Cilj je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.': 'The destination is too far from the nearest stop (over 1.2 km). Choose a closer point.',
@@ -83,4 +82,7 @@ export default {
   'Vpiši, kam greš.': 'Enter where you are going.',
   'samo peš, {m} m': 'walk only, {m} m',
   'manj hoje': 'less walking',
+  // 12.10.2026 — iskanje za jutri, »Prihod do« tik po izbrani uri
+  'jutri': 'tomorrow',
+  'Prihod do {time} ni več mogoč, zato so prikazane poti z odhodom zdaj.': 'Arriving by {time} is no longer possible, so routes leaving now are shown.',
 };

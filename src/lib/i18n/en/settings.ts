@@ -165,6 +165,8 @@ export default {
   'Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajo in tapni »Pripni linijo«.':
     'Reminders are set for a line pinned in Saved. Open Saved, choose a stop and tap “Pin line”.',
   'Ni opomnikov': 'No reminders',
+  'Izberi postajališče, avtobus in uro ali tapni zvonec pri odhodu na listu postajališča.':
+    'Pick a stop, a bus and a time, or tap the bell next to a departure on the stop sheet.',
   'Nastavi opozorilo nekaj minut pred odhodom, da ti avtobus ne uide.': 'Get an alert a few minutes before departure so you don’t miss the bus.',
   'Dodaj opomnik': 'Add reminder',
   'proti {dir}': 'towards {dir}',
@@ -261,6 +263,11 @@ export default {
   'Na Karti so postaje MBajk s prostimi kolesi, ob postajališču pa najbližja postaja': 'The Map shows MBajk bike stations with available bikes, and each stop shows the nearest one',
   'Nov razdelek Cene in vozovnice: cenik Marproma in kje kupiti vozovnico': 'New Fares & tickets section: Marprom prices and where to buy tickets',
   'Kratek vodič ob prvem zagonu in namigi — znova ga odpreš v Nastavitvah': 'A short guide on first launch plus tips — reopen it from Settings',
+  // Novosti 0.27.0
+  'Opomnik nastaviš z zvoncem pri odhodu, vozni red se odpre pri naslednjem odhodu': 'Set a reminder with the bell next to a departure; timetables open at the next departure',
+  'Vozni red od 7. oktobra (P8 ob 14.00), pravilni prazniki in konec leta v voznih redih': 'Timetable from 7 October (P8 at 14:00), with correct holidays and year-end in the timetables',
+  'Načrtovalnik brez nepotrebnih prestopov, »Prihod do« samo z avtobusi, ki še niso odpeljali': 'Journey planner without needless transfers; “Arrive by” only offers buses that have not left yet',
+  'Zanesljivejši živi podatki, pešpoti in opomniki ter popravki okna Vreme in gumba nazaj': 'More reliable live data, walking routes and reminders, plus fixes to the Weather window and the back button',
   // Novosti 0.26.0
   'Pri odhodih je na prvem mestu cilj vožnje, smer na kartici pove, kam avtobus pelje': 'Departures now lead with the destination, and the direction on a stop card tells you where the bus is going',
   'Ko podatkov v živo ni, Dom to jasno pove; pri vsakem odhodu piše, ali je v živo ali po voznem redu': 'When live data is unavailable, Home says so clearly; each departure shows whether it is live or scheduled',

@@ -6,6 +6,14 @@ export type Theme = 'light' | 'dark' | 'auto' | 'contrast' | 'mono';
 
 const THEME_CLASSES = ['dark', 'contrast', 'mono'] as const;
 
+// Shramba je lahko blokirana (zasebno okno, izklopljeni piškotki): edini modul brez
+// varovala je zato prvi vrstici App.onMount vrgel izjemo — vozni red se ni naložil in
+// aplikacija je obstala na skeletu (pregled 12.10.2026). Tema takrat velja le do konca seje.
+function readStored(): Theme | null {
+  try { return localStorage.getItem(KEY) as Theme | null; } catch { return null; }
+}
+let current: Theme = 'auto';
+
 function resolveClass(t: Theme): typeof THEME_CLASSES[number] | null {
   if (t === 'contrast' || t === 'mono') return t;
   if (t === 'dark') return 'dark';
@@ -30,18 +38,19 @@ export function applyTheme(t: Theme) {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_BAR_COLORS[effective]);
   // color-scheme: native elementi (scrollbar, confirm(), autofill) sledijo temi.
   root.style.colorScheme = effective === 'dark' ? 'dark' : 'light';
-  localStorage.setItem(KEY, t);
+  current = t;
+  try { localStorage.setItem(KEY, t); } catch { /* blokirana shramba — tema velja za to sejo */ }
 }
 
 export function initTheme(): Theme {
-  const stored = localStorage.getItem(KEY) as Theme | null;
+  const stored = readStored();
   const valid: Theme[] = ['light', 'dark', 'auto', 'contrast', 'mono'];
   // Privzeto 'auto': aplikacija se uporablja tudi ponoči na postaji — telefon v
   // nočnem načinu je prej dobil bel zaslon, ker je bil privzetek trdo 'light'.
   const t: Theme = (stored && valid.includes(stored)) ? stored : 'auto';
   applyTheme(t);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if ((localStorage.getItem(KEY) as Theme) === 'auto') applyTheme('auto');
+    if ((readStored() ?? current) === 'auto') applyTheme('auto');
   });
   return t;
 }

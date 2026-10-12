@@ -26,6 +26,7 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+  import { toMb } from '../clock';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import SimpleStopSearch from './SimpleStopSearch.svelte';
   import { stopHint, hasTwin } from '../simpleStops';
@@ -193,7 +194,7 @@
   $: anyLive = boards.some(b => b.rows.some(r => r.live));
 
   function clockOf(ms: number): string {
-    const d = new Date(ms);
+    const d = toMb(ms);
     return fmtClock(d.getHours() * 3600 + d.getMinutes() * 60);
   }
 
@@ -483,13 +484,13 @@
   <SimpleAlarmWizard {gtfs} {origin} {hasGeo} edit={alarmEdit} onClose={() => { alarmWizardOpen = false; alarmEdit = null; }} />
 {/if}
 
-<ConfirmDialog open={!!removingAlarm}
+<ConfirmDialog open={!!removingAlarm} backEntry={false}
   title={removingAlarm ? tr('Odstranim opomnik »{ime}«?', { ime: alarmTitle(removingAlarm) }) : ''}
   confirmLabel={tr('Odstrani')} destructive
   onConfirm={() => { if (removingAlarm) removeAlarm(removingAlarm.id); removingAlarm = null; }}
   onCancel={() => removingAlarm = null} />
 
-<ConfirmDialog open={!!removing}
+<ConfirmDialog open={!!removing} backEntry={false}
   title={removing ? tr('Odstranim kraj »{kraj}«?', { kraj: removing.label }) : ''}
   confirmLabel={tr('Odstrani')} destructive
   onConfirm={() => { if (removing) simplePlaces.remove(removing.id); removing = null; }}

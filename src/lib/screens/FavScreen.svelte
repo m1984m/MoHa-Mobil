@@ -9,6 +9,7 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
+  import { nowMb } from '../clock';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { departuresSpeech, gtfsRow, emptyStopSpeech } from '../readAloud';
   import StopTimetableModal from './StopTimetableModal.svelte';
@@ -46,7 +47,7 @@
   $: favList = gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [];
   // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnost od tick jasna.
   function makeBoards(g: GTFS | null, list: Stop[], _tick: number) {
-    return g ? list.map(s => ({ stop: s, deps: upcomingDepartures(g, s.id, new Date(), 2) })) : [];
+    return g ? list.map(s => ({ stop: s, deps: upcomingDepartures(g, s.id, nowMb(), 2) })) : [];
   }
   $: boards = makeBoards(gtfs, favList, tick);
 

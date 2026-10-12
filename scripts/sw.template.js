@@ -3,7 +3,8 @@
 // Do not edit public/sw.js directly — edit this template instead.
 //
 // Strategy:
-//   - GTFS JSON:    stale-while-revalidate (fast, updates in background)
+//   - GTFS JSON z ?v= (različica voznega reda): cache-first, stare različice se počistijo
+//   - meta.json / GTFS brez različice: stale-while-revalidate
 //   - MapLibre tiles / basemap style: cache-first with fallback to network
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
@@ -28,14 +29,41 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_SHELL)).catch(() => {}));
+  // cache: 'reload' — mimo HTTP predpomnilnika brskalnika: GitHub Pages pošilja
+  // max-age=600, zato je nov SW lahko shranil PREJŠNJI index.html, ki kaže na že
+  // izbrisane datoteke; zagon brez povezave je dal prazno stran (pregled 12.10.2026).
+  e.waitUntil(caches.open(APP_CACHE)
+    .then(c => c.addAll(APP_SHELL.map(u => new Request(u, { cache: 'reload' }))))
+    .catch(() => {}));
   // Ne kličemo skipWaiting() avtomatsko — pustimo da uporabnik sam tapne "Osveži zdaj"
   // v UpdateToast. Če klienta ni (prva instalacija), se install in activate zgodita takoj.
 });
 
-// Prejmi ukaz iz strani: preklopi nov SW v active brez čakanja.
+// Prejmi ukaz iz strani: preklopi nov SW v active brez čakanja. GET_VERSION: stran
+// vpraša čakajoči SW za njegovo različico — obvestilo o posodobitvi je prej kazalo
+// različico paketa, ki že teče, ne nove.
 self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (e.data && e.data.type === 'GET_VERSION' && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);
+  // Prvi obisk: paket in vozni red sta se naložila, preden je SW prevzel stran, zato ju ni
+  // v predpomnilnikih in drugi zagon brez povezave je bil prazen. Stran pošlje svoje že
+  // naložene datoteke (main.ts), shranimo samo pakete (/assets/) in vozni red (/gtfs/).
+  if (e.data && e.data.type === 'CACHE_URLS' && Array.isArray(e.data.urls)) {
+    e.waitUntil((async () => {
+      const app = await caches.open(APP_CACHE);
+      const gtfs = await caches.open(GTFS_CACHE);
+      for (const u of e.data.urls.slice(0, 100)) {
+        try {
+          const url = new URL(u);
+          if (url.origin !== self.location.origin) continue;
+          const isGtfs = url.pathname.includes('/gtfs/') && url.pathname.endsWith('.json');
+          if (!isGtfs && !url.pathname.includes('/assets/')) continue;
+          const c = isGtfs ? gtfs : app;
+          if (!(await c.match(url.href))) await c.add(url.href);
+        } catch { /* ena datoteka ne sme ustaviti ostalih */ }
+      }
+    })());
+  }
 });
 
 self.addEventListener('activate', (e) => {
@@ -46,22 +74,56 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-function staleWhileRevalidate(req, cacheName) {
+// `event` (neobvezno): osvežitev v ozadju gre pod waitUntil, da je brskalnik ne prekine,
+// ko je odgovor iz predpomnilnika že vrnjen.
+function staleWhileRevalidate(req, cacheName, event) {
   return caches.open(cacheName).then(async (cache) => {
     const cached = await cache.match(req);
     const net = fetch(req).then((resp) => {
-      if (resp && resp.ok) cache.put(req, resp.clone());
+      if (resp && resp.ok) return cache.put(req, resp.clone()).then(() => resp, () => resp);
       return resp;
     }).catch(() => cached);
+    if (cached && event) event.waitUntil(net.catch(() => {}));
     return cached || net;
+  });
+}
+
+// Vozni red z različico v naslovu (trips.json?v=…) se ne spreminja: najprej iz
+// predpomnilnika. Ob prvem prenosu nove različice se stare različice iste datoteke
+// izbrišejo, da predpomnilnik ne raste z vsako objavo.
+function gtfsVersioned(req, event) {
+  return caches.open(GTFS_CACHE).then(async (cache) => {
+    const cached = await cache.match(req, { ignoreVary: true });
+    if (cached) return cached;
+    let resp = null;
+    try { resp = await fetch(req); } catch { resp = null; }
+    if (resp && resp.ok) {
+      const path = new URL(req.url).pathname;
+      event.waitUntil(cache.put(req, resp.clone()).then(async () => {
+        for (const k of await cache.keys()) {
+          const u = new URL(k.url);
+          if (u.pathname === path && k.url !== req.url) await cache.delete(k);
+        }
+      }).catch(() => {}));
+      return resp;
+    }
+    // Brez povezave: katerakoli shranjena različica iste datoteke. Star paket (index.html
+    // iz predpomnilnika) po objavi novega voznega reda sicer ni naložil ničesar, ker je
+    // nova različica staro že izbrisala (pregled 12.10.2026). Oblika podatkov je enaka.
+    const any = await cache.match(req, { ignoreSearch: true, ignoreVary: true });
+    if (any) return any;
+    return resp || Response.error();
   });
 }
 
 // trimTo: mehka zgornja meja števila vnosov (FIFO — Cache API vrača keys v
 // vrstnem redu vstavljanja). Brez nje tiles cache raste neomejeno.
+// ignoreVary: datoteke z zgoščeno vsebino (/assets/, ploščice) so enake ne glede na glave
+// zahteve. Brez tega strežnik z »Vary: Origin« (vite preview) ni ujel modulov, ki jih je SW
+// shranil sam (CACHE_URLS, brez glave Origin) — zagon brez povezave je ostal prazen.
 function cacheFirst(req, cacheName, trimTo) {
   return caches.open(cacheName).then(async (cache) => {
-    const cached = await cache.match(req);
+    const cached = await cache.match(req, { ignoreVary: true });
     if (cached) return cached;
     const resp = await fetch(req);
     if (resp && resp.ok) {
@@ -86,16 +148,28 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   // SPA navigation
+  // Uspešno naložen index.html (koren aplikacije) se shrani: zagon brez povezave tako
+  // odpre zadnji paket, katerega datoteke so že v predpomnilniku, ne paketa ob namestitvi SW.
   if (req.mode === 'navigate') {
+    const scopePath = new URL(self.registration.scope).pathname;
+    const isRoot = url.pathname === scopePath || url.pathname === scopePath + 'index.html';
     event.respondWith(
-      fetch(req).catch(() => caches.match('./index.html'))
+      fetch(req).then((resp) => {
+        if (isRoot && resp && resp.ok) {
+          const copy = resp.clone();
+          event.waitUntil(caches.open(APP_CACHE).then(c => c.put('./index.html', copy)).catch(() => {}));
+        }
+        return resp;
+      }).catch(() => caches.match('./index.html', { ignoreVary: true }))
     );
     return;
   }
 
   // GTFS data
   if (url.pathname.includes('/gtfs/') && url.pathname.endsWith('.json')) {
-    event.respondWith(staleWhileRevalidate(req, GTFS_CACHE));
+    event.respondWith(url.searchParams.has('v')
+      ? gtfsVersioned(req, event)
+      : staleWhileRevalidate(req, GTFS_CACHE, event));
     return;
   }
 

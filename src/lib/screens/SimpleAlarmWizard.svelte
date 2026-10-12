@@ -3,7 +3,8 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
   import { ArrowLeft, MapPin, Star, BellRing, TriangleAlert, Check, Volume2, Send } from 'lucide-svelte';
-  import { nearestStops, type GTFS, type Stop } from '../gtfs';
+  import { nearestStops, dayKindOf, type GTFS, type Stop } from '../gtfs';
+  import { nowMb } from '../clock';
   import { favStops } from '../favorites';
   import { alarms, addAlarm, updateAlarm, computeOccurrences, type Alarm } from '../alarms';
   import { pushState, enablePush, showLocalTest } from '../push';
@@ -30,6 +31,10 @@
   // Popravljanje obstoječega opomnika: čarovnik je predizpolnjen in začne na pregledu,
   // shranjevanje pa ta opomnik posodobi (updateAlarm) namesto da doda novega.
   export let edit: Alarm | null = null;
+  // »Opomni me« pri odhodu (celotna aplikacija, evalvacija N8): postajališče, avtobus in ura
+  // so znani, dnevi so današnja vrsta dneva (delavnik ali ta dan vikenda). Začne na
+  // pregledu, če avtobus ob tej uri vozi vse te dni, sicer pri izbiri ure.
+  export let prefill: { stopId: number; routeId: number; dir: number; depSec: number } | null = null;
 
   type Step = 'stop' | 'line' | 'days' | 'time' | 'lead' | 'summary' | 'done';
   const ORDER: Step[] = ['stop', 'line', 'days', 'time', 'lead', 'summary'];
@@ -47,17 +52,56 @@
     depSec = e.fromMin * 60;
     lead = e.leadMin;
     if (stop && line) step = 'summary';
+  } else if (prefill && gtfs) {
+    const p = prefill;
+    stop = gtfs.stops.find(s => s.id === p.stopId) ?? null;
+    line = stop ? linesAtStop(gtfs, stop.id).find(l => l.routeId === p.routeId && l.dir === p.dir) ?? null : null;
+    // Vrsta dneva po službi, ki danes res vozi: na praznik (25.12. v petek) je to nedelja,
+    // sicer bi čarovnik predlagal delavnike za avtobus iz nedeljskega reda.
+    const kind = dayKindOf(gtfs, nowMb());
+    days = [0, 1, 2, 3, 4, 5, 6].map(i => (kind === 'weekday' ? i < 5 : kind === 'saturday' ? i === 5 : i === 6));
+    if (stop && line) {
+      const ok = timeInfo(gtfs, stop, line, days).times.includes(p.depSec);
+      depSec = ok ? p.depSec : null;
+      step = ok ? 'summary' : 'time';
+    } else if (stop) step = 'line';
   }
   let query = '';
   let saving = false;
   let dlg: HTMLElement;
 
+  // Koraki, ki jih je uporabnik videl; »Nazaj« (gumb in sistemski) gre na prejšnjega
+  // videnega, s prvega pa čarovnik zapre. Prej je čarovnik z zvonca začel na pregledu,
+  // »Nazaj« pa je vodil skozi pet korakov, ki jih uporabnik ni nikoli videl — šest
+  // dotikov do karte (pregled 12.10.2026). Popravljanje (edit) ostane kot doslej: nazaj
+  // vodi skozi vse korake, ker se prav tako popravi izbira.
+  let visited: Step[] = edit && step === 'summary' ? [...ORDER] : [step];
+
   // Menjava koraka: nov korak dobi fokus na vprašanju — sicer fokus pade na <body>
   // (gumb, ki ga je imel, izgine) in bralnik zaslona novega vprašanja ne prebere.
-  function go(s: Step) {
+  function show(s: Step) {
     step = s;
     guide(s);
     void tick().then(() => dlg?.querySelector<HTMLElement>('h1')?.focus());
+  }
+  function go(s: Step) {
+    if (visited[visited.length - 1] !== s) visited = [...visited, s];
+    show(s);
+  }
+  // true = vrnil se je na prejšnji videni korak; false = ni ga, čarovnik naj se zapre.
+  function stepBack(): boolean {
+    if (step === 'done' || visited.length <= 1) return false;
+    visited = visited.slice(0, -1);
+    let target = visited[visited.length - 1];
+    // Spremenjeni dnevi so ponastavili uro: »koliko prej« in pregled brez ure sta prazna,
+    // »Shrani« pa ne naredi nič (pregled 12.10.2026). Nazaj zato vodi na izbiro ure,
+    // od tam pa na dneve.
+    if (depSec == null && (target === 'lead' || target === 'summary')) {
+      visited = [...visited.filter(s => s !== 'lead' && s !== 'summary' && s !== 'time' && s !== 'days'), 'days', 'time'];
+      target = 'time';
+    }
+    show(target);
+    return true;
   }
 
   const LEADS = [5, 10, 15, 20, 30];
@@ -72,11 +116,10 @@
     // Med shranjevanjem ostane na pregledu (kot gumb Nazaj, ki je takrat onemogočen);
     // sicer bi po koncu shranjevanja skočil s prejšnjega koraka na "shranjeno".
     if (saving) { back = pushBack(onSystemBack); return; }
-    const i = ORDER.indexOf(step);
-    if (step === 'done' || i <= 0) { onClose(); return; }
+    if (step === 'done' || visited.length <= 1) { onClose(); return; }
     // Najprej nov vnos: pushBack utiša branje, Petra pa naj prebere prejšnji korak.
     back = pushBack(onSystemBack);
-    go(ORDER[i - 1]);
+    stepBack();
   }
   onDestroy(() => {
     alive = false;
@@ -86,9 +129,7 @@
 
   function goBack() {
     if (saving) return;
-    const i = ORDER.indexOf(step);
-    if (step === 'done' || i <= 0) { onClose(); return; }
-    go(ORDER[i - 1]);
+    if (!stepBack()) onClose();
   }
 
   // ── 1. postajališče ──
@@ -107,12 +148,16 @@
   function pickLine(l: StopLine) { line = l; depSec = null; go('days'); }
 
   // ── 3. dnevi ──
+  // Ura ostane, če avtobus ob njej vozi tudi vse nove izbrane dni; sicer jo je treba izbrati znova.
+  function keepTime(d: boolean[]): number | null {
+    return depSec != null && gtfs && stop && line && timeInfo(gtfs, stop, line, d).times.includes(depSec) ? depSec : null;
+  }
   function preset(p: 'work' | 'all' | 'weekend') {
     days = [0, 1, 2, 3, 4, 5, 6].map(i => p === 'all' || (p === 'work' ? i < 5 : i >= 5));
-    depSec = null;
+    depSec = keepTime(days);
     go('time');
   }
-  function toggleDay(i: number) { days = days.map((v, j) => (j === i ? !v : v)); depSec = null; }
+  function toggleDay(i: number) { days = days.map((v, j) => (j === i ? !v : v)); depSec = keepTime(days); }
 
   // ── 4. ura avtobusa ── ure, ob katerih vozi VSE izbrane dni. Opomnik je en
   // avtobus ob točni uri; sobotni in nedeljski vozni red se pri skoraj vseh linijah
@@ -200,7 +245,15 @@
       });
     }
     // Dovoljenje za obvestila mora zahtevati dotik (iOS) — ta klic je še v njem.
-    if (!get(pushState).subscribed) await enablePush(computeOccurrences(gtfs, get(alarms)));
+    // Največ 20 s: tiho okno za dovoljenje v Chromu lahko ne odgovori nikoli, »Shranjujem…«
+    // pa je med tem zaklenil Nazaj, Esc in sistemski nazaj (pregled 12.10.2026). Opomnik
+    // je že shranjen; zaslon »Shranjeno« pove, če obvestila še niso vklopljena.
+    if (!get(pushState).subscribed) {
+      await Promise.race([
+        enablePush(computeOccurrences(gtfs, get(alarms))),
+        new Promise(r => setTimeout(r, 20_000)),
+      ]);
+    }
     saving = false;
     // Čarovnik je bil med čakanjem zaprt (Esc): Petra ne sme govoriti na drugem zaslonu.
     if (!alive) return;
@@ -423,9 +476,16 @@
         <h1 class="t-title1" tabindex="-1">{$t('Preveri opomnik')}</h1>
         <div class="surface-2 rounded-2xl p-5 t-title3 font-semibold leading-snug">{summary}</div>
         <ReadAloud variant="big" wide text={() => summary} />
-        <button type="button" class="pressable mm-aw-next w-full" disabled={saving} on:click={save}>
+        <button type="button" class="pressable mm-aw-next w-full" disabled={saving || !summary} on:click={save}>
           <BellRing size={26} /> {saving ? $t('Shranjujem…') : $t('Shrani opomnik')}
         </button>
+        {#if prefill && visited.length === 1}
+          <!-- Z zvonca je vse izbrano; dneve in čas opozorila se da še spremeniti
+               (»Nazaj« s pregleda zapre, ker drugih korakov uporabnik ni videl). -->
+          <button type="button" class="pressable mm-aw-row w-full" disabled={saving} on:click={() => go('days')}>
+            <span class="flex-1 text-left t-headline">{$t('Spremeni dneve ali opozorilo')}</span>
+          </button>
+        {/if}
 
       {:else if step === 'done'}
         <h1 class="t-title1" tabindex="-1">{$t('Opomnik je shranjen')}</h1>

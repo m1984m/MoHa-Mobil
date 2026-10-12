@@ -1,4 +1,5 @@
 import { tr } from './i18n';
+import { nowMb } from './clock';
 
 export type Stop = { id: number; name: string; lat: number; lon: number; code: string | null };
 export type Route = { id: number; short: string; long: string; type: number };
@@ -10,13 +11,21 @@ export type Shape = { id: number; pts: [number, number][] };
 
 const BASE = import.meta.env.BASE_URL + 'gtfs';
 
+// Različica voznega reda (meta.json `built`) je vgrajena ob gradnji, zato vsak paket
+// aplikacije bere natanko svoje podatke: `trips.json?v=…`. Prej je service worker
+// podatke stregel »najprej iz predpomnilnika«, zato je prvo odprtje po objavi novega
+// voznega reda teklo na starem, štiri datoteke pa so se osveževale vsaka posebej
+// (pregled 12.10.2026). Nova različica = nov naslov = takoj sveži podatki.
+const GTFS_VER: string = typeof __GTFS_VER__ === 'string' ? __GTFS_VER__ : '';
+const dataUrl = (name: string) => GTFS_VER ? `${BASE}/${name}?v=${encodeURIComponent(GTFS_VER)}` : `${BASE}/${name}`;
+
 let shapesCached: Map<number, Shape> | null = null;
 let shapesLoading: Promise<Map<number, Shape>> | null = null;
 
 export function loadShapes(): Promise<Map<number, Shape>> {
   if (shapesCached) return Promise.resolve(shapesCached);
   if (shapesLoading) return shapesLoading;
-  shapesLoading = fetch(`${BASE}/shapes.json`)
+  shapesLoading = fetch(dataUrl('shapes.json'))
     .then(r => { if (!r.ok) throw new Error('shapes.json ' + r.status); return r.json(); })
     .then((arr: Shape[]) => {
       shapesCached = new Map(arr.map(s => [s.id, s]));
@@ -152,6 +161,9 @@ let loading: Promise<GTFS> | null = null;
 export type GtfsMeta = {
   built: string;
   counts: { stops: number; routes: number; trips: number; services: number };
+  // Obdobje voznega reda (YYYYMMDD) — od 12.10.2026; starejši meta.json ga nima.
+  feedStart?: string;
+  feedEnd?: string;
 };
 
 let metaCached: GtfsMeta | null = null;
@@ -160,7 +172,7 @@ let metaLoading: Promise<GtfsMeta | null> | null = null;
 export function loadMeta(): Promise<GtfsMeta | null> {
   if (metaCached) return Promise.resolve(metaCached);
   if (metaLoading) return metaLoading;
-  metaLoading = fetch(`${BASE}/meta.json`)
+  metaLoading = fetch(dataUrl('meta.json'))
     .then(r => { if (!r.ok) throw new Error('meta.json ' + r.status); return r.json(); })
     .then((j: GtfsMeta) => { metaCached = j; return j; })
     .catch(() => { metaLoading = null; return null; });
@@ -170,7 +182,7 @@ export function loadMeta(): Promise<GtfsMeta | null> {
 export function loadGTFS(): Promise<GTFS> {
   if (cached) return Promise.resolve(cached);
   if (loading) return loading;
-  const fetchJson = (name: string) => fetch(`${BASE}/${name}`).then(r => {
+  const fetchJson = (name: string) => fetch(dataUrl(name)).then(r => {
     if (!r.ok) throw new Error(`${name} HTTP ${r.status}`);
     return r.json();
   });
@@ -219,7 +231,7 @@ export function nearestStops(stops: Stop[], origin: { lat: number; lon: number }
     .slice(0, k);
 }
 
-export function todayServiceIds(gtfs: GTFS, when: Date = new Date()): Set<number> {
+export function todayServiceIds(gtfs: GTFS, when: Date = nowMb()): Set<number> {
   const wd = (when.getDay() + 6) % 7; // 0=Mon
   const yyyymmdd = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
   const active = new Set<number>();
@@ -241,18 +253,66 @@ export function todayServiceIds(gtfs: GTFS, when: Date = new Date()): Set<number
 // Septembra 2026 je delavniška služba potekla 31.08., sobotna in nedeljska pa sta veljali
 // do 31.12. — ob ponedeljkih je bil seznam prazen, opozorilo pa skrito. Šteje samo
 // služba, ki ta dan res vozi (dan v tednu + izjeme).
-export function feedCoversDate(gtfs: GTFS, when: Date = new Date()): boolean {
+export function feedCoversDate(gtfs: GTFS, when: Date = nowMb()): boolean {
   return todayServiceIds(gtfs, when).size > 0;
 }
 
 // Vse odhode za dano postajo in dan (služba). Uporabljeno za klasičen vozni red.
 export type DayKind = 'weekday' | 'saturday' | 'sunday';
-export function dayKindToDate(kind: DayKind, base: Date = new Date()): Date {
-  const d = new Date(base);
-  const target = kind === 'weekday' ? 2 : kind === 'saturday' ? 6 : 0; // Tue, Sat, Sun
-  const cur = d.getDay();
-  d.setDate(d.getDate() + ((target - cur + 7) % 7));
-  return d;
+
+const ymdOf = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+const weekdayKind = (d: Date): DayKind => d.getDay() === 0 ? 'sunday' : d.getDay() === 6 ? 'saturday' : 'weekday';
+
+// Vrsta dneva po službi, ki ta dan res vozi: praznik v petek (25.12.) in v soboto (31.10.)
+// vozita po nedeljskem redu. Brez voznega reda ali službe odloči dan v tednu.
+export function dayKindOf(gtfs: GTFS | null, when: Date = nowMb()): DayKind {
+  const byWeekday = weekdayKind(when);
+  if (!gtfs) return byWeekday;
+  const kinds = new Set<DayKind>();
+  for (const id of todayServiceIds(gtfs, when)) {
+    const d = gtfs.services.find(s => s.id === id)?.days;
+    if (!d) continue;
+    if (d.slice(0, 5).some(v => v === 1)) kinds.add('weekday');
+    else if (d[5] === 1) kinds.add('saturday');
+    else if (d[6] === 1) kinds.add('sunday');
+  }
+  return kinds.size === 1 ? [...kinds][0] : byWeekday;
+}
+
+// Ali je dan praznik z drugačnim redom, kot ga ima dan v tednu (opomba v voznih redih).
+export function isHolidayService(gtfs: GTFS | null, when: Date = nowMb()): boolean {
+  return !!gtfs && dayKindOf(gtfs, when) !== weekdayKind(when);
+}
+
+// Datum, katerega vozni red pokaže zavihek »Delavnik« / »Sobota« / »Nedelja«.
+// Današnja vrsta dneva (po službi, ki danes res vozi) je danes. Sicer najbližji dan te
+// vrste, ki vozi po svojem rednem redu (brez izjeme v koledarju) in ga vozni red še
+// pokriva — najprej naprej, nato nazaj. Prej je bil to vedno naslednji torek/sobota/
+// nedelja: »Sobota« je v tednu pred praznikom 31.10. kazala nedeljski red, 25.12. se je
+// odprl torkov delavnik, 30. in 31.12. pa je bil »Delavnik« prazen, ker torek 5.1.2027
+// ni več v voznem redu (pregled 12.10.2026).
+export function dayKindToDate(kind: DayKind, base: Date = nowMb(), gtfs: GTFS | null = cached): Date {
+  if (gtfs && dayKindOf(gtfs, base) === kind) return new Date(base);
+  const noon = new Date(base);
+  noon.setHours(12, 0, 0, 0);   // poldne — premik ure ne premakne dneva
+  const fits = (d: Date) => {
+    if (weekdayKind(d) !== kind) return false;
+    if (!gtfs) return true;
+    const ymd = ymdOf(d);
+    if (gtfs.exceptions.some(e => e.date === ymd)) return false;
+    return todayServiceIds(gtfs, d).size > 0;
+  };
+  for (const sign of [1, -1]) {
+    for (let i = 1; i <= 28; i++) {
+      const d = new Date(noon);
+      d.setDate(d.getDate() + sign * i);
+      if (fits(d)) return d;
+    }
+  }
+  // Brez voznega reda za ta dan v tednu: naslednji tak dan (kot prej).
+  const target = kind === 'weekday' ? 2 : kind === 'saturday' ? 6 : 0;
+  noon.setDate(noon.getDate() + ((target - noon.getDay() + 7) % 7));
+  return noon;
 }
 
 export function allDeparturesForStop(
@@ -299,7 +359,7 @@ export function allTripsForRouteDirection(
 export function nextServiceDeparture(
   gtfs: GTFS,
   stopId: number,
-  when: Date = new Date(),
+  when: Date = nowMb(),
 ): { trip: Trip; route: Route; depSec: number; dayOffset: number; weekday: number } | null {
   const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
   for (let offset = 1; offset <= 7; offset++) {
@@ -355,7 +415,7 @@ export function departureKey(routeShort: string, headsign: string): string {
   return `${routeShort.trim().toLowerCase()}|${headsign.trim().toLowerCase().replace(/\s+/g, ' ')}`;
 }
 
-export function buildCenterIndex(gtfs: GTFS, when: Date = new Date()): CenterIndex {
+export function buildCenterIndex(gtfs: GTFS, when: Date = nowMb()): CenterIndex {
   const active = todayServiceIds(gtfs, when);
   const centerIds = new Set(gtfs.stops.filter(s => isCenterStopName(s.name)).map(s => s.id));
   const routeById = new Map(gtfs.routes.map(r => [r.id, r]));
@@ -543,7 +603,7 @@ export function tripDestination(gtfs: GTFS, trip: Trip, stopNames?: Map<number, 
 export function upcomingDepartures(
   gtfs: GTFS,
   stopId: number,
-  when: Date = new Date(),
+  when: Date = nowMb(),
   k = 10
 ): { trip: Trip; route: Route; depSec: number; minutesFromNow: number }[] {
   const active = todayServiceIds(gtfs, when);

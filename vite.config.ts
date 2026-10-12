@@ -18,11 +18,21 @@ try {
   // ni gita ali ni repozitorija — ostane 'dev'
 }
 
+// Različica voznega reda (meta.json `built`) — gtfs.ts z njo naslavlja podatke
+// (`trips.json?v=…`), da paket aplikacije in vozni red ne moreta biti iz različnih
+// objav. V razvoju je treba strežnik po `npm run gtfs*` znova zagnati.
+let gtfsVer = ''
+try {
+  gtfsVer = JSON.parse(readFileSync(new URL('./public/gtfs/meta.json', import.meta.url), 'utf8')).built ?? ''
+} catch {
+  // meta.json še ni zgrajen — podatki brez različice (stari naslovi)
+}
+
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   base: process.env.NODE_ENV === 'production' ? '/MoHa-Mobil/' : '/',
   // .omc/ piše vtičnik oh-my-claudecode (project-memory.json.lock) večkrat na minuto;
   // brez izključitve je vsak zapis sprožil ponovno nalaganje strani v razvoju.
   server: { port: 9125, host: true, watch: { ignored: ['**/.omc/**'] } },
-  define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_SHA__: JSON.stringify(sha) },
+  define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_SHA__: JSON.stringify(sha), __GTFS_VER__: JSON.stringify(gtfsVer) },
 })

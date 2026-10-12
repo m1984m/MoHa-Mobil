@@ -1,7 +1,9 @@
 <script lang="ts">
   import { backdrop, sheet } from '../motion';
+  import { onDestroy } from 'svelte';
   import { AlertTriangle } from 'lucide-svelte';
   import { focusTrap } from '../focusTrap';
+  import { pushBack, type BackRelease } from '../backstack';
   import { tr } from '../i18n';
 
   // Nadomešča domači confirm() — ta izstopa iz oblikovnega jezika in v PWA
@@ -14,6 +16,18 @@
   export let destructive = false;
   export let onConfirm: () => void;
   export let onCancel: () => void;
+  // Okno ima svoj vnos v zgodovini, zato ga sistemski nazaj zapre (= Prekliči). Prej v
+  // Priljubljenih vnosa ni bilo in nazaj je zaprl aplikacijo, v Nastavitvah pa je zaprl
+  // stran pod oknom (pregled 12.10.2026). Preprost pogled vnos že ureja sam: backEntry={false}.
+  export let backEntry = true;
+
+  let release: BackRelease | null = null;
+  $: if (backEntry && open && !release) {
+    release = pushBack(() => { release = null; onCancel(); });
+  } else if ((!open || !backEntry) && release) {
+    const r = release; release = null; r();
+  }
+  onDestroy(() => { if (release) { const r = release; release = null; r(); } });
 </script>
 
 <svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') onCancel(); }} />

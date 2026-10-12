@@ -1,4 +1,5 @@
 import { tr } from './i18n';
+import { nowMb } from './clock';
 
 export type Weather = { tempC: number; code: number; emoji: string; label: string };
 
@@ -80,7 +81,8 @@ export async function fetchDayWeather(lat: number, lon: number): Promise<DayWeat
     const hC: number[] = j.hourly?.weather_code ?? [];
     const hP: number[] = j.hourly?.precipitation ?? [];
 
-    const now = new Date();
+    // Datum kraja (Maribor), ne telefona: telefon v drugem pasu je imel prazen urni graf.
+    const now = nowMb();
     // Lokalni datum, NE toISOString (UTC): API s timezone=auto vrača lokalne čase,
     // zato je bil med 00:00 in 01:59 (UTC še prejšnji dan) urni graf prazen.
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

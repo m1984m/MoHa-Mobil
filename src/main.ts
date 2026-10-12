@@ -38,6 +38,30 @@ try {
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', async () => {
     const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
+    // Ali je stran že pod nadzorom SW. Ob prvem obisku clients.claim() sproži
+    // controllerchange, ki je stran osvežil sredi vodiča (dotik se je izgubil, zagon se je
+    // štel dvakrat; pregled 12.10.2026). Osvežitev je potrebna le ob ZAMENJAVI SW.
+    let hadController = !!navigator.serviceWorker.controller
+    // Poslušalec pred register(): prvi prevzem (clients.claim) lahko pride, še preden se
+    // register() razreši — potem bi hadController ostal false in prva prava posodobitev
+    // ne bi osvežila strani (pregled 12.10.2026).
+    let reloading = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) {
+        // Prvi prevzem — nič ni zastarelo. Paket in vozni red sta se naložila mimo SW,
+        // zato mu jih pošljemo v predpomnilnik (sicer drugi zagon brez povezave ne dela).
+        hadController = true
+        try {
+          const urls = performance.getEntriesByType('resource')
+            .map(e => e.name).filter(u => u.startsWith(location.origin))
+          navigator.serviceWorker.controller?.postMessage({ type: 'CACHE_URLS', urls })
+        } catch {}
+        return
+      }
+      if (reloading) return
+      reloading = true
+      location.reload()
+    })
     try {
       const reg = await navigator.serviceWorker.register(`${base}sw.js`, { scope: base })
 
@@ -47,24 +71,21 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
         updateAvailable.set(reg.waiting)
       }
 
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing
+      const watch = (nw: ServiceWorker | null) => {
         if (!nw) return
         nw.addEventListener('statechange', () => {
           if (nw.state === 'installed' && navigator.serviceWorker.controller) {
             updateAvailable.set(nw)
           }
         })
-      })
+      }
+      // Posodobitev, ki se je začela nameščati že pred koncem register() (updatefound je
+      // takrat že mimo), prej v tej seji ni pokazala obvestila.
+      watch(reg.installing)
+      reg.addEventListener('updatefound', () => watch(reg.installing))
 
-      // Po skipWaiting novi SW prevzame kontrolo — takrat reloadamo, da se nov bundle
-      // in cache dejansko pokažeta. Guard prepreči zanko pri razvojnem menjavanju.
-      let reloading = false
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloading) return
-        reloading = true
-        location.reload()
-      })
+      // Po skipWaiting novi SW prevzame kontrolo — takrat poslušalec zgoraj osveži stran,
+      // da se nov paket in predpomnilnik dejansko pokažeta.
     } catch {}
   })
 }

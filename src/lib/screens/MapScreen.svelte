@@ -1,7 +1,7 @@
 <script lang="ts">
   import { backdrop, sheet } from '../motion';
   import { onDestroy, onMount, tick } from 'svelte';
-  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert, Bike, Plus, Minus, ChevronDown } from 'lucide-svelte';
+  import { Navigation, X, Star, Clock, Footprints, Bus, Flame, Leaf, Share2, CalendarClock, ArrowLeft, MapPin, Check, Search, MoonStar, TriangleAlert, Bike, Plus, Minus, ChevronDown, AlarmClockPlus } from 'lucide-svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import MapView from '../MapView.svelte';
@@ -11,8 +11,9 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
-  import { liveDepartureRows, routeIdIndex, liveDepartures } from '../departures';
-  import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, LIVE_FRESH_MS } from '../departures';
+  import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, todayServiceIds, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
+  import { nowMb, nowSecMb } from '../clock';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
   import { online } from '../online';
   import { searchStops, twinStopHint } from '../simpleStops';
@@ -29,7 +30,7 @@
   import { toast } from '../toast';
   import { walkRoutingDegraded } from '../routing';
   import { fmtClock, fmtDuration, fmtWaitSentence, fmtDayOffset, LEAVE_HINT_MAX_MIN } from '../time';
-  import { t, tr, plural } from '../i18n';
+  import { t, tr, plural, locale } from '../i18n';
   import Hint from '../ui/Hint.svelte';
   import { hintVisible } from '../onboarding';
 
@@ -43,6 +44,8 @@
   export let onOpenPlanner: () => void;
   export let onLongPressDest: (lat: number, lon: number) => void;
   export let onPlanToStop: (s: Stop) => void;
+  // Zvonec pri odhodu: čarovnik za opomnik s tem postajališčem, avtobusom in uro (N8).
+  export let onRemind: (p: { stopId: number; routeId: number; dir: number; depSec: number }) => void = () => {};
   export let hasAlternatives: boolean = false;
   // Preprost pogled: brez iskanja, MBajk, bucike in gumba Načrtuj; namesto njih velik
   // gumb Nazaj in gumba +/−, ker povečava z dvema prstoma starejšim pogosto ne uspe.
@@ -144,14 +147,30 @@
     lineTimetableOpen = true;
   }
 
-  // Smer linije iz OBA headsigna — prej je klik na živ prihod vedno odprl smer 0,
+  // Smer linije za živ prihod — prej je klik na živ prihod vedno odprl smer 0,
   // tudi ko je bus vozil v nasprotno (LineDescription ≈ GTFS trip headsign).
-  function dirForArrival(a: StopArrival, routeId: number): number {
+  // Najprej odloči vozni red: smer, v kateri ima to postajališče današnji odhod ob uri
+  // prihoda po voznem redu. Opis smeri iz OBA se z opisom iz voznega reda ne ujame vedno;
+  // takrat je bila smer 0, na 28 postajališčih, ki ju linija obišče v obe smeri, napačna
+  // (zvonec je predizpolnil nasprotno smer; pregled 12.10.2026). Opis je le še odločevalec.
+  function dirForArrival(a: StopArrival, routeId: number, stopId: number | null = null): number {
     if (!gtfs) return 0;
     const hs = a.headsign.trim().toLowerCase();
-    if (!hs) return 0;
-    const t = gtfs.trips.find(t => t.route === routeId && t.headsign.trim().toLowerCase() === hs);
-    return t?.dir ?? 0;
+    const byHs = hs ? gtfs.trips.find(t => t.route === routeId && t.headsign.trim().toLowerCase() === hs) : undefined;
+    if (stopId != null && a.arrivalTime) {
+      const sec = hmToSec(a.arrivalTime);
+      const active = todayServiceIds(gtfs, nowMb());
+      const dirs = new Set<number>();
+      for (const t of gtfs.trips) {
+        if (t.route !== routeId || !active.has(t.service)) continue;
+        for (let i = 0; i < t.stops.length - 1; i++) {
+          if (t.stops[i][0] === stopId && Math.abs(t.stops[i][2] - sec) < 60) { dirs.add(t.dir); break; }
+        }
+      }
+      if (dirs.size === 1) return [...dirs][0];
+      if (dirs.size > 1 && byHs && dirs.has(byHs.dir)) return byHs.dir;
+    }
+    return byHs?.dir ?? 0;
   }
   let tick30 = 0;
   let tick30Timer: ReturnType<typeof setInterval> | null = null;
@@ -185,6 +204,7 @@
   // Ko user izbere živ bus, potegnemo arrivals za njegov nextStopPointId in najdemo
   // vrstico s tem busCode. Auto-refresh vsakih 15 s (enako kot postajni view). Ta ETA
   // je authoritative za top card — odpravi neujemanje z stop view-om.
+  let vehicleArrivalAt = 0;
   async function refreshVehicleArrival(live: LiveVehicle) {
     if (document.hidden) return; // app v ozadju — ne troši proxy kvote
     if (live.nextStopPointId == null || !live.busCode) return;
@@ -193,27 +213,37 @@
       // Še vedno isti bus? (lahko se je user že preklopil)
       if (selectedLive?.deviceId !== live.deviceId) return;
       vehicleArrival = arr.find(a => a.busCode === live.busCode) ?? null;
+      vehicleArrivalAt = Date.now();
     } catch {
-      // tiho — top card se vrne na fallback "—"
+      // Ob napaki ostane zadnji ETA le, dokler je svež; potem »—« namesto zlaganega
+      // »čez 4 min« (pregled 12.10.2026).
+      if (Date.now() - vehicleArrivalAt > LIVE_FRESH_MS) vehicleArrival = null;
     }
   }
 
+  // Novo poizvedovanje samo ob drugem vozilu ali drugem naslednjem postajališču. Prej se
+  // je blok sprožil ob vsakem pollu (30 s), ker poll zamenja objekt `selectedLive`:
+  // »Naslednja postaja … čez N min« je za hip pokazala »—« (pregled 12.10.2026).
+  let vehicleArrivalKey = '';
   $: {
-    if (selectedLive) {
-      const lv = selectedLive;
-      if (vehicleArrivalTimer) clearInterval(vehicleArrivalTimer);
-      vehicleArrival = null;
-      refreshVehicleArrival(lv);
-      vehicleArrivalTimer = setInterval(() => refreshVehicleArrival(lv), 15_000);
-    } else {
+    const key = selectedLive ? `${selectedLive.deviceId}|${selectedLive.nextStopPointId ?? ''}` : '';
+    if (key !== vehicleArrivalKey) {
+      vehicleArrivalKey = key;
       if (vehicleArrivalTimer) { clearInterval(vehicleArrivalTimer); vehicleArrivalTimer = null; }
       vehicleArrival = null;
+      vehicleArrivalAt = 0;
+      if (selectedLive) {
+        const lv = selectedLive;
+        refreshVehicleArrival(lv);
+        vehicleArrivalTimer = setInterval(() => refreshVehicleArrival(lv), 15_000);
+      }
     }
   }
 
   // Za katero postajališče je odgovor že prišel: »Nalagam …« samo pred prvim odgovorom.
   // Po dolžini seznama je na končni postaji (prazen filtriran seznam) utripalo vsakih 15 s.
   let arrivalsFor: number | null = null;
+  let liveArrivalsAt = 0;
   async function refreshArrivals(stopId: number) {
     if (document.hidden) return; // app v ozadju — ne troši proxy kvote
     liveArrivalsLoading = arrivalsFor !== stopId;
@@ -223,9 +253,12 @@
       if (selectedStop?.id === stopId) {
         liveArrivals = gtfs ? liveDepartures(gtfs, stopId, arr) : arr;
         arrivalsFor = stopId;
+        liveArrivalsAt = Date.now();
       }
     } catch {
-      // GTFS fallback stays visible
+      // Zadnji živi prihodi veljajo le dve minuti (kot na Domu): prej so ob izpadu ostali
+      // za vedno, »čez 4 min, V živo« tudi 10 min pozneje. Nato se pokaže vozni red.
+      if (selectedStop?.id === stopId && Date.now() - liveArrivalsAt > LIVE_FRESH_MS) liveArrivals = [];
     } finally {
       liveArrivalsLoading = false;
     }
@@ -233,7 +266,7 @@
 
   function refreshSynth() {
     if (!gtfs) return;
-    synthVehicles = activeVehicles(gtfs, new Date());
+    synthVehicles = activeVehicles(gtfs, nowMb());
   }
 
   // Real vozila iz Marprom Trak8 OBA (vsakih 30 s). Ikona na karti sledi raw OBA GPS-u.
@@ -461,7 +494,7 @@
 
   // Eksplicitni parametri namesto comma-operator trika — TS-čisto in jasna odvisnost od tick30.
   function calcDepartures(g: GTFS | null, s: Stop | null, _tick: number) {
-    return g && s ? upcomingDepartures(g, s.id, new Date(), 5) : [];
+    return g && s ? upcomingDepartures(g, s.id, nowMb(), 5) : [];
   }
   $: departures = calcDepartures(gtfs, selectedStop, tick30);
   // Ko danes ni več odhodov, poišči prvi odhod naslednjega dne s prometom —
@@ -512,7 +545,7 @@
     const syn = g.trips.find(t => t.id === v.tripId);
     if (syn) return syn;
     if (!lv) return null;
-    const now = new Date();
+    const now = nowMb();
     const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     return findTripForLiveBus({
       lineCode: lv.lineCode,
@@ -528,7 +561,7 @@
   // (prej non-null assert → potencialni crash renderja).
   function calcVehNextStops(g: GTFS | null, v: Vehicle | null, trip: Trip | null, _tick: number) {
     if (!g || !v || !trip) return [];
-    const nowSec = new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds();
+    const nowSec = nowSecMb();
     const stopById = new Map(g.stops.map(s => [s.id, s]));
     // Najprej poskusi po nextStopId (sintetični bus). Če ne ujame (živi bus z OBA ID-jem),
     // vrni geografsko najbližjo postajo + 1 kot "naslednja".
@@ -722,8 +755,11 @@
 
   // Čas hoje do postaje + 30 s buffer. Uporablja isto nastavitev hitrosti hoje
   // kot planer (prej hardkodiranih 1,3 m/s — "Kreni" je ignoriral nastavitev).
+  // Po ulicah je pot daljša od zračne črte: isti faktor 1,35 kot dostop v načrtovalniku
+  // (URBAN_DETOUR v planner.ts). Brez njega je bil »Kreni« do več minut prepozen.
+  const WALK_DETOUR = 1.35;
   function walkMinutes(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-    const meters = haversineM(a.lat, a.lon, b.lat, b.lon);
+    const meters = haversineM(a.lat, a.lon, b.lat, b.lon) * WALK_DETOUR;
     return Math.ceil((meters / getWalkMps() + 30) / 60);
   }
 </script>
@@ -881,14 +917,14 @@
                   </div>
                   <div class="min-w-0">
                     <div class="t-footnote text-muted">{$t('Prihranek CO₂')}</div>
-                    <div class="t-title3 font-bold">{planSummary.co2SavedKg} kg</div>
+                    <div class="t-title3 font-bold">{planSummary.co2SavedKg.toLocaleString(locale())} kg</div>
                   </div>
                 </div>
               </div>
               <div class="t-footnote text-muted px-1 mb-3">
-                {$t('Razdalja z avtom je ~{km} km.', { km: planSummary.driveKm })}
+                {$t('Razdalja z avtom je ~{km} km.', { km: planSummary.driveKm.toLocaleString(locale()) })}
               </div>
-              {#if $walkRoutingDegraded}
+              {#if activePlan?.plan.walkEstimated ?? $walkRoutingDegraded}
                 <div class="t-footnote px-1 mb-3 flex items-start gap-1.5" style="color: var(--status-delay)">
                   <TriangleAlert size={14} class="shrink-0 mt-0.5" />
                   <span>{$t('Pešpoti trenutno niso na voljo — časi hoje so ocenjeni po zračni razdalji in so lahko prekratki.')}</span>
@@ -907,7 +943,7 @@
                 <ReadAloud resetKey={activePlan} text={() => activePlan ? planSpeech(activePlan.plan.legs, activePlan.to.name) : ''} />
               </div>
               <div class="surface rounded-2xl border border-base shadow-card px-3 py-3">
-                <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} />
+                <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} baseDay={activePlan.plan.baseDay ?? null} />
               </div>
             </div>
           </div>
@@ -1224,7 +1260,7 @@
               {@const gtfsRoute = gtfs?.routes.find(r => r.short.toLowerCase() === a.lineCode.toLowerCase())}
               {@const cilj = rowTarget(gtfs, a.lineCode, a.headsign)}
               <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
-                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, dirForArrival(a, gtfsRoute.id), selectedStop?.id ?? null)} aria-label={$t('Vozni red linije {line}', { line: a.lineCode })}>
+                <button class="pressable pl-4 pr-2 py-3 grid place-items-center" on:click={() => gtfsRoute && openLineTimetable(gtfsRoute, dirForArrival(a, gtfsRoute.id, selectedStop?.id ?? null), selectedStop?.id ?? null)} aria-label={$t('Vozni red linije {line}', { line: a.lineCode })}>
                   <LineBadge short={a.lineCode} routeId={gtfsRoute?.id ?? a.lineId} size="md" />
                 </button>
                 <button class="pressable flex-1 {$compactLists ? 'py-1.5' : 'py-3'} pr-4 pl-1 flex items-center gap-3 text-left min-w-0"
@@ -1243,10 +1279,21 @@
                   <!-- Isti zapis časa in ista oznaka stanja kot na Domu: prej je tu pisalo
                        »77 min«, drugod »1 h 17«, oznaki pa sta bili 10 px. -->
                   <div class="flex flex-col items-end gap-0.5 shrink-0">
-                    <DepartureTime minutesFromNow={a.etaMin} depSec={hmToSec(a.arrivalTime)} size={$compactLists ? 'sm' : 'md'} />
+                    <DepartureTime minutesFromNow={a.etaMin} depSec={liveDepSec(a.etaMin)} size={$compactLists ? 'sm' : 'md'} />
                     <DepartureStatus live={a.predicted} delayKnown={a.delayKnown} delayMin={a.delayMin} />
                   </div>
                 </button>
+                <!-- Zvonec samo v celotni aplikaciji: Preprost pogled ima svoj čarovnik v Mojih
+                     opomnikih in pravilo »tarča ≥ 64 px z napisom«. Pri ozkem zaslonu z večjim
+                     besedilom bi cilju ostalo ~65 px, zato ga tam skrije .mm-bell (app.css). -->
+                {#if gtfsRoute && selectedStop && !simple}
+                  {@const st = selectedStop}
+                  <button class="mm-bell pressable w-11 shrink-0 grid place-items-center -ml-2" style="color: var(--text-muted)"
+                          on:click={() => onRemind({ stopId: st.id, routeId: gtfsRoute.id, dir: dirForArrival(a, gtfsRoute.id, st.id), depSec: hmToSec(a.arrivalTime) })}
+                          aria-label={$t('Opomni me za {line} ob {time}', { line: a.lineCode, time: a.arrivalTime })}>
+                    <AlarmClockPlus size={20} />
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -1291,6 +1338,14 @@
                   <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
                   <DepartureStatus live={false} />
                 </div>
+                {#if selectedStop && !simple}
+                  {@const st = selectedStop}
+                  <button class="mm-bell pressable min-w-[44px] min-h-[44px] -mr-3 -ml-1 grid place-items-center shrink-0" style="color: var(--text-muted)"
+                          on:click={() => onRemind({ stopId: st.id, routeId: d.route.id, dir: d.trip.dir, depSec: d.depSec })}
+                          aria-label={$t('Opomni me za {line} ob {time}', { line: d.route.short, time: fmtTime(d.depSec) })}>
+                    <AlarmClockPlus size={20} />
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>

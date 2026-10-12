@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { allDeparturesForStop, feedCoversDate, rowTarget } from './gtfs';
 import type { GTFS } from './gtfs';
+import { toMb, mbWallToEpoch } from './clock';
 import { fmtClock, fmtDuration } from './time';
 import { tr, locale } from './i18n';
 
@@ -130,7 +131,7 @@ export function alarmLabel(a: Alarm): string {
 // "v pon ob 06:30" — za vrstico "naslednjič …" v seznamu alarmov.
 export function nextRingLabel(o: Occurrence | null): string {
   if (!o) return tr('ni predvidenega zvonjenja');
-  const d = new Date(o.fireAt);
+  const d = toMb(o.fireAt);   // ura v Mariboru, tudi na telefonu v drugem pasu
   const wd = (d.getDay() + 6) % 7;
   return tr('{day} ob {time}', { day: tr(DAY_IN[wd]), time: fmtClock(d.getHours() * 3600 + d.getMinutes() * 60) });
 }
@@ -177,10 +178,14 @@ export function computeOccurrences(
   if (active.length === 0) return out;
 
   const fromMs = from.getTime();
+  // Koledar teče po uri Maribora (`from` je pravi trenutek): telefon v drugem pasu je
+  // prej računal dneve in ure po svojem pasu, opomniki so prišli 1–6 h pozno (pregled
+  // 12.10.2026).
+  const wall = toMb(from);
   for (let i = 0; i < horizonDays; i++) {
     // Poldne kot referenca dneva: todayServiceIds gleda samo koledarski datum, poldne
     // pa se izogne robu poletnega/zimskega časa (enak vzorec kot nextServiceDeparture).
-    const day = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i, 12, 0, 0, 0);
+    const day = new Date(wall.getFullYear(), wall.getMonth(), wall.getDate() + i, 12, 0, 0, 0);
     const wd = (day.getDay() + 6) % 7;
     // Odhodi postaje se med alarmi istega dne delijo — allDeparturesForStop prehodi
     // vse tripe, kar bi bilo pri 60 dneh × N alarmih po nepotrebnem večkrat.
@@ -200,8 +205,9 @@ export function computeOccurrences(
       if (!hit) continue;
 
       // Lokalna polnoč + depSec prek konstruktorja Date: ta normalizira sekunde po
-      // lokalnem koledarju, zato ura ostane prava tudi na dan premika ure.
-      const depAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, hit.depSec).getTime();
+      // lokalnem koledarju, zato ura ostane prava tudi na dan premika ure. mbWallToEpoch
+      // to v pasu Maribora naredi z istim konstruktorjem, drugje prek zamika Maribora.
+      const depAt = mbWallToEpoch(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, hit.depSec);
       const fireAt = depAt - a.leadMin * 60_000;
       if (fireAt <= fromMs) continue;
 
@@ -241,7 +247,7 @@ const SOON_MS = 14 * 24 * 3600 * 1000;
 export function alarmsCoverageWarning(gtfs: GTFS | null, list: Alarm[], now: Date = new Date()): AlarmWarning | null {
   if (!gtfs) return null;
   if (!list.some(a => a.enabled && a.days.some(Boolean))) return null;
-  if (!feedCoversDate(gtfs, now)) {
+  if (!feedCoversDate(gtfs, toMb(now))) {
     return { kind: 'feed-expired', text: tr('Vozni red za danes ne velja več, zato opomniki ne bodo zazvonili. Posodobi podatke v aplikaciji.') };
   }
   const end = coverageEnd(computeOccurrences(gtfs, list, now));

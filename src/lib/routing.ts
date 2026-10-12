@@ -32,17 +32,22 @@ function orsHeaders(accept: string): Record<string, string> {
 // Ko ORS ni na voljo (ni ključa, potekla kvota, napaka), pešpoti tiho padejo na
 // zračno črto in časi hoje postanejo prekratki. Prej uporabnik o tem ni izvedel
 // ničesar — zdaj načrt poti prikaže opozorilo, da so peš odseki ocenjeni.
+// Prvi uspešen klic opozorilo spet ugasne: prej je ena napaka veljala vso sejo.
 export const walkRoutingDegraded = writable(false);
 function markDegraded() { walkRoutingDegraded.set(true); }
 
-const cache = new Map<string, WalkRoute>();
+// Ocena brez ORS (zračna črta) se hrani le minuto. Prej je ena prekinitev ostala v
+// predpomnilniku za vso sejo, tudi ko je ORS spet delal (pregled 12.10.2026); minuta
+// še prepreči, da bi vsak dotik iste poti spet čakal 6 s na časovno omejitev.
+const ESTIMATE_TTL_MS = 60_000;
+const cache = new Map<string, { wr: WalkRoute; until: number }>();
 const key = (a: LL, b: LL, mps: number) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}|${b.lat.toFixed(5)},${b.lon.toFixed(5)}|${mps.toFixed(3)}`;
 
 export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise<WalkRoute> {
   const WALK_MPS = getWalkMps();
   const k = key(from, to, WALK_MPS);
   const hit = cache.get(k);
-  if (hit) return hit;
+  if (hit && hit.until > Date.now()) return hit.wr;
 
   const straight: WalkRoute = {
     coords: [[from.lon, from.lat], [to.lon, to.lat]],
@@ -51,15 +56,13 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
   };
 
   if (straight.meters < 5) {
-    cache.set(k, straight);
+    cache.set(k, { wr: straight, until: Infinity });
     return straight;
   }
 
   if (!ORS_ENABLED) {
     markDegraded();
-    const est = { ...straight, estimated: true };
-    cache.set(k, est);
-    return est;
+    return { ...straight, estimated: true };
   }
 
   try {
@@ -90,13 +93,14 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
       meters: Math.round(summary.distance),
       sec: Math.round(summary.distance / WALK_MPS),
     };
-    cache.set(k, wr);
+    cache.set(k, { wr, until: Infinity });
+    walkRoutingDegraded.set(false);
     return wr;
   } catch (e: any) {
     if (e?.name === 'AbortError' && signal?.aborted) throw e;
     markDegraded();
     const est = { ...straight, estimated: true };
-    cache.set(k, est);
+    cache.set(k, { wr: est, until: Date.now() + ESTIMATE_TTL_MS });
     return est;
   }
 }
@@ -114,7 +118,10 @@ function haversine(a: LL, b: LL): number {
 // Uporablja se za pre-fetch realnih časov hoje od izhodišča do bližnjih postaj
 // pred izvedbo RAPTOR algoritma — da planer izbere pravo prvo postajo, ne le
 // zračno najbližje (rešuje problem hoje čez reko, železnico, itd.).
-const matrixCache = new Map<string, { sec: number; meters: number }>();
+// Hrani se samo razdalja (m), čas se izračuna ob branju s trenutno hitrostjo hoje: prej je
+// bil shranjen čas ob stari hitrosti in 900 m je po preklopu na 3 km/h ostalo 648 s
+// namesto 1080 s (pregled 12.10.2026).
+const matrixCache = new Map<string, number>();
 const mKey = (a: LL, b: LL) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}|${b.lat.toFixed(5)},${b.lon.toFixed(5)}`;
 
 // Priročen helper za planer: za dano točko vrne map stopId -> {sec,meters}
@@ -141,7 +148,11 @@ export async function walkMapForStops(
 
 export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Promise<({ sec: number; meters: number } | null)[]> {
   const WALK_MPS = getWalkMps();
-  const out: ({ sec: number; meters: number } | null)[] = tos.map(t => matrixCache.get(mKey(from, t)) ?? null);
+  const entry = (m: number) => ({ sec: Math.round(m / WALK_MPS), meters: Math.round(m) });
+  const out: ({ sec: number; meters: number } | null)[] = tos.map(t => {
+    const m = matrixCache.get(mKey(from, t));
+    return m == null ? null : entry(m);
+  });
   const missing: number[] = [];
   for (let i = 0; i < out.length; i++) if (!out[i]) missing.push(i);
   if (missing.length === 0) return out;
@@ -182,11 +193,11 @@ export async function walkMatrix(from: LL, tos: LL[], signal?: AbortSignal): Pro
       slice.forEach((origIdx, i) => {
         const m = dists[i];
         if (m != null && isFinite(m)) {
-          const val = { sec: Math.round(m / WALK_MPS), meters: Math.round(m) };
-          matrixCache.set(mKey(from, tos[origIdx]), val);
-          out[origIdx] = val;
+          matrixCache.set(mKey(from, tos[origIdx]), m);
+          out[origIdx] = entry(m);
         }
       });
+      walkRoutingDegraded.set(false);
     } catch (e: any) {
       if (e?.name === 'AbortError' && signal?.aborted) throw e;
       // pusti null za neuspele — caller padne nazaj na haversine

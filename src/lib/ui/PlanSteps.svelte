@@ -5,6 +5,7 @@
   import { fmtClock, fmtDuration } from '../time';
   import { t, plural } from '../i18n';
   import { rowTarget } from '../gtfs';
+  import { toMb } from '../clock';
   import type { PlanLeg } from '../planner';
 
   // Pot po korakih kot časovnica, ne kot seznam vrstic.
@@ -17,6 +18,9 @@
   // prav to tisto, kar potnik hoče vedeti vnaprej.
   export let legs: PlanLeg[] = [];
   export let ciljIme = '';
+  // Dan, na katerega se nanašajo sekunde poti (Plan.baseDay). Pot, odprta čez polnoč, je
+  // sicer kazala »jutri« in odštevanje za 24 h predolgo (pregled 12.10.2026).
+  export let baseDay: number | null = null;
 
   // Ura teče, da "Kreni čez 4 min" ne obtiči. 15 s je dovolj gosto za minute.
   let zdaj = Date.now();
@@ -30,18 +34,31 @@
     return null;
   })();
 
-  // Kdaj mora potnik oditi od doma: odhod prvega busa minus hoja do postaje.
+  // Kdaj mora potnik oditi od doma: odhod prvega busa minus hoja do postaje. Hoja v nogi je
+  // čas, s katerim je načrtovalnik izbral avtobus (ali čas ORS), zato »Kreni ob« ne zamuja.
   $: krenitiSec = (() => {
     if (prviOdhod == null) return null;
     const prva = legs[0];
     const hoja = prva && prva.kind === 'walk' ? prva.sec : 0;
     return prviOdhod - hoja;
   })();
+  // Koliko dni je minilo od dneva iskanja (0 = isti dan; 1 = pot je odprta čez polnoč).
+  function daysSince(day: number | null, nowMs: number): number {
+    if (day == null) return 0;
+    const d = toMb(nowMs);
+    const a = Date.UTC(Math.floor(day / 10000), Math.floor(day / 100) % 100 - 1, day % 100);
+    const b = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return Math.max(0, Math.round((b - a) / 86_400_000));
+  }
+  $: minuloDni = daysSince(baseDay, zdaj);
+  // Pot za jutri ima čase + 24 h (shiftPlan v planner.ts); po polnoči je »jutri« že danes.
+  $: jutri = krenitiSec != null && krenitiSec - minuloDni * 24 * 3600 >= 24 * 3600;
 
   $: sekundDoOdhoda = (() => {
     if (krenitiSec == null) return null;
-    const d = new Date(zdaj);
-    const zdajSec = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    // Stenska ura Maribora, ne ura telefona (clock.ts); sekunde od polnoči dneva iskanja.
+    const d = toMb(zdaj);
+    const zdajSec = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + minuloDni * 24 * 3600;
     return krenitiSec - zdajSec;
   })();
   $: minutDoOdhoda = sekundDoOdhoda == null ? null : Math.round(sekundDoOdhoda / 60);
@@ -125,6 +142,7 @@
         <Footprints size={16} class="shrink-0" />
         <span>
           <b>{$t('Kreni ob {time}', { time: fmtClock(krenitiSec) })}</b>
+          {#if jutri}· {$t('jutri')}{/if}
           {#if minutDoOdhoda !== null && minutDoOdhoda <= 90}· {$t('čez {n} min', { n: minutDoOdhoda })}{/if}
           {#if prihodSec != null}· {$t('na cilju ob {time}', { time: fmtClock(prihodSec) })}{/if}
         </span>

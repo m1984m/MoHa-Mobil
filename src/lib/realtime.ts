@@ -9,6 +9,7 @@
 //   }}
 
 import { writable, type Writable } from 'svelte/store';
+import { nowMb } from './clock';
 
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
 const PROXY = (import.meta as any).env?.VITE_OBA_PROXY as string | undefined;
@@ -110,12 +111,16 @@ export async function loadLines(): Promise<Map<number, ObaLine>> {
   for (const l of j.Lines ?? []) {
     m.set(l.LineId, { LineId: l.LineId, Code: l.Code, Description: l.Description, Color: (l.Color || '').trim() });
   }
-  linesCache = m;
+  // Prazen seznam (odgovor »Data is not available« ali napaka izvora) se ne zapomni za
+  // celo sejo — vozila bi sicer do ponovnega zagona kazala »67« namesto »G1« (pregled 12.10.2026).
+  if (m.size > 0) linesCache = m;
   return m;
 }
 
 export async function fetchActiveVehicles(): Promise<LiveVehicle[]> {
-  const [lines, j] = await Promise.all([loadLines(), fetchJSON('/GetActiveDeviceDetails')]);
+  // Brez seznama linij so vozila še vedno na karti (oznaka linije je takrat številka);
+  // prej je napaka GetLines skrila vse avtobuse (pregled zaledja 12.10.2026).
+  const [lines, j] = await Promise.all([loadLines().catch(() => new Map<number, ObaLine>()), fetchJSON('/GetActiveDeviceDetails')]);
   const out: LiveVehicle[] = [];
   for (const v of j.Vehicles ?? []) {
     const line = lines.get(v.LineId);
@@ -186,11 +191,29 @@ function parseHHMMtoMin(hm: string): number | null {
 
 export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<StopArrival[]> {
   const j = await fetchJSON(`/GetArrivalsForStopPoint?stopPointId=${stopPointId}`);
-  const now = new Date();
+  const now = nowMb();
   const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Razlika do ure »HH:MM« v minutah, normalizirana na [−720, 720] — polnočni rob:
+  // 00:05 ob 23:58 je čez 7 min, ne pred 1433 min.
+  const minutesUntil = (hm: string): number | null => {
+    const sched = parseHHMMtoMin(hm);
+    if (sched == null) return null;
+    let diff = sched - nowMin;
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+    return diff;
+  };
   const out: StopArrival[] = [];
   for (const a of j.ArrivalsForStopPoints ?? []) {
-    const etaMin = a.ETAMin ?? 0;
+    // Brez ETAMin se ETA izračuna iz voznega reda (+ znana zamuda); prej je bil 0, kar
+    // je na zaslonu pomenilo »zdaj«. Brez obojega vrstica nima časa in se izpusti.
+    let etaMin: number;
+    if (typeof a.ETAMin === 'number') etaMin = a.ETAMin;
+    else {
+      const until = minutesUntil(a.ArrivalTime ?? '');
+      if (until == null) continue;
+      etaMin = until + (typeof a.DelayMin === 'number' ? a.DelayMin : 0);
+    }
     // DelayMin iz API-ja je source of truth — ne prepiši vrednosti 0 ("točen").
     // Fallback kliče samo, če API ne vrne DelayMin (undefined/null), ne pa ko je 0.
     // Prej je imel bug: DelayMin === 0 je sprožil fallback, ki zaradi zaokroževanja
@@ -200,17 +223,8 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
     if (delayKnown) {
       delayMin = a.DelayMin;
     } else {
-      const schedMin = parseHHMMtoMin(a.ArrivalTime ?? '');
-      if (schedMin != null) {
-        // Polnočni rob: sched 00:05 ob now 23:58 da razliko −1433 min — normaliziraj
-        // na [−720, 720], da fallback ne proizvede absurdne zamude.
-        let diff = schedMin - nowMin;
-        if (diff > 720) diff -= 1440;
-        if (diff < -720) diff += 1440;
-        delayMin = etaMin - diff;
-      } else {
-        delayMin = 0;
-      }
+      const diff = minutesUntil(a.ArrivalTime ?? '');
+      delayMin = diff != null ? etaMin - diff : 0;
     }
     out.push({
       lineId: a.LineId,

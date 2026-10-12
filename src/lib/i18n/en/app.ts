@@ -12,4 +12,6 @@ export default {
   'Nalagam…': 'Loading…',
   'Poskusi znova': 'Try again',
   'zdaj': 'now',
+  'Na voljo je nova različica': 'A new version is available',
+  'Novosti po osvežitvi najdeš v Nastavitvah pod O aplikaciji.': 'After refreshing, see what is new in Settings under About.',
 };

@@ -97,9 +97,10 @@ export async function flush(): Promise<void> {
       cache: 'no-store',
     });
     // 4xx pomeni, da je oblika napačna — ponavljanje ne bi pomagalo, zato tudi
-    // takrat vrsto počistimo. Samo omrežna napaka in 5xx jo pustita pri miru.
+    // takrat vrsto počistimo. Omrežna napaka, 5xx in 429 (omejevalnik na naslov IP, od
+    // 12.10.2026) jo pustijo pri miru — dogodki gredo ven ob naslednji priložnosti.
     // Odstrani samo poslani začetek: dogodki, dodani med pošiljanjem, ostanejo.
-    if (res.ok || (res.status >= 400 && res.status < 500)) pisiVrsto(beriVrsto().slice(vrsta.length));
+    if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) pisiVrsto(beriVrsto().slice(vrsta.length));
   } catch {
     // brez povezave — poskusimo ob dogodku 'online'
   } finally {

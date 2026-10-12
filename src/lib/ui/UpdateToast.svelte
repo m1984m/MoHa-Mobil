@@ -2,8 +2,22 @@
   import { Sparkles, X } from 'lucide-svelte';
   import { fly } from 'svelte/transition';
   import { updateAvailable } from '../update';
-  import { APP_VERSION, RELEASE_NOTES } from '../release';
   import { t } from '../i18n';
+
+  // Različica, ki čaka (vpraša se čakajoči SW). Prej je obvestilo kazalo različico in
+  // novosti paketa, ki že teče — torej stare (pregled 12.10.2026). Novosti nove različice
+  // so po osvežitvi v Nastavitvah → O aplikaciji.
+  let nextVersion = '';
+  let askedFor: ServiceWorker | null = null;
+  $: if ($updateAvailable && $updateAvailable !== askedFor) {
+    askedFor = $updateAvailable;
+    nextVersion = '';
+    try {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = (ev) => { nextVersion = String(ev.data ?? '').split('-')[0]; };
+      $updateAvailable.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+    } catch { /* stari SW brez GET_VERSION — naslov brez številke */ }
+  }
 
   function refresh() {
     const w = $updateAvailable;
@@ -28,13 +42,8 @@
         <Sparkles size={18} color="#ffffff" />
       </div>
       <div class="flex-1 min-w-0">
-        <div class="t-headline">{$t('Nova različica {version}', { version: APP_VERSION })}</div>
-        <div class="t-footnote text-muted">{$t('Kaj je novega:')}</div>
-        <ul class="t-footnote list-disc pl-5 mt-1 space-y-0.5">
-          {#each RELEASE_NOTES as n}
-            <li>{$t(n)}</li>
-          {/each}
-        </ul>
+        <div class="t-headline">{nextVersion ? $t('Nova različica {version}', { version: nextVersion }) : $t('Na voljo je nova različica')}</div>
+        <div class="t-footnote text-muted">{$t('Novosti po osvežitvi najdeš v Nastavitvah pod O aplikaciji.')}</div>
         <div class="mt-3 flex gap-2">
           <button class="pressable flex-1 rounded-xl h-10 bg-accent t-subhead font-semibold"
                   on:click={refresh}>{$t('Osveži zdaj')}</button>

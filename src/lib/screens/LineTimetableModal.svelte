@@ -4,10 +4,12 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { lineTimetableSpeech } from '../readAloud';
-  import { allTripsForRouteDirection, dayKindToDate, rowTarget, headsignOrigin, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
+  import { allTripsForRouteDirection, dayKindToDate, dayKindOf, isHolidayService, rowTarget, headsignOrigin, type GTFS, type Route, type Trip, type DayKind } from '../gtfs';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t, plural } from '../i18n';
+  import { scrollToMe, resetScroll } from '../scrollToMe';
+  import { nowMb, nowSecMb } from '../clock';
 
   export let open = false;
   export let gtfs: GTFS | null;
@@ -25,11 +27,18 @@
   let pickerOpen = false;
 
   $: if (open) { dir = initialDir; selectedStopId = initialStopId; pickerOpen = false; }
-
-  function detectToday(): DayKind {
-    const d = new Date().getDay();
-    return d === 0 ? 'sunday' : d === 6 ? 'saturday' : 'weekday';
+  // Ob vsakem odprtju spet današnji dan (prej je ostal zadnji izbrani; pregled 12.10.2026).
+  let wasOpen = false;
+  $: if (open !== wasOpen) {
+    wasOpen = open;
+    if (open) day = detectToday();
   }
+
+  // Vrsta dneva po službi, ki danes res vozi: na praznik (25.12., 31.10.) nedelja.
+  function detectToday(): DayKind {
+    return dayKindOf(gtfs, nowMb());
+  }
+  $: holidayToday = open && !!gtfs && isHolidayService(gtfs, nowMb());
 
   $: days = [
     { id: 'weekday', label: $t('Delavnik') },
@@ -37,7 +46,7 @@
     { id: 'sunday', label: $t('Nedelja') },
   ] as { id: DayKind; label: string }[];
 
-  $: trips = gtfs && route ? allTripsForRouteDirection(gtfs, route.id, dir, dayKindToDate(day)) : [];
+  $: trips = gtfs && route ? allTripsForRouteDirection(gtfs, route.id, dir, dayKindToDate(day, nowMb(), gtfs)) : [];
 
   // Unique terminal names per direction (headsign of first trip in that direction)
   $: dirHeadsigns = gtfs && route ? (() => {
@@ -110,13 +119,18 @@
 
   $: selectedIsFav = selectedStopId != null && $favStops.has(selectedStopId);
 
+  // Danes: seznam se odpre pri naslednjem odhodu, pretekli so umirjeni (evalvacija N11).
+  $: nowSec = open && day === detectToday() ? nowSecMb() : null;
+  $: nextStopIdx = nowSec == null ? -1 : stopSchedule.findIndex(x => x.sec >= nowSec!);
+  $: nextTripIdx = nowSec == null ? -1 : trips.findIndex(tr0 => (tr0.stops[0]?.[2] ?? 0) >= nowSec!);
+
   // Z izbrano postajo se berejo njeni odhodi, sicer odhodi voženj z začetne postaje.
   function readText(): string {
     if (!route) return '';
     const times = selectedStopId != null
       ? stopSchedule.map(x => x.sec)
       : trips.map(tr0 => tr0.stops[0] ? (tr0.stops[0][2] || tr0.stops[0][1]) : 0);
-    const now = new Date();
+    const now = nowMb();
     return lineTimetableSpeech({
       line: route.short,
       dir: dirHeadsigns.get(dir) || '',
@@ -211,16 +225,23 @@
                     on:click={() => day = d.id}>{d.label}</button>
           {/each}
         </div>
+        {#if holidayToday && day === detectToday()}
+          <div class="t-footnote text-muted mt-2" role="note">{detectToday() === 'saturday'
+            ? $t('Danes je praznik: avtobusi vozijo po sobotnem redu.')
+            : detectToday() === 'weekday'
+              ? $t('Danes avtobusi vozijo po delavniškem redu.')
+              : $t('Danes je praznik: avtobusi vozijo po nedeljskem redu.')}</div>
+        {/if}
       </div>
 
       <!-- Drsni seznam brez gumbov mora biti dosegljiv s tipkovnico, sicer ga s puščicami
            ni mogoče pomikati (axe scrollable-region-focusable, evalvacija 04.10.2026). -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="flex-1 overflow-y-auto px-5 pb-5" tabindex="0" role="region" aria-label={$t('Odhodi')}>
+      <div class="flex-1 overflow-y-auto px-5 pb-5" tabindex="0" role="region" aria-label={$t('Odhodi')} data-tt-scroll>
         <!-- Ob menjavi (izbira postaje, smer, dan) vsebina rahlo zdrsne na mesto, namesto
              da bi se v hipu zamenjala. -->
         {#key `${pickerOpen}|${dir}|${day}|${selectedStopId}`}
-        <div in:swap>
+        <div in:swap use:resetScroll>
         {#if pickerOpen}
           <ul class="surface rounded-2xl border border-base overflow-hidden">
             <li>
@@ -249,12 +270,14 @@
             <ul class="surface rounded-2xl border border-base overflow-hidden">
               {#each stopSchedule as { t: trip, sec }, i}
                 {@const lastSec = trip.stops[trip.stops.length - 1]?.[1] ?? sec}
-                <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                  <div class="tabular-nums font-bold text-lg w-14">{fmtTime(sec)}</div>
+                <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}"
+                    use:scrollToMe={i === nextStopIdx} style={i === nextStopIdx ? 'box-shadow: inset 3px 0 0 var(--accent-on-tint, var(--accent))' : ''}>
+                  <div class="tabular-nums font-bold text-lg w-14" style={nowSec != null && sec < nowSec ? 'color: var(--text-muted)' : ''}>{fmtTime(sec)}</div>
                   <div class="flex-1 min-w-0">
                     <div class="t-footnote text-muted truncate">→ {rowTarget(gtfs, route?.short ?? '', trip.headsign).dest}</div>
                     <div class="t-footnote text-muted">{$t('konča {cas}', { cas: fmtTime(lastSec) })}</div>
                   </div>
+                  {#if i === nextStopIdx}<span class="t-footnote font-semibold shrink-0" style="color: var(--accent-on-tint, var(--accent))">{$t('naslednji')}</span>{/if}
                 </li>
               {/each}
             </ul>
@@ -268,11 +291,14 @@
               {@const first = trip.stops[0]}
               {@const last = trip.stops[trip.stops.length - 1]}
               {@const durSec = (last?.[1] ?? 0) - (first?.[2] ?? 0)}
-              <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
-                <div class="tabular-nums font-bold w-12">{fmtTime(first?.[2] ?? 0)}</div>
+              {@const past = nowSec != null && (first?.[2] ?? 0) < nowSec}
+              <li class="px-4 py-3 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}"
+                  use:scrollToMe={i === nextTripIdx} style={i === nextTripIdx ? 'box-shadow: inset 3px 0 0 var(--accent-on-tint, var(--accent))' : ''}>
+                <div class="tabular-nums font-bold w-12" style={past ? 'color: var(--text-muted)' : ''}>{fmtTime(first?.[2] ?? 0)}</div>
                 <div class="t-footnote text-muted">→</div>
-                <div class="tabular-nums font-bold w-12">{fmtTime(last?.[1] ?? 0)}</div>
+                <div class="tabular-nums font-bold w-12" style={past ? 'color: var(--text-muted)' : ''}>{fmtTime(last?.[1] ?? 0)}</div>
                 <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)} min · {trip.stops.length} {plural(trip.stops.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
+                {#if i === nextTripIdx}<span class="sr-only">{$t('naslednji')}</span>{/if}
               </li>
             {/each}
           </ul>

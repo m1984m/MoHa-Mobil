@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '../motion';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Sun, Moon, Monitor, Info, Database, Star, Map as MapIcon, Satellite, Building2, MapPinned, Home as HomeIcon, CalendarClock, Compass, Trash2, Timer, Clock, Rows3, Type, Contrast, Circle, Navigation, ExternalLink, AlarmClock, ChevronRight, Share2, MessageSquarePlus, Accessibility, ChartNoAxesColumn, Ticket, GraduationCap, LayoutList, Palette, LocateFixed, Bus, ShieldCheck, LifeBuoy, ChevronLeft } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
@@ -122,6 +122,11 @@
   async function clearAllData() {
     if (clearing) return;
     clearing = true;
+    // Okno najprej zapre svoj vnos v zgodovini (history.back), sicer bi po osvežitvi ostala
+    // dva mrtva pritiska »nazaj« namesto enega (pregled 12.10.2026).
+    clearConfirmOpen = false;
+    await tick();
+    await new Promise(r => setTimeout(r, 300));
     // Naročnina na obvestila in vrsta zvonjenj na strežniku preživita brisanje
     // localStorage — brez odjave bi telefon še tedne zvonil za opomnike, ki jih
     // v aplikaciji ni več nikjer videti.

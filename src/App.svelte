@@ -29,6 +29,7 @@
   import UpdateToast from './lib/ui/UpdateToast.svelte';
   import Toast from './lib/ui/Toast.svelte';
   import SimpleScreen from './lib/screens/SimpleScreen.svelte';
+  import SimpleAlarmWizard from './lib/screens/SimpleAlarmWizard.svelte';
   import SimpleStopScreen from './lib/screens/SimpleStopScreen.svelte';
   import SimpleRouteScreen, { type SimpleRouteState } from './lib/screens/SimpleRouteScreen.svelte';
   import SimplePlaceEditor from './lib/screens/SimplePlaceEditor.svelte';
@@ -99,6 +100,9 @@
   // Alarmi so poln prekrivni sloj, ne šesti zavihek — TabBar je s petimi zavihki
   // na 390 px že zapolnjen. Vstop je iz Priljubljenih in iz Nastavitev.
   let alarmsOpen = false;
+  // Čarovnik za opomnik v celotni aplikaciji (evalvacija N8): z zvonca pri odhodu je
+  // predizpolnjen, iz praznih Opomnikov začne pri postajališču.
+  let remind: { prefill: { stopId: number; routeId: number; dir: number; depSec: number } | null } | null = null;
   // Od kod so bili opomniki odprti — napis gumba nazaj pove, kam se vrneš.
   let alarmsFrom: 'settings' | 'fav' = 'settings';
   // Skriti zaslon s statistiko (deset dotikov na ime v Nastavitvah). Naloži se
@@ -400,8 +404,9 @@
     try {
       const { planAll, syncArrivalWithWalks } = await import('./lib/planner');
       const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-      const { walkRoute, walkMapForStops } = await import('./lib/routing');
-      const now = new Date();
+      const { walkRoute, walkMapForStops, walkRoutingDegraded } = await import('./lib/routing');
+      const { nowMb } = await import('./lib/clock');
+      const now = nowMb();   // ura v Mariboru, tudi na telefonu v drugem pasu
       const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
       const [accessMap, egressMap] = await Promise.all([
         walkMapForStops(from, gtfs.stops),
@@ -426,7 +431,13 @@
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
       chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      if (walks.every(w => !w?.estimated)) syncArrivalWithWalks(chosen);   // ob izpadu ORS prihod načrtovalnika
+      // Odseki hoje imajo od 12.10.2026 vedno čas, s katerim je načrtovalnik računal (obvoz ali
+      // ORS), zato uskladitev drži tudi ob delnem izpadu ORS: »Odhod« = »Kreni ob«. Opozorilo
+      // o oceni hoje velja za to pot, ne za zadnji klic ORS kjerkoli v aplikaciji.
+      syncArrivalWithWalks(chosen);
+      chosen.walkEstimated = walks.some(w => !!w?.estimated);
+      chosen.baseDay = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+      walkRoutingDegraded.set(chosen.walkEstimated);
       onDone(chosen, geoms, from, to);
       return true;
     } catch {
@@ -578,6 +589,7 @@
             onClearPlan={closeSimpleMap}
             onOpenPlanner={handleOpenPlanner}
             onLongPressDest={() => {}}
+            onRemind={(p) => remind = { prefill: p }}
             onPlanToStop={async (s) => { await closeSimpleMap(); runSimpleRoute(s.name, { lat: s.lat, lon: s.lon, name: s.name }); }} />
         {:else}
           <div class="absolute inset-0 flex items-center justify-center surface">
@@ -618,6 +630,7 @@
           onClearPlan={handleClearPlan}
           onOpenPlanner={handleOpenPlanner}
           onLongPressDest={handleLongPressDest}
+          onRemind={(p) => remind = { prefill: p }}
           onPlanToStop={handlePlanToStop} />
       {:else}
         <!-- Chunk s karto se še prenaša (samo ob prvem obisku brez idle prefetcha) -->
@@ -670,7 +683,13 @@
   <FaresModal open={faresOpen} onClose={() => faresOpen = false} />
 
   <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false}
+    covered={!!remind}
+    onAddReminder={() => remind = { prefill: null }}
     backLabel={alarmsFrom === 'fav' ? $t('Priljubljene') : $t('Nastavitve')} />
+
+  {#if remind}
+    <SimpleAlarmWizard {gtfs} {origin} {hasGeo} prefill={remind.prefill} onClose={() => remind = null} />
+  {/if}
 
   {#if $simpleActive}
     <SimpleStopScreen {gtfs} stop={simpleStop} hidden={simpleMapOpen}

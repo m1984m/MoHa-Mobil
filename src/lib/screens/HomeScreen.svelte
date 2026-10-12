@@ -8,7 +8,8 @@
   } from '../gtfs';
   import { online } from '../online';
   import { hasTwin } from '../simpleStops';
-  import { liveDepartures, boardDirection } from '../departures';
+  import { liveDepartures, boardDirection, liveDepSec } from '../departures';
+  import { nowMb, nowSecMb } from '../clock';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
@@ -49,16 +50,23 @@
   // Datum veljavnosti voznih redov iz meta.json (prej hardkodiran string,
   // ki je ob vsaki osvezitvi GTFS zastarel).
   let feedLabel = '';
-  $: feedExpired = gtfs ? !feedCoversDate(gtfs) : false;
+  // Preveri se vsak dan znova (dayKey): aplikacija, ki ostane odprta čez konec voznega
+  // reda, je prej opozorilo izračunala le enkrat (pregled 12.10.2026).
+  function expiredOn(g: GTFS | null, _dayKey: number): boolean {
+    return g ? !feedCoversDate(g, nowMb()) : false;
+  }
+  $: feedExpired = expiredOn(gtfs, dayKey);
 
   onMount(async () => {
     timer = setInterval(() => { tick++; refreshLive(); }, 30_000);
     const m = await loadMeta();
-    if (m?.built) {
-      const d = new Date(m.built);
-      // Rodilnik ("julija"), ne Intl imenovalnik ("julij") — glej lib/time.ts.
-      if (!isNaN(d.getTime())) feedLabel = tr('Vozni red velja od {mesec}', { mesec: fmtMonthYearGenitive(d) });
-    }
+    // Začetek obdobja voznega reda (feedStart), ne datum gradnje: ponovna gradnja istega
+    // reda je sicer premaknila »velja od« (starejši meta.json ima samo `built`).
+    const start = /^\d{8}$/.test(m?.feedStart ?? '')
+      ? new Date(+m!.feedStart!.slice(0, 4), +m!.feedStart!.slice(4, 6) - 1, +m!.feedStart!.slice(6, 8), 12)
+      : m?.built ? new Date(m.built) : null;
+    // Rodilnik ("julija"), ne Intl imenovalnik ("julij") — glej lib/time.ts.
+    if (start && !isNaN(start.getTime())) feedLabel = tr('Vozni red velja od {mesec}', { mesec: fmtMonthYearGenitive(start) });
   });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
@@ -70,11 +78,11 @@
   // Indeks se zgradi enkrat na dan (vozni red se čez dan ne spreminja); dayKey
   // ga prek tick-a osveži čez polnoč.
   function dayKeyOf(_tick: number): number {
-    const d = new Date();
+    const d = nowMb();
     return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
   }
   function makeCenterIndex(g: GTFS | null, _dayKey: number): CenterIndex | null {
-    return g ? buildCenterIndex(g, new Date()) : null;
+    return g ? buildCenterIndex(g, nowMb()) : null;
   }
   $: dayKey = dayKeyOf(tick);
   $: centerIndex = makeCenterIndex(gtfs, dayKey);
@@ -157,17 +165,18 @@
   function liveRows(stopId: number, arr: StopArrival[]): BoardRow[] {
     const e = centerIndex?.get(stopId);
     const out: BoardRow[] = [];
+    const nowSec = nowSecMb();
     for (const a of arr) {
       // lineFallback: živ prihod nosi opis smeri iz OBA, ki se z opisom iz
       // voznega reda ne ujame vedno (glej matchesCenter).
       if (centerFilter && !matchesCenter(e, centerFilter, a.lineCode, a.headsign, { lineFallback: true })) continue;
-      const [hh, mm] = (a.arrivalTime || '0:0').split(':').map(Number);
       out.push({
         routeId: routeIdByShort.get(a.lineCode.toLowerCase()) ?? a.lineId,
         routeShort: a.lineCode,
         headsign: a.headsign,
         minutesFromNow: a.etaMin,
-        depSec: (hh || 0) * 3600 + (mm || 0) * 60,
+        // Pričakovani čas (zdaj + ETA), ne čas po voznem redu — glej liveDepSec.
+        depSec: liveDepSec(a.etaMin, nowSec),
         delayMin: a.delayMin,
         delayKnown: a.delayKnown,
         // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
@@ -182,7 +191,7 @@
     if (!gtfs) return [];
     const e = centerIndex?.get(stopId);
     const out: BoardRow[] = [];
-    for (const d of upcomingDepartures(gtfs, stopId, new Date(), centerFilter ? 24 : maxRows)) {
+    for (const d of upcomingDepartures(gtfs, stopId, nowMb(), centerFilter ? 24 : maxRows)) {
       if (centerFilter && !matchesCenter(e, centerFilter, d.route.short, d.trip.headsign)) continue;
       out.push({
         routeId: d.route.id,

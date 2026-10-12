@@ -8,6 +8,7 @@
   import { pushBack } from '../backstack';
   import { toast } from '../toast';
   import { favLines } from '../favLines';
+  import { toMb } from '../clock';
   import type { FavLine } from '../favLines';
   import {
     alarms, addAlarm, updateAlarm, removeAlarm, toggleAlarm,
@@ -29,6 +30,13 @@
   // Kam vodi gumb nazaj ("Nastavitve" / "Priljubljene"). Sama puščica v kotu ni povedala,
   // da se z njo vrneš — uporabnik je ni prepoznal kot poti nazaj v Nastavitve.
   export let backLabel: string = '';
+  // Čarovnik (en avtobus = en opomnik) brez pripenjanja linije; prej je bil prazen zaslon
+  // »Najprej pripni linijo« slepa ulica (evalvacija N8).
+  export let onAddReminder: (() => void) | null = null;
+  // Nad zaslonom je odprto drugo okno (čarovnik): Escape je njegov. Prej sta ob enem
+  // pritisku na Escape oba poslušalca na oknu zaprla čarovnik IN opomnike, v zgodovini
+  // pa je ostal mrtev vnos (pregled 12.10.2026).
+  export let covered = false;
 
   const DATE_FMT = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -54,7 +62,7 @@
   }
 
   function fmtLastSync(ms: number): string {
-    const d = new Date(ms);
+    const d = toMb(ms);
     return fmtClock(d.getHours() * 3600 + d.getMinutes() * 60);
   }
 
@@ -85,9 +93,16 @@
   // jasna zavrnitev kot opomnik, ki tiho nikoli ne zazvoni.
   $: windowValid = eFromMin !== null && eToMin !== null && eToMin >= eFromMin;
   $: canSave = eFav !== null && eDays.some(Boolean) && windowValid;
+  // Opomnik iz čarovnika nima pripete linije: urejevalnik je pisal »Ni pripetih linij.«,
+  // linija in postajališče opomnika pa nista bila nikjer vidna (pregled 12.10.2026).
+  // Lastna linija urejanega opomnika je zato vedno na seznamu.
+  // Tudi ko uporabnik izbere drugo linijo, se lahko vrne na izvirno (editOwn).
+  let editOwn: FavLine | null = null;
+  $: editorLines = editOwn && !$favLines.some(f => favKey(f) === favKey(editOwn!)) ? [editOwn, ...$favLines] : $favLines;
 
   function openNew() {
     editId = null;
+    editOwn = null;
     eFav = $favLines[0] ?? null;
     eDays = [true, true, true, true, true, false, false];
     eFrom = '06:00';
@@ -102,6 +117,7 @@
     // sicer bi urejanje obstoječega pokazalo prazno izbiro.
     eFav = $favLines.find(f => favKey(f) === favKey(a))
       ?? { stopId: a.stopId, routeId: a.routeId, dir: a.dir, stopName: a.stopName, routeShort: a.routeShort, headsign: a.headsign };
+    editOwn = eFav;
     eDays = [...a.days];
     eFrom = minToStr(a.fromMin);
     eTo = minToStr(a.toMin);
@@ -153,7 +169,7 @@
 </script>
 
 <svelte:window on:keydown={(e) => {
-  if (!open || e.key !== 'Escape') return;
+  if (!open || covered || e.key !== 'Escape') return;
   if (editorOpen) editorOpen = false;
   else onClose();
 }} />
@@ -167,9 +183,10 @@
                 style="color: var(--accent)" on:click={onClose}>
           <ChevronLeft size={22} /> {backLabel || $t('Nazaj')}
         </button>
-        {#if $favLines.length > 0}
+        {#if $favLines.length > 0 || onAddReminder}
+          <!-- Brez pripete linije odpre čarovnik (en avtobus), sicer urejevalnik okna. -->
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
-                  on:click={openNew} aria-label={$t('Nov opomnik')}>
+                  on:click={() => ($favLines.length > 0 ? openNew() : onAddReminder?.())} aria-label={$t('Nov opomnik')}>
             <Plus size={20} />
           </button>
         {/if}
@@ -289,9 +306,17 @@
             {$t('Opomniki')}{#if $alarms.length > 0} · {$t('{n} od {total} vklopljenih', { n: enabledCount, total: $alarms.length })}{/if}
           </div>
 
-          {#if $favLines.length === 0}
-            <EmptyState icon={AlarmClock} title={$t('Najprej pripni linijo')}
-                        body={$t('Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajo in tapni »Pripni linijo«.')} />
+          <!-- Opomniki iz čarovnika (tudi iz Preprostega pogleda) so vidni tudi brez pripete
+               linije; prej jih je prazen zaslon »Najprej pripni linijo« skril. -->
+          {#if $favLines.length === 0 && $alarms.length === 0}
+            <EmptyState icon={AlarmClock} title={$t('Ni opomnikov')}
+                        body={$t('Izberi postajališče, avtobus in uro ali tapni zvonec pri odhodu na listu postajališča.')}>
+              {#if onAddReminder}
+                <button class="pressable min-h-[44px] px-5 rounded-xl t-callout font-semibold"
+                        style="background: var(--accent); color: #ffffff;"
+                        on:click={onAddReminder}>{$t('Dodaj opomnik')}</button>
+              {/if}
+            </EmptyState>
           {:else if $alarms.length === 0}
             <EmptyState icon={AlarmClock} title={$t('Ni opomnikov')}
                         body={$t('Nastavi opozorilo nekaj minut pred odhodom, da ti avtobus ne uide.')}>
@@ -384,11 +409,11 @@
         <!-- Linija -->
         <div>
           <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Linija in postaja')}</div>
-          {#if $favLines.length === 0}
+          {#if editorLines.length === 0}
             <div class="t-footnote text-muted">{$t('Ni pripetih linij.')}</div>
           {:else}
             <ul class="surface-2 rounded-2xl overflow-hidden">
-              {#each $favLines as f, i (favKey(f))}
+              {#each editorLines as f, i (favKey(f))}
                 {@const sel = eFav !== null && favKey(eFav) === favKey(f)}
                 <li>
                   <button class="pressable w-full px-4 py-3 flex items-center gap-3 text-left {i > 0 ? 'border-t border-base' : ''}"

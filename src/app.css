@@ -410,6 +410,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .mm-tap44 { z-index: 1; }
 .mm-tap44::after { content: ""; position: absolute; inset: -9px; }
 
+/* Zvonec »Opomni me« ob odhodu na listu postajališča. Pri ozkem zaslonu z večjim
+   besedilom bi cilju odhoda ostalo ~65 px (4–5 znakov), zato ga tam ni — opomnik se
+   nastavi v Opomnikih (pregled 12.10.2026). Brez @layer, da prevlada nad .grid. */
+@media (max-width: 359px) {
+  :root.senior .mm-bell { display: none; }
+}
+
 
 /* Uporabnik je v sistemu izbral manj gibanja (vrtoglavica, slabost, migrena):
    prehodi in pomanjšanje ob pritisku odpadejo, vsebina ostane nespremenjena.

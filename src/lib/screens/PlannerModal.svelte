@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { backdrop, sheet } from '../motion';
   import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight, ChevronDown, Ticket } from 'lucide-svelte';
-  import { cropShape, loadShapes, routeColor, type GTFS, type Stop } from '../gtfs';
+  import { cropShape, loadShapes, routeColor, dist, type GTFS, type Stop } from '../gtfs';
   import { searchStops, normName, twinStopHint } from '../simpleStops';
-  import { planAll, syncArrivalWithWalks, type Plan } from '../planner';
-  import { walkRoute, walkMapForStops } from '../routing';
+  import { planAll, planArriveBy, searchDay, shiftPlan, DAY_SEC, syncArrivalWithWalks, dayNumber, type Plan } from '../planner';
+  import { walkRoute, walkMapForStops, walkRoutingDegraded } from '../routing';
+  import { nowMb, nowSecMb } from '../clock';
   import LineBadge from '../ui/LineBadge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import { favStops } from '../favorites';
@@ -39,6 +41,10 @@
   let fromAddrTimer: any = null;
   let toAddrTimer: any = null;
   export let candidates: Plan[] = [];
+  // Predlogi so za jutri: izbrani čas je bil ob iskanju več kot 15 min mimo (searchDay).
+  let candidatesTomorrow = false;
+  // »Prihod do« največ 15 min mimo: prikazane so poti z odhodom zdaj, tu je izbrana ura za pojasnilo.
+  let arriveLateTime: string | null = null;
   // Predizpolnjen cilj — iz gumba "pot do postaje" (z imenom) ali long-pressa na karti (brez imena).
   // Nov objekt sproži apply (z reverse-geocode v ozadju, če ime manjka) + auto-run, ko sta oba dela zapolnjena.
   export let pendingDest: { lat: number; lon: number; name?: string } | null = null;
@@ -48,7 +54,13 @@
   let activeCtl: AbortController | null = null;
   function abortActive() {
     if (activeCtl) { activeCtl.abort(); activeCtl = null; }
+    // Prekinjeno iskanje v finally indikatorja ne ugasne (ni več aktivno), zato ga ugasne
+    // preklic — sicer je po zaprtju med iskanjem »Poišči pot« ostal onemogočen.
+    running = false;
   }
+  // Sistemski nazaj zapre okno mimo handleClose (App samo nastavi open = false). Izbrana pot,
+  // ki je še čakala na pešpot, je zato sekundo pozneje sama odprla karto (pregled 12.10.2026).
+  $: if (!open) abortActive();
 
   type TimeMode = 'now' | 'depart' | 'arrive';
   let timeMode: TimeMode = 'now';
@@ -56,7 +68,7 @@
   let timeStr: string = defaultTimeStr();
 
   function defaultTimeStr() {
-    const n = new Date();
+    const n = nowMb();
     return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
   }
   function parseHM(s: string): number {
@@ -64,7 +76,21 @@
     if (!isFinite(h) || !isFinite(m)) return 0;
     return h * 3600 + m * 60;
   }
+  // Datum za vozni red jutri: opoldne, da dan s premikom ure (23 ali 25 h) ne zamakne datuma.
+  function tomorrowNoon(): Date {
+    const n = nowMb();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 12, 0, 0);
+  }
   $: timeModeLabel = timeMode === 'now' ? $t('Zdaj') : timeMode === 'depart' ? $t('Odhod ob {time}', { time: timeStr }) : $t('Prihod do {time}', { time: timeStr });
+  // Oznaka »jutri« ob izbranem času že pred iskanjem. Ura se osveži ob odprtju in vsakih 30 s,
+  // da oznaka ne zaostane, če okno ostane odprto čez mejo 15 min.
+  let nowTick = nowSecMb();
+  $: if (open) nowTick = nowSecMb();
+  onMount(() => {
+    const id = setInterval(() => { if (open) nowTick = nowSecMb(); }, 30_000);
+    return () => clearInterval(id);
+  });
+  $: chipTomorrow = timeMode !== 'now' && searchDay(parseHM(timeStr), nowTick) === 'tomorrow';
 
   // Iskanje brez šumnikov in po besedah (»zelezniska« najde »Železniška«), enako kot v
   // Preprostem pogledu — prej je bil podniz z šumniki (evalvacija 04.10.2026, N7).
@@ -228,78 +254,73 @@
   async function run() {
     if (!gtfs) return;
     error = '';
-    // Validiraj vnos pred dragimi klici: prihod ob času v preteklosti nima rešitve.
-    if (timeMode === 'arrive') {
-      const n = new Date();
-      if (parseHM(timeStr) <= n.getHours() * 3600 + n.getMinutes() * 60) {
-        error = tr('Izbrani čas prihoda je že mimo — izberi poznejšega.');
-        return;
-      }
-    }
-    // Trenutna lega ob iskanju, ne ob odprtju okna.
-    if (fromIsMe && hasGeo) fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
-    if (!fromPlace && fromQuery.trim()) {
-      const ql = normName(fromQuery);
-      const st = gtfs.stops.find(s => normName(s.name) === ql);
-      fromPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(fromQuery.trim());
-    }
-    if (!toPlace && toQuery.trim()) {
-      const ql = normName(toQuery);
-      const st = gtfs.stops.find(s => normName(s.name) === ql);
-      toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(toQuery.trim());
-    }
-    if (!fromPlace || !toPlace) { error = tr('Ne najdem izhodišča ali cilja.'); return; }
-
+    // Nadzor že pred geokodiranjem, da zaprtje okna prekine tudi to čakanje.
     abortActive();
     const ctl = new AbortController();
     activeCtl = ctl;
     running = true;
     try {
-      const now = new Date();
-      const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      // Trenutna lega ob iskanju, ne ob odprtju okna.
+      if (fromIsMe && hasGeo) fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
+      if (!fromPlace && fromQuery.trim()) {
+        const ql = normName(fromQuery);
+        const st = gtfs.stops.find(s => normName(s.name) === ql);
+        fromPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(fromQuery.trim());
+      }
+      if (!toPlace && toQuery.trim()) {
+        const ql = normName(toQuery);
+        const st = gtfs.stops.find(s => normName(s.name) === ql);
+        toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(toQuery.trim());
+      }
+      if (ctl.signal.aborted) return;
+      if (!fromPlace || !toPlace) { error = tr('Ne najdem izhodišča ali cilja.'); return; }
+      // Kopiji: polji se med čakanjem na ORS lahko izpraznita (vnos v polje).
+      const from = fromPlace, to = toPlace;
+
+      // Stenski čas Maribora (clock.ts), ne ura telefona. Izbrani čas, ki je več kot 15 min
+      // mimo, se išče za jutri (z jutrišnjim voznim redom, tudi sobotnim v petek zvečer); do
+      // 15 min mimo od zdaj. Prej je »Odhod ob« tiho iskal po današnjem preteklem redu,
+      // »Prihod do« pa je zavrnil vsak pretekli čas, tudi večerno iskanje za jutri zjutraj.
+      const nowSec = nowSecMb();
+      const day = timeMode === 'now' ? 'today' : searchDay(parseHM(timeStr), nowSec);
+      const tomorrow = day === 'tomorrow';
+      const when = tomorrow ? tomorrowNoon() : nowMb();
+      const timeSec = timeMode === 'now' || day === 'now' ? nowSec : parseHM(timeStr);
       // Prefetch OSRM walk matrike za access/egress postaje — enkrat pred vsemi iteracijami
       // arrive-by loopa (access/egress stopi so isti, spreminja se le čas odhoda).
       const [accessMap, egressMap] = await Promise.all([
-        walkMapForStops(fromPlace, gtfs.stops, 1200, 25, ctl.signal),
-        walkMapForStops(toPlace, gtfs.stops, 1200, 25, ctl.signal),
+        walkMapForStops(from, gtfs.stops, 1200, 25, ctl.signal),
+        walkMapForStops(to, gtfs.stops, 1200, 25, ctl.signal),
       ]);
       if (ctl.signal.aborted) return;
-      let plans: Plan[] = [];
-      if (timeMode === 'arrive') {
-        const target = parseHM(timeStr);
-        // Iterate backwards in 20-min steps to find latest departures still arriving ≤ target
-        const collected: Plan[] = [];
-        for (let back = 0; back <= 180 * 60; back += 20 * 60) {
-          if (ctl.signal.aborted) return;
-          const ds = target - back;
-          if (ds < nowSec - 3600) break;
-          const res = planAll(gtfs, fromPlace, toPlace, Math.max(0, ds), now, accessMap, egressMap);
-          for (const p of res) if (p.arrSec <= target) collected.push(p);
-          if (collected.length >= 6) break;
-        }
-        // Deduplicate by depSec+arrSec+transfers and pick latest departures
-        const seen = new Set<string>();
-        plans = collected.filter(p => {
-          const k = `${p.depSec}|${p.arrSec}|${p.transfers}`;
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        }).sort((a, b) => b.depSec - a.depSec).slice(0, 3);
+      let plans: Plan[];
+      let lateTime: string | null = null;
+      if (timeMode === 'arrive' && day !== 'now') {
+        // Najpoznejši odhodi, ki pridejo do izbrane ure; danes nobeden pred zdaj.
+        plans = planArriveBy(gtfs, from, to, timeSec, tomorrow ? 0 : nowSec, when, accessMap, egressMap);
       } else {
-        const depSec = timeMode === 'depart' ? parseHM(timeStr) : nowSec;
-        plans = planAll(gtfs, fromPlace, toPlace, depSec, now, accessMap, egressMap);
+        plans = planAll(gtfs, from, to, timeSec, when, accessMap, egressMap);
+        if (timeMode === 'arrive') lateTime = timeStr;
       }
+      // Jutrišnji časi + 24 h: odštevanje »Kreni čez …« in »Ta odhod je mimo« tako veljata.
+      if (tomorrow) plans = plans.map(p => shiftPlan(p, DAY_SEC));
       if (ctl.signal.aborted) return;
       if (plans.length === 0) {
-        // Razčlenjena diagnoza namesto generičnega "Ni povezave." (slepa ulica).
-        error = accessMap.size === 0
+        // Razčlenjena diagnoza namesto generičnega "Ni povezave." (slepa ulica). Po razdalji
+        // do postajališč, ne po matrikah ORS: ob izpadu ali porabljeni kvoti ORS sta matriki
+        // prazni in vsaka »ni povezave« je pisala »Izhodišče je predaleč« (pregled 12.10.2026).
+        const nearStop = (p: { lat: number; lon: number }) => gtfs!.stops.some(s => dist(p, s) <= 1200);
+        error = !nearStop(from)
           ? tr('Izhodišče je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.')
-          : egressMap.size === 0
+          : !nearStop(to)
             ? tr('Cilj je predaleč od najbližje postaje (več kot 1,2 km). Izberi bližjo točko.')
             : tr('Ob izbranem času ni povezave — poskusi drug čas odhoda.');
         return;
       }
-      candidates = plans;
+      const baseDay = dayNumber(nowMb());
+      candidates = plans.map(p => ({ ...p, baseDay }));
+      candidatesTomorrow = tomorrow;
+      arriveLateTime = lateTime;
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
       error = tr('Napaka: {msg}', { msg: String(e?.message ?? e) });
@@ -312,12 +333,14 @@
 
   async function choosePlan(chosen: Plan) {
     if (!gtfs || !fromPlace || !toPlace) return;
+    const from = fromPlace, to = toPlace;
     abortActive();
     const ctl = new AbortController();
     activeCtl = ctl;
     running = true;
     try {
       const shMap = await loadShapes();
+      if (ctl.signal.aborted) return;
       // Kopija: seznam predlogov ostane pri ocenah (»Vsi predlogi«), izbrana pot dobi pešpoti.
       const shown: Plan = { ...chosen, legs: chosen.legs.map(l => ({ ...l })) };
       const walkPromises = shown.legs.map(l => l.kind === 'walk'
@@ -339,10 +362,15 @@
         return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
       });
       shown.walkMeters = shown.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      // Ob izpadu ORS (zračna črta) ostane prihod načrtovalnika: zadnji odsek ima v nogah
-      // zračni čas, prihod pa obvoz (kontrolni pregled 05.10.2026).
-      if (walks.every(w => !w?.estimated)) syncArrivalWithWalks(shown);
-      onShowPlan(shown, geoms, fromPlace!, toPlace!);
+      // Peš odseki imajo zdaj čas iz ORS ali oceno načrtovalnika z obvozom, nikoli zračne črte,
+      // zato se odhod (Kreni ob) in prihod vedno poravnata z njimi. Prej le, kadar so bile vse
+      // pešpoti iz ORS, ker je ocena v nogi takrat hranila zračno črto (05.10.2026).
+      syncArrivalWithWalks(shown);
+      // Opozorilo o ocenjenih pešpoteh velja za to pot: ob mešanem izidu bi ga sicer poznejši
+      // uspešen klic ORS ugasnil, star neuspeh pa prižgal pri poti brez ocen.
+      shown.walkEstimated = walks.some(w => !!w?.estimated);
+      walkRoutingDegraded.set(shown.walkEstimated);
+      onShowPlan(shown, geoms, from, to);
       onClose();
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
@@ -367,6 +395,7 @@
   function reset() {
     abortActive();
     fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = []; fromIsMe = false;
+    candidatesTomorrow = false; arriveLateTime = null;
     timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
     lastConsumedDest = null;
   }
@@ -546,6 +575,9 @@
                   on:click={() => timeExpanded = !timeExpanded}>
             <Clock size={16} color="var(--accent)" />
             <span class="t-body font-medium">{timeModeLabel}</span>
+            {#if chipTomorrow}
+              <span class="t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('jutri')}</span>
+            {/if}
             <span class="ml-auto grid place-items-center transition-transform"
                   style="transform: rotate({timeExpanded ? 180 : 0}deg)"><ChevronDown size={20} color="var(--text-muted)" /></span>
           </button>
@@ -601,9 +633,16 @@
         {#if candidates.length > 0}
           <div class="pt-1">
             <div class="flex items-center justify-between gap-2 mb-2 px-1">
-              <div class="t-footnote text-muted uppercase tracking-wide">{$t('Predlogi poti')}</div>
+              <div class="t-footnote text-muted uppercase tracking-wide">
+                {$t('Predlogi poti')}{#if candidatesTomorrow} · {$t('jutri')}{/if}
+              </div>
               <ReadAloud resetKey={candidates} text={() => candidatesSpeech(candidates)} />
             </div>
+            {#if arriveLateTime}
+              <div class="t-footnote text-muted px-1 mb-2">
+                {$t('Prihod do {time} ni več mogoč, zato so prikazane poti z odhodom zdaj.', { time: arriveLateTime })}
+              </div>
+            {/if}
             <ul class="space-y-2">
               {#each candidates as p, i}
                 <li>

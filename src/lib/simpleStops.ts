@@ -1,4 +1,5 @@
 import { tr } from './i18n';
+import { nowMb } from './clock';
 import { todayServiceIds, type GTFS, type Stop } from './gtfs';
 
 // Pomoč za preprost pogled: opis postajališča, iskanje po imenu in linije na
@@ -147,7 +148,7 @@ export function departureTimes(g: GTFS, stopId: number, routeId: number, dir: nu
 // dan s prometom in brez izjeme v voznem redu (praznik z nedeljskim voznim redom).
 // Dan brez prometa (npr. že zunaj veljavnosti voznega reda) ne pride v poštev; če
 // je praznik edini dan s prometom, se vzame ta.
-export function sampleDate(g: GTFS, wd: number, from = new Date()): Date | null {
+export function sampleDate(g: GTFS, wd: number, from = nowMb()): Date | null {
   const exc = new Set(g.exceptions.map(e => e.date));
   let fallback: Date | null = null;
   for (let k = 0; k < 28; k++) {

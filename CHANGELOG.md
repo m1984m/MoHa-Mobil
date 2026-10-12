@@ -5,6 +5,72 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.27.0 — 2026-10-12
+
+Popravki po analizi delovanja 12.10.2026 (`../analiza_2026-10-12/ANALIZA_DELOVANJA.md`: 34 najdb + 8 v
+necommitanem delu) in faza 2 iz evalvacije (N8, N11).
+
+**Vozni red**
+- Nov vozni red iz OBA (Marprom je 07.10. objavil nov nabor): delavniška vožnja P8 iz Pekrega odpelje ob 14:00,
+  aplikacija je kazala 13:50. Ostalih 18 linij in prazniki do 31.12. se ujemajo (`orodja/primerjava_oba.mjs`).
+  Uradni `gtfs.zip` je še vedno julijski.
+- Zavihki Delavnik / Sobota / Nedelja: današnja vrsta dneva je danes (po službi, ki res vozi: na praznik 31.10.
+  in 25.12. nedelja, z opombo), ostali najbližji redni dan te vrste znotraj voznega reda. Prej »Sobota« v tednu
+  pred 31.10. in 26.12. = nedeljski red, 25.12. torkov delavnik, 30. in 31.12. prazen »Delavnik«. Dan se ob
+  vsakem odprtju ponastavi; drsni položaj se ob menjavi vsebine ne prenese.
+- Podatki voznega reda z različico v naslovu (`trips.json?v=…`, `__GTFS_VER__`): prvo odprtje po objavi
+  novega reda ne teče več na starem; service worker jih streže iz predpomnilnika, stare različice počisti.
+  `meta.json` ima `feedStart`/`feedEnd`, Dom piše »velja od« po obdobju, ne po datumu gradnje.
+
+**Novo (faza 2)**
+- Zvonec »Opomni me« pri odhodu na listu postajališča odpre čarovnik na pregledu (N8); »Nazaj« zapre, »Spremeni
+  dneve ali opozorilo« vodi naprej. Prazni Opomniki imajo »Dodaj opomnik« brez pripenjanja linije.
+- Vozni red postajališča in linije se odpre pri naslednjem odhodu, pretekli so pridušeni (N11).
+
+**Načrtovalnik**
+- RAPTOR: nespremenljive oznake s kazalcem na izvor, vstop iz prejšnjega kroga, obvoz ×1,35 tudi pri prestopu,
+  brez ponovnega vstopa na isto linijo (razen na koncu vožnje). Prej »P18 2 min, prečkaj cesto, P18 nazaj« in
+  odvečen prvi avtobus pri 56 od 725 priporočenih načrtov; prestopi brez 3-minutne rezerve.
+- »Prihod do«: samo poti, ki še niso odpeljale, brez dvojnikov, trajanje od odhoda (`planArriveBy`).
+  Čas, ki je več kot 15 min v preteklosti, pomeni jutri (znak »jutri«, jutrišnja služba).
+- »Kreni ob« ob izpadu openrouteservice ni več prepozen (odseki hoje imajo čas, s katerim je računal
+  načrtovalnik); hitrost hoje velja tudi za že izračunane razdalje; ena napaka ORS ne pokvari hoje za celo sejo;
+  sistemski nazaj prekliče iskanje; sporočilo »predaleč od postaje« po razdalji, ne po matrikah ORS.
+- Opomba: »manj hoje« zdaj primerja hojo z obvozom na obeh straneh, zato se pri kratkih poteh pojavi redkeje.
+
+**Karta in živi podatki**
+- Živ avtobus dobi pravo vožnjo (po času, ne po vrstnem redu v tabeli; prej 13,5 % napačnih).
+- Stari živi prihodi ob izpadu po dveh minutah izginejo; list avtobusa ob osvežitvi ne utripa.
+- V načinu »ura« žive vrstice kažejo pričakovani čas (zdaj + ETA), ne čas po voznem redu.
+- Manjkajoč ETA iz voznega reda + zamude (prej »zdaj«); prazen seznam linij se ne zapomni.
+- Smer pri zvoncu in voznem redu iz živega prihoda po voznem redu postajališča; »Kreni« z obvozom; decimalne
+  vejice; zvonca ni v Preprostem pogledu in pri 320 px z večjim besedilom.
+
+**Vmesnik**
+- Okno Vreme ob napaki ne pošilja več zahtev v zanki (858 v 3 s), Escape ga zapre, gumb »Poskusi znova«.
+- Potrditveno okno ima svoj vnos v zgodovini: nazaj ga zapre (prej je v Priljubljenih zaprl aplikacijo).
+- Escape v čarovniku ne zapre več tudi Opomnikov; urejanje opomnika iz čarovnika pokaže njegovo linijo;
+  »Shranjujem…« ne obvisi (20 s); dnevi pri zvoncu po vrsti dneva (praznik = nedelja).
+- Vozni redi: brez mrtvih vnosov v zgodovini; tema ob blokirani shrambi ne ustavi aplikacije.
+- Prvi obisk ne osveži več strani; obvestilo o posodobitvi kaže novo različico.
+- Ura Maribora tudi na telefonu v drugem časovnem pasu (`clock.ts`; v pasu Ljubljane brez spremembe).
+- Štetje: 429 ne pobriše čakajočih dogodkov; statistika ne šteje prekinjenih klicev posrednikov.
+
+**Worker in posredniki** (objava: Worker, nato oba posrednika)
+- openrouteservice ne odgovarja na promet iz Cloudflara (12.10.2026: Worker 4/4 iztek po 9 s, domače omrežje
+  in Google Cloud 0,1–3 s): ORS gre najprej neposredno (2,5 s), nato prek posrednikov Deno in Vercel
+  (ključ v glavi `x-ors-key`, odgovor označen `X-Relay-Ors`), skupaj največ 5,5 s.
+- Odgovori OBA se preverijo po `Response.Status`: »Data is not available« (ponoči) se hrani le 20 s in nikoli
+  ne prepiše dobre kopije; HTML, prazno telo in GetLines brez linij gredo na naslednji posrednik, ne v
+  predpomnilnik. Drugi posrednik se sproži po 800 ms (vzporedno), neodziven se 60 s preskoči.
+- `Object.hasOwn` pri seznamu dovoljenih metod (`/oba/toString` je šel skozi oba posrednika); omejevalniki na
+  naslov IP za zgrešene `/oba` (300/min), `/ors` (30/min) in `/ev` (30/min); 500 z glavami CORS namesto 1101.
+- Opomniki: cron pred zapisom znova prebere zapis in doda le izid svojega teka (izklopljen opomnik ni več
+  zvonil naprej); metapodatek `next` v KV, cron ne bere nedejavnih naprav; omejitev gostote ponovitev;
+  `warm.js` ne piše več v KV (288 zapisov na dan manj); potisno obvestilo s časovno mejo 5 s.
+- ETA vozil popravljen za starost odgovora; TTS: omejevalnik po IP pred skupnim števcem; ključ posrednika
+  v stalnem času; `wrangler.toml` brez BOM in s popravljenimi šumniki.
+
 ## 0.26.2 — 2026-10-05
 
 Drobni popravki po kontrolnem pregledu kode 0.26.1 (APPROVE, samo nizke najdbe).

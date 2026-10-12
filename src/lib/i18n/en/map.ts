@@ -66,6 +66,7 @@ export default {
   'V živo': 'Live',
   'Vozni red linije {line}': 'Line {line} timetable',
   'Pokaži avtobus na karti': 'Show bus on map',
+  'Opomni me za {line} ob {time}': 'Remind me about {line} at {time}',
   'v živo': 'live',
   'po redu': 'scheduled',
   'Nalagam žive prihode…': 'Loading live arrivals…',

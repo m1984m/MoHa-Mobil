@@ -1,6 +1,7 @@
 import { upcomingDepartures, tripDestination, endsAtStopId, rowTarget, type GTFS } from './gtfs';
 import { stopDests } from './simpleStops';
 import type { StopArrival } from './realtime';
+import { nowMb, nowSecMb } from './clock';
 
 // Vrstice odhodov za Preprost pogled (glavni zaslon in zaslon postajališča).
 // Oblika je enaka BoardRow iz StopBoard.svelte, zato se vrstice podajo kartici
@@ -21,15 +22,24 @@ export type DepartureRow = {
 // že zlagan, zato se takrat pokaže vozni red.
 export const LIVE_FRESH_MS = 120_000;
 
+// Pričakovani čas živega avtobusa: zdaj + ETA. `ArrivalTime` iz OBA je čas po voznem
+// redu, zato je v načinu »ura« avtobus z zamudo 4 min kazal 19:28 namesto ~19:32
+// (pregled 12.10.2026). Opomnik pri odhodu še vedno vzame čas po voznem redu.
+export function liveDepSec(etaMin: number, nowSec = nowSecMb()): number {
+  // Negativen ETA (avtobus, ki ga OBA še kaže, a je mimo) = zdaj; sicer je bil po polnoči
+  // čas »-1:-1«.
+  return nowSec + Math.max(0, Math.round(etaMin)) * 60;
+}
+
 export function liveDepartureRows(arr: StopArrival[], routeIdByShort: Map<string, number>, max: number): DepartureRow[] {
+  const nowSec = nowSecMb();
   return arr.slice(0, max).map(a => {
-    const [hh, mm] = (a.arrivalTime || '0:0').split(':').map(Number);
     return {
       routeId: routeIdByShort.get(a.lineCode.toLowerCase()) ?? a.lineId,
       routeShort: a.lineCode,
       headsign: a.headsign,
       minutesFromNow: a.etaMin,
-      depSec: (hh || 0) * 3600 + (mm || 0) * 60,
+      depSec: liveDepSec(a.etaMin, nowSec),
       delayMin: a.delayMin,
       delayKnown: a.delayKnown,
       // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
@@ -39,7 +49,7 @@ export function liveDepartureRows(arr: StopArrival[], routeIdByShort: Map<string
 }
 
 export function scheduleDepartureRows(gtfs: GTFS, stopId: number, max: number, stopNames: Map<number, string>): DepartureRow[] {
-  return upcomingDepartures(gtfs, stopId, new Date(), max).map(d => ({
+  return upcomingDepartures(gtfs, stopId, nowMb(), max).map(d => ({
     routeId: d.route.id,
     routeShort: d.route.short,
     headsign: d.trip.headsign,
@@ -60,7 +70,7 @@ const hhmm = (sec: number) => `${String(Math.floor(sec / 3600) % 24).padStart(2,
 // Kliče se ob prejemu, da prazen seznam pomeni »ni živih odhodov« in se pokaže vozni red.
 // Linija, ki ji je prihod izpadel, v živem seznamu morda nima svojega odhoda (če OBA vrne
 // le naslednji dogodek linije), zato dobi naslednji odhod iz voznega reda, brez vozila.
-export function liveDepartures(gtfs: GTFS, stopId: number, arr: StopArrival[], when = new Date()): StopArrival[] {
+export function liveDepartures(gtfs: GTFS, stopId: number, arr: StopArrival[], when = nowMb()): StopArrival[] {
   const out = arr.filter(a => !endsAtStopId(gtfs, stopId, a.lineCode, a.headsign));
   if (out.length === arr.length) return arr;
   const ended = new Set(arr.filter(a => !out.includes(a)).map(a => a.lineCode.toLowerCase()));

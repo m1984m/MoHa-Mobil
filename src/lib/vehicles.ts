@@ -1,5 +1,6 @@
 import type { GTFS, Stop, Trip } from './gtfs';
 import { todayServiceIds, routeColor } from './gtfs';
+import { nowMb } from './clock';
 
 // Predračunani indeksi GTFS-a za hot path (findTripForLiveBus, klicana enkrat
 // per živ bus per poll). Brez indeksa smo vsak klic linearno skenirali 14k+ trip-ov
@@ -21,7 +22,7 @@ function dayKey(when: Date): string {
   return `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
 }
 
-export function precomputeVehiclesIndexes(gtfs: GTFS, when: Date = new Date()): VehiclesIndexes {
+export function precomputeVehiclesIndexes(gtfs: GTFS, when: Date = nowMb()): VehiclesIndexes {
   const key = dayKey(when);
   const cached = indexCache.get(gtfs);
   if (cached && cached.dayKey === key) return cached;
@@ -79,15 +80,38 @@ export function findTripForLiveBus(
   const byHeadsign = hs ? basePool.filter(t => t.headsign.toLowerCase() === hs) : [];
   const pool = byHeadsign.length > 0 ? byHeadsign : basePool;
 
-  let best: Trip | null = null;
-  let bestD = Infinity;
+  // Smer odloči geografsko najbližje postajališče, VOŽNJO pa čas. Vožnje iste smeri
+  // imajo enaka postajališča, zato je prej zmagala kar prva v tabeli: v preizkusu je
+  // 92 od 679 vozil dobilo napačno vožnjo, povprečno 25,7 min (G3 ob 07:05 → vožnja
+  // ob 06:15), list avtobusa pa je kazal pretekle čase (pregled 12.10.2026). Med
+  // enako bližnjimi zmaga vožnja z najmanjšim odstopanjem od voznega reda na tem
+  // postajališču; zamuda je verjetnejša od prehitevanja, zato prehitevanje šteje dvojno.
+  const scored: { t: Trip; i: number; d: number }[] = [];
   for (const t of pool) {
-    for (const st of t.stops) {
-      const s = idx.stopById.get(st[0]);
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < t.stops.length; i++) {
+      const s = idx.stopById.get(t.stops[i][0]);
       if (!s) continue;
       const d = (s.lat - live.lat) ** 2 + (s.lon - live.lon) ** 2;
-      if (d < bestD) { bestD = d; best = t; }
+      if (d < bd) { bd = d; bi = i; }
     }
+    if (bi >= 0) scored.push({ t, i: bi, d: bd });
+  }
+  if (scored.length === 0) return null;
+  const minD = Math.min(...scored.map(x => x.d));
+  // Toleranca ~150 m (2e-6 stopinje na kvadrat): različici smeri z malo drugačnimi
+  // postajališči še tekmujeta po času.
+  // Brez ujemanja opisa smeri odloča lega strožje (~35 m): postajališče na drugi strani
+  // ceste sicer tekmuje po času in pri zamudi izbere nasprotno smer (pregled 12.10.2026).
+  const tol = byHeadsign.length > 0 ? minD * 1.5 + 2e-6 : minD * 1.05 + 1e-7;
+  let best: Trip | null = null;
+  let bestCost = Infinity;
+  for (const x of scored) {
+    if (x.d > tol) continue;
+    const st = x.t.stops[x.i];
+    const diff = nowSec - (st[1] || st[2]);
+    const cost = diff >= 0 ? diff : -2 * diff;
+    if (cost < bestCost) { bestCost = cost; best = x.t; }
   }
   return best;
 }
@@ -132,7 +156,7 @@ export type Vehicle = {
 // jasno sporoča: "tu je bus po voznem redu", brez fake vmesne interpolacije.
 export function activeVehicles(
   gtfs: GTFS,
-  when: Date = new Date()
+  when: Date = nowMb()
 ): Vehicle[] {
   const active = todayServiceIds(gtfs, when);
   const nowSec = when.getHours() * 3600 + when.getMinutes() * 60 + when.getSeconds();

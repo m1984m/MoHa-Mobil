@@ -1,4 +1,5 @@
 import { tr, plural, locale } from './i18n';
+import { nowMb } from './clock';
 import { rowTarget, departsFromStop, nextServiceDeparture, type GTFS } from './gtfs';
 import { fmtClock, fmtDayOffset } from './time';
 import type { DepartureRow } from './departures';
@@ -15,7 +16,7 @@ import type { DayWeather } from './weather';
 // Pozdrav po uri na telefonu, samo v Petrini predstavitvi (kartica "Spoznaj Petro").
 // Branje odhodov se začne takoj z vsebino (Matej: pozdrav je podaljšal odziv).
 // 4–10 h jutro, 10–18 h dan, sicer večer — "lahko noč" je slovo, ne pozdrav.
-export function greeting(d = new Date()): string {
+export function greeting(d = nowMb()): string {
   const h = d.getHours();
   if (h >= 4 && h < 10) return tr('Dobro jutro');
   if (h >= 10 && h < 18) return tr('Dober dan');
@@ -139,7 +140,7 @@ export function planSpeech(legs: PlanLeg[], cilj: string): string {
   const leave = (legs[first] as Extract<PlanLeg, { kind: 'bus' }>).depSec - walkSec(0, first);
   const arrive = (legs[last] as Extract<PlanLeg, { kind: 'bus' }>).arrSec + walkSec(last + 1, legs.length);
   // Kot PlanSteps: več kot 90 s po času odhoda je odhod mimo (pot na karti je lahko stara).
-  const now = new Date();
+  const now = nowMb();
   const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   if (leave < nowSec - 90) out.push(tr('Ta odhod je mimo.') + ' ' + tr('Poišči novega.'));
   else out.push(tr('Kreni ob {time}, na cilju boš ob {arr}.', { time: fmtClock(leave), arr: fmtClock(arrive) }));

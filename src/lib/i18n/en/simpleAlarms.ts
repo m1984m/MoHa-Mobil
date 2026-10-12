@@ -102,4 +102,5 @@ export default {
   'Opomnik pride kot obvestilo na telefon. Aplikacija ne pošilja SMS sporočil.': 'A reminder arrives as a notification on your phone. The app does not send text messages (SMS).',
   'Ta brskalnik ne podpira obvestil. Na iPhonu najprej dodaj aplikacijo na začetni zaslon.': 'This browser does not support notifications. On iPhone, add the app to the Home Screen first.',
   'Obvestila niso dovoljena. Dovoli jih v nastavitvah telefona ali brskalnika in poskusi znova.': 'Notifications are not allowed. Allow them in your phone or browser settings and try again.',
+  'Spremeni dneve ali opozorilo': 'Change days or alert time',
 };

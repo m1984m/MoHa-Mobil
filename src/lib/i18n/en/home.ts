@@ -49,6 +49,7 @@ export default {
   'Smer': 'Direction',
   'Zamenjaj smer': 'Switch direction',
   'od {kraj}': 'from {kraj}',
+  'naslednji': 'next',
   'Postaja': 'Stop',
   'Vse postaje (od izhodišča)': 'All stops (from start)',
   'Odpri postajo na karti': 'Show stop on map',
@@ -111,4 +112,7 @@ export default {
   'vozni red': 'scheduled',
   'Brez povezave. Prikazujemo vozni red, zamud ne poznamo.': 'No connection. Showing the timetable, delays are unknown.',
   'Podatki v živo trenutno niso na voljo. Prikazujemo vozni red, zamud ne poznamo.': 'Live data is not available right now. Showing the timetable, delays are unknown.',
+  'Danes je praznik: avtobusi vozijo po nedeljskem redu.': 'Today is a public holiday: buses run on the Sunday timetable.',
+  'Danes je praznik: avtobusi vozijo po sobotnem redu.': 'Today is a public holiday: buses run on the Saturday timetable.',
+  'Danes avtobusi vozijo po delavniškem redu.': 'Today buses run on the weekday timetable.',
 };

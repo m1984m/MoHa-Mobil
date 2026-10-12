@@ -1,12 +1,13 @@
 <script lang="ts">
   import { swap } from '../motion';
+  import { onDestroy, tick } from 'svelte';
   import { Search, MapPin, Star } from 'lucide-svelte';
   import Screen from '../ui/Screen.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import LineTimetableModal from './LineTimetableModal.svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
-  import { pushBack } from '../backstack';
+  import { pushBack, type BackRelease } from '../backstack';
   import type { GTFS, Route, Stop } from '../gtfs';
   import { searchStops, normName, twinStopHint } from '../simpleStops';
   import { t } from '../i18n';
@@ -39,18 +40,30 @@
 
   // Sistemski "nazaj" (Android) mora zapreti vozni red, ne aplikacije. Ta zaslon
   // je bil edini z modali brez te vezave — back gumb je uporabnika vrgel iz PWA.
-  let backLine: (() => void) | null = null;
-  $: if (lineOpen && !backLine) {
-    backLine = pushBack(() => lineOpen = false);
-  } else if (!lineOpen && backLine) {
-    const r = backLine; backLine = null; r();
-  }
-  let backStop: (() => void) | null = null;
+  // Vrstni red blokov je pomemben: ob prehodu vozni red postaje → vozni red linije
+  // (isti korak) se mora vnos postaje sprostiti, preden se potisne vnos linije — sicer
+  // vnos postaje ni več na vrhu, ostane v zgodovini in en »nazaj« ne naredi ničesar
+  // (pregled 12.10.2026; enako kot v MapScreen).
+  let backStop: BackRelease | null = null;
   $: if (stopOpen && !backStop) {
     backStop = pushBack(() => stopOpen = false);
   } else if (!stopOpen && backStop) {
     const r = backStop; backStop = null; r();
   }
+  let backLine: BackRelease | null = null;
+  $: if (lineOpen && !backLine) {
+    backLine = pushBack(() => lineOpen = false);
+  } else if (!lineOpen && backLine) {
+    const r = backLine; backLine = null; r();
+  }
+  // »Odpri postajo na karti« zamenja zavihek, ko je vozni red še odprt: zaslon se uniči,
+  // preden bi se zgornja bloka izvedla. Sprostitev od najnovejšega vnosa navzdol.
+  onDestroy(() => {
+    [backLine, backStop]
+      .filter((r): r is BackRelease => !!r)
+      .sort((a, b) => b.id - a.id)
+      .forEach(r => r());
+  });
 
   function openLine(r: Route, dir = 0) { lineRoute = r; lineDir = dir; lineOpen = true; }
   function openStop(s: Stop) { selectedStop = s; stopOpen = true; }
@@ -133,10 +146,13 @@
 
 <LineTimetableModal open={lineOpen} {gtfs} route={lineRoute} initialDir={lineDir}
   onClose={() => lineOpen = false}
-  onOpenStop={(stopId) => {
+  onOpenStop={async (stopId) => {
     const s = gtfs?.stops.find(x => x.id === stopId);
     if (!s) return;
+    // Najprej se vnos voznega reda sprosti (na vrhu), šele nato App potisne vnos postajališča
+    // — sicer ostane mrtev vnos in en »nazaj« ne naredi ničesar (pregled 12.10.2026).
     lineOpen = false;
+    await tick();
     onStopSelect(s);
   }} />
 <StopTimetableModal open={stopOpen} {gtfs} stop={selectedStop}

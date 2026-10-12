@@ -4,8 +4,10 @@
   import LineBadge from '../ui/LineBadge.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { stopTimetableSpeech } from '../readAloud';
-  import { allDeparturesForStop, dayKindToDate, rowTarget, type GTFS, type Stop, type DayKind } from '../gtfs';
+  import { allDeparturesForStop, dayKindToDate, dayKindOf, isHolidayService, rowTarget, type GTFS, type Stop, type DayKind } from '../gtfs';
   import { twinStopHint } from '../simpleStops';
+  import { scrollToMe, resetScroll } from '../scrollToMe';
+  import { nowMb, nowSecMb } from '../clock';
   import { favStops } from '../favorites';
   import { focusTrap } from '../focusTrap';
   import { t } from '../i18n';
@@ -24,6 +26,13 @@
   export let onOpenLine: ((routeId: number, dir: number) => void) | null = null;
 
   let day: DayKind = detectToday();
+  // Ob vsakem odprtju spet današnji dan: prej je okno ostalo na zadnjem izbranem
+  // (»Nedelja« od včeraj) in naslednji odhod se ni označil (pregled 12.10.2026).
+  let wasOpen = false;
+  $: if (open !== wasOpen) {
+    wasOpen = open;
+    if (open) day = detectToday();
+  }
 
   // Glava: smer filtra je cilj (cel opis se začne z izhodiščem), pod imenom pa opis
   // linij in smeri, kadar ima postajališče dvojnika čez cesto (ponovna ocena 05.10.2026).
@@ -31,10 +40,11 @@
     ? rowTarget(gtfs, gtfs?.routes.find(r => r.id === filterRouteId)?.short ?? '', filterHeadsign).dest : '';
   $: twinHint = gtfs && stop ? twinStopHint(gtfs, stop) : '';
 
+  // Vrsta dneva po službi, ki danes res vozi: na praznik (25.12., 31.10.) nedelja.
   function detectToday(): DayKind {
-    const d = new Date().getDay();
-    return d === 0 ? 'sunday' : d === 6 ? 'saturday' : 'weekday';
+    return dayKindOf(gtfs, nowMb());
   }
+  $: holidayToday = open && !!gtfs && isHolidayService(gtfs, nowMb());
 
   $: days = [
     { id: 'weekday', label: $t('Delavnik') },
@@ -42,11 +52,22 @@
     { id: 'sunday', label: $t('Nedelja') },
   ] as { id: DayKind; label: string }[];
 
-  $: rawDeps = gtfs && stop ? allDeparturesForStop(gtfs, stop.id, dayKindToDate(day)) : [];
+  $: rawDeps = gtfs && stop ? allDeparturesForStop(gtfs, stop.id, dayKindToDate(day, nowMb(), gtfs)) : [];
   $: deps = filterRouteId != null
     ? rawDeps.filter(d => d.route.id === filterRouteId && (filterDir == null || d.trip.dir === filterDir))
     : rawDeps;
   $: isFav = stop ? $favStops.has(stop.id) : false;
+
+  // Danes: seznam se odpre pri uri naslednjega odhoda, ta je obrobljen, pretekli so brez
+  // podlage in s pridušeno minuto (brez prosojnosti, ki bi pokvarila kontrast; N11).
+  $: nowSec = open && day === detectToday() ? nowSecMb() : null;
+  $: nextDep = nowSec == null ? null : deps.find(d => d.depSec >= nowSec!) ?? null;
+  $: nextHour = nextDep ? Math.floor(nextDep.depSec / 3600) % 24 : -1;
+  function chipStyle(d: { depSec: number }): string {
+    if (nextDep && d === nextDep) return 'box-shadow: inset 0 0 0 2px var(--accent-on-tint, var(--accent))';
+    if (nowSec != null && d.depSec < nowSec) return 'background: transparent; box-shadow: inset 0 0 0 1px var(--border)';
+    return '';
+  }
 
   // Group by hour
   $: grouped = (() => {
@@ -63,7 +84,7 @@
   function readText(): string {
     if (!stop) return '';
     const label = days.find(d => d.id === day)?.label ?? '';
-    const now = new Date();
+    const now = nowMb();
     const nowSec = day === detectToday() ? now.getHours() * 3600 + now.getMinutes() * 60 : null;
     return stopTimetableSpeech(stop.name, label, deps, nowSec);
   }
@@ -118,31 +139,40 @@
                     on:click={() => day = d.id}>{d.label}</button>
           {/each}
         </div>
+        {#if holidayToday && day === detectToday()}
+          <div class="t-footnote text-muted mt-2" role="note">{detectToday() === 'saturday'
+            ? $t('Danes je praznik: avtobusi vozijo po sobotnem redu.')
+            : detectToday() === 'weekday'
+              ? $t('Danes avtobusi vozijo po delavniškem redu.')
+              : $t('Danes je praznik: avtobusi vozijo po nedeljskem redu.')}</div>
+        {/if}
       </div>
 
-      <div class="flex-1 overflow-y-auto px-5 pb-5">
+      <div class="flex-1 overflow-y-auto px-5 pb-5" data-tt-scroll>
         {#key day}
-        <div in:swap>
+        <div in:swap use:resetScroll>
         {#if deps.length === 0}
           <div class="t-body text-muted text-center py-8">{$t('Ni odhodov za izbrani dan.')}</div>
         {:else}
           <ul class="space-y-2">
             {#each grouped as [h, list]}
-              <li class="flex gap-3 items-start">
-                <div class="w-12 shrink-0 t-title3 font-bold tabular-nums pt-1">{String(h).padStart(2, '0')}</div>
+              <li class="flex gap-3 items-start" use:scrollToMe={h === nextHour}>
+                <div class="w-12 shrink-0 t-title3 font-bold tabular-nums pt-1"
+                     style={nowSec != null && nextHour >= 0 && h < nextHour ? 'color: var(--text-muted)' : ''}>{String(h).padStart(2, '0')}</div>
                 <div class="flex-1 flex flex-wrap gap-1.5">
                   {#each list as d}
                     {#if onOpenLine}
                       <button class="pressable inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1"
+                              style={chipStyle(d)}
                               on:click={() => onOpenLine!(d.route.id, d.trip.dir)}
-                              aria-label={$t('Vozni red linije {linija}', { linija: d.route.short })}>
+                              aria-label={$t('Vozni red linije {linija}', { linija: d.route.short }) + (d === nextDep ? ', ' + $t('naslednji') : '')}>
                         <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
-                        <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
+                        <span class="t-footnote tabular-nums font-semibold" style={nowSec != null && d.depSec < nowSec ? 'color: var(--text-muted)' : ''}>:{fmtMin(d.depSec)}</span>
                       </button>
                     {:else}
-                      <div class="inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1">
+                      <div class="inline-flex items-center gap-1.5 surface-2 rounded-lg pl-1 pr-2 py-1" style={chipStyle(d)}>
                         <LineBadge short={d.route.short} routeId={d.route.id} size="sm" />
-                        <span class="t-footnote tabular-nums font-semibold">:{fmtMin(d.depSec)}</span>
+                        <span class="t-footnote tabular-nums font-semibold" style={nowSec != null && d.depSec < nowSec ? 'color: var(--text-muted)' : ''}>:{fmtMin(d.depSec)}</span>
                       </div>
                     {/if}
                   {/each}

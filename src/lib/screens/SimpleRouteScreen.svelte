@@ -86,7 +86,7 @@
                karto utihne (kot SimpleStopScreen). -->
           <ReadAloud variant="big" wide resetKey={hidden ? 'skrit' : plan} text={() => planSpeech(plan.legs, state.toName)} />
           <div class="surface rounded-2xl border border-base shadow-card px-3 py-4">
-            <PlanSteps legs={state.plan.legs} ciljIme={state.toName} />
+            <PlanSteps legs={state.plan.legs} ciljIme={state.toName} baseDay={state.plan.baseDay ?? null} />
           </div>
           <button type="button" class="pressable mm-sr-btn w-full" on:click={onShowMap}>
             <MapIcon size={26} strokeWidth={2} color="var(--accent)" /> {$t('Pokaži na karti')}
