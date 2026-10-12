@@ -186,6 +186,18 @@ export async function handleEvent(request, env, cors) {
 
   if (request.method !== 'POST') return noContent(405);
 
+  // Omejevalnik na naslov IP (vezava EV_LIMITER, brez pisanja v KV). Zavora v
+  // izolatu spodaj sama ne loči odjemalcev: en naslov z glavo Origin je lahko
+  // porabil vseh 600 dogodkov na minuto. Aplikacija pošilja svežnje do 20
+  // dogodkov, zato ji nekaj zahtev na minuto zadošča. Brez vezave omejitve ni,
+  // napaka omejevalnika pa štetja ne ustavi.
+  if (env.EV_LIMITER) {
+    try {
+      const { success } = await env.EV_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'neznan' });
+      if (!success) return noContent(429);
+    } catch { /* varovalo ne sme ugasniti štetja */ }
+  }
+
   const dolzina = Number(request.headers.get('Content-Length') ?? 0);
   if (dolzina > MAX_BODY) return noContent(413);
 
@@ -207,8 +219,10 @@ export async function handleEvent(request, env, cors) {
     if (!dovoljeno()) break;
     if (!dogodek || typeof dogodek !== 'object') continue;
     const ime = ocisti(dogodek.e);
+    // Object.hasOwn: podedovana imena (constructor, __proto__ …) bi sicer prišla
+    // mimo seznama dovoljenih dogodkov naravnost v zapis.
+    if (!Object.hasOwn(APP_EVENTS, ime)) continue;
     const najvec = APP_EVENTS[ime];
-    if (najvec === undefined) continue;
 
     const surove = Array.isArray(dogodek.d) ? dogodek.d.slice(0, najvec) : [];
     const dims = [];

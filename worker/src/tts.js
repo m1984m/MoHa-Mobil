@@ -138,7 +138,10 @@ export async function handleTts(request, env, ctx, cors) {
     return zvok(hit.body, 'HIT');
   }
 
-  if (!dovoljeno() || !(await omejevalnik(env, request))) {
+  // Najprej omejevalnik na naslov IP, šele nato zavora v izolatu. V obratnem
+  // vrstnem redu je zavrnjen klic že porabil števec izolata: en naslov s 30
+  // novimi besedili na minuto je Petro utišal vsem, ki jih streže isti izolat.
+  if (!(await omejevalnik(env, request)) || !dovoljeno()) {
     stej('zavora', 429);
     return napaka({ error: 'preveč zahtev' }, 429, cors);
   }

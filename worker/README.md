@@ -25,7 +25,7 @@ uporabnika v vrsto za klic, ki morda ne bo nikoli odgovoril:
 |---|---|---|
 | svež (pod TTL) | takoj | če je čez polovico TTL, se sproži osvežitev prek `waitUntil` |
 | potekel, a pod TTL + 90 s | klic dobi 0,7 s prednosti; če ne odgovori, gre ven star odgovor | klic se dokonča in napolni predpomnilnik za naslednji vpogled |
-| prazen | čaka na klic, največ 4 s | — |
+| prazen | čaka na klic, en posrednik največ 4 s, vsi skupaj največ 6 s | — |
 
 **To je glavni obrambni mehanizem**, ne gretje iz cron-a: teče tam, kjer so
 uporabniki, in vsak njihov vpogled je še ena priložnost, da klic uspe — ne da bi
@@ -45,13 +45,78 @@ Trije podatki, ki jih je treba poznati:
 
 Ponavljanje klica znotraj istega klica Workerja **ne pomaga** (izmerjeno: 3 poskusi
 = 2 uspeha od 21, en sam poskus = 3 od 15). Kadar prvi poskus visi, visijo vsi;
-šele nov klic Workerja ima spet svojo možnost. Zato `OBA_POSKUSI = 1`.
+šele nov klic Workerja ima spet svojo možnost. Zato je na vsako pot en sam poskus.
+
+### Odgovor OBA s `Status: -1` in preverjanje telesa
+
+Marprom tudi napako vrne s HTTP **200** in jo zapiše v telo:
+`{"Response":{"Status":-1,"Message":"Data is not available"}}`. Prej je šlo v
+predpomnilnik vsako telo s 200 (tudi HTML ali prazno; `GetLines` za 6 ur). Zdaj
+`razvrstiOdgovor` (`oba.js`) vsako telo razvrsti, enako v obeh posrednikih:
+
+| Telo | Kaj se zgodi | Statistika (`izid`) |
+|---|---|---|
+| `Status: 1` (pri `GetLines` še neprazen `Lines`) | normalno predpomnjenje (TTL + 90 s zasilno) | `ok` |
+| živa metoda s `Status: -1` (ponoči ni vozil, neobstoječe postajališče) | gre uporabniku kot 200; v predpomnilnik **samo za 20 s** in **nikoli čez dobro kopijo** — če je dobra kopija še v zasilnem oknu, dobi uporabnik njo kot `STALE` (s popravljenim ETA) | `prazno` |
+| HTML, prazno, neveljaven JSON, `GetLines` brez `Status: 1` | napaka: naslednji posrednik / zasilni odgovor / 502; nikoli v predpomnilnik | `napaka` s statusom 200 |
+
+Ponoči torej aplikacija hitro dobi »ni podatkov« (ne napake), podnevi pa posamezen
+`-1` ne izbriše table, ki je bila pred minuto še dobra.
+
+### Več posrednikov: rezerva po 0,8 s
+
+Posrednika (`OBA_RELAY`) se ne kličeta več strogo po vrsti. Prvi dobi 0,8 s
+prednosti; če do takrat ne odgovori, gre isti klic še na drugega in obvelja prvi
+**veljaven** odgovor, drugi se prekine (`izid = prekinjen`). Ob napaki prvega gre
+drugi takoj. Posrednik, ki odpove ali ga rezerva prehiti, gre v tem izolatu za 60 s
+na konec vrste (če so na kazni vsi, se vseeno poskusijo). En posrednik ima 4 s, vsi
+skupaj 6 s; posredniki sami čakajo na Marprom največ 3,5 s. Izmerjeno v preizkusu:
+prvi visi, drugi odgovori v 3,5 s → prej 7,5 s, zdaj 4,3 s, naslednji klic 3,5 s.
+
+`GetActiveDeviceDetails` dobi enak popravek starosti kot prihodi: `Vehicles[].ETA`
+se zmanjša za pretečene minute (vozila ostanejo vsa, negativen ETA ostane).
+
+### ORS prek posrednikov (12.10.2026)
+
+Tudi openrouteservice tiho zavrže promet s Cloudflara (4 klici od 4: iztek po 9 s;
+z domačega omrežja in iz Google Cloud odgovor v 0,11 s). Pot `/ors/*` zato:
+
+1. najprej **neposredno** na ORS, največ **0,8 s** (zdrav ORS odgovori v 0,1–0,6 s);
+   ob izteku, omrežni napaki, 5xx ali telesu, ki ni JSON (npr. stran HTML z 401,
+   403 ali 429 od nekoga vmes), gre neposredna pot v tem izolatu za 60 s na konec
+   vrste (naslednji klici gredo takoj na posrednika);
+2. nato **posredniki iz `OBA_RELAY`** po vrsti (isti kot za OBA). Preostanek do
+   **5,5 s** (aplikacija pešpot opusti po 6 s, `src/lib/routing.ts`) si razdelijo
+   enakomerno: z dvema posrednikoma ima vsak 2,35 s (2,75 s, ko je neposredna pot na
+   kazni), posrednik sam pa na ORS čaka 2 s. Tako pride na vrsto tudi drugi
+   posrednik, ko prvi visi do konca — prej ga na hladnem izolatu ni dočakal.
+
+Za razliko od OBA ni vzporedne rezerve: vsak klic, ki pride do ORS, gre v isto
+dnevno kvoto ključa, zato naslednja pot dobi klic šele, ko prejšnja odpove.
+Posredniku gre samo preverjeno telo (`orsTelo`), ključ ORS pa v glavi `x-ors-key`
+(skupaj z `x-relay-key`); posrednik ga ne hrani in ne beleži. Odgovor posrednika
+šteje za odgovor ORS samo z oznako `X-Relay-Ors: 1` in s telesom JSON — 4xx z
+oznako (npr. točka ni na poti) gre nespremenjen k aplikaciji, brez oznake (star
+posrednik brez `/ors` vrne 404/405, napačen ključ 403, ORS nedosegljiv 502) pa je
+napaka in gre na naslednjo pot. K aplikaciji gre le `Content-Type`
+`application/json` ali `application/geo+json` (vse drugo postane `application/json`).
+Penalizacija posrednika za ORS je ločena od tiste za OBA. V statistiki je `preko`
+pri ORS `direct` / `relay` / `relay2`. Brez `OBA_RELAY` je neposredna pot edina in
+dobi vseh 5,5 s.
 
 ### Ogrevanje predpomnilnika iz cron-a (`warm.js`)
 
-Cron vsako minuto poskusi osvežiti do 8 najbolj gledanih postajališč zadnjih 30
-minut. Seznam pride iz statistike in se shrani v KV za 5 minut; ponoči je prazen in
-cron ne naredi ničesar. Postajališča, mlajša od 25 s, se preskočijo.
+**Dokler je nastavljen `OBA_RELAY`, gretja ni:** `warm.js` kliče Marprom neposredno,
+do njega pa Cloudflare takrat ne pride — gretje bi bilo samo zapravljeni podzahtevki
+(glej Kaj počne cron) in do 6 s visenja.
+
+Brez posrednikov cron vsako minuto poskusi osvežiti do 4 najbolj gledana
+postajališča zadnjih 30 minut (prej 8; meja izhaja iz 16 podzahtevkov, ki jih ima
+gretje, glej `PODZAHTEVKI_GRETJE`). Seznam pride iz statistike (brez vrstic
+`prekinjen`) in se zapomni za 5 minut v pomnilniku izolata in v `caches.default` —
+**ne v KV** (prej je to bilo 288 pisanj na dan, tudi ponoči s praznim seznamom).
+Ponoči je prazen in cron ne naredi ničesar. Postajališča, mlajša od 25 s, se
+preskočijo. V predpomnilnik gre samo telo s `Status: 1`.
 
 Najprej gre **tipanje z enim samim postajališčem**: ker so izidi klicev znotraj enega
 klica Workerja korelirani, prvi neuspeh pomeni konec — v slabi minuti odide en klic
@@ -249,6 +314,14 @@ kvoto, ki jo potrebujejo naročnine (glej Znane omejitve).
 
 `until` je najpoznejši `fireAt` (ali `null`, če je seznam prazen).
 
+**Meja gostote** (vsako poslano zvonjenje je eno pisanje v KV): zvonjenja istega
+opomnika (id do zadnjega `:`) morajo biti narazen vsaj 10 minut, ena naprava ima
+največ 48 zvonjenj na dan (UTC). Kar mejo preseže, **tiho odpade** (prej obdrži
+zgodnejše) in odgovor dobi polje `capped` s številom odpadlih — sinhronizacija se
+zaradi tega ne zavrne. Aplikacija (`computeOccurrences`) da eno zvonjenje na
+opomnik na izbrani dan, zato se mejama ne približa; če bi kdaj zvonila za vsak
+odhod v oknu, ju je treba pregledati.
+
 Zahteva se zavrne s **400**, če: endpoint ni `https:` ali ne kaže na znano potisno
 storitev, `p256dh` ni dolg 87–88 znakov base64url, `auth` ni dolg 22–24, vnosov je
 več kot 500, `fireAt` ni število ali je več kot 120 dni naprej, ali je
@@ -310,8 +383,14 @@ vgraditi v paket.
 
 | Ključ | Vsebina | TTL |
 |---|---|---|
-| `sub:<id>` | `{ endpoint, keys: { p256dh, auth }, occurrences: [...], updatedAt }` | 130 dni |
+| `sub:<id>` | `{ endpoint, keys: { p256dh, auth }, occurrences: [...], updatedAt }`, metapodatek `{ next }` | 130 dni |
 | `rl:<hash>` | števec zahtev za hashiran IP v tekoči uri | 1 h |
+
+Metapodatek `next` je najzgodnejši `fireAt` zapisa (`null`, če je seznam prazen).
+`list()` ga vrne skupaj z imeni ključev, zato cron zapisa, ki še ne zvoni, **sploh
+ne prebere** (prej je vsako minuto prebral in razčlenil vsako naročnino). Zapisi
+brez metapodatka (izpred te različice) se berejo kot prej, dokler jih naslednja
+sinhronizacija ne prepiše.
 
 Seznama naročnin **ne vzdržujemo sami**. Cron ga dobi z
 `ALARMS_KV.list({ prefix: 'sub:' })`. Prejšnja različica je imela lasten indeks
@@ -368,14 +447,38 @@ ločeno:
 > majhno rezervo (npr. 5 minut pred odhodom), zato bi obvestilo, zamujeno za
 > 9 minut, prispelo štiri minute **po** odhodu.
 
-Na en zagon pošlje največ **200** obvestil in dela največ **25 s**; ostanek počaka
-na naslednjo minuto. Zapis v KV gre nazaj samo ob dejanski spremembi.
+Na en zagon pošlje največ **10** obvestil in dela največ **25 s**; ostanek počaka
+na naslednjo minuto (zamuda do 2 minut je še dovoljena). En potisk čaka največ 5 s
+(iztek = prehodna napaka, `tries` +1). Zapis v KV gre nazaj samo ob dejanski
+spremembi.
+
+**Meja podzahtevkov.** Brezplačni paket dovoli **50 podzahtevkov na en klic**
+Workerja, in KV (get/put/list/delete), Cache API in `fetch` štejejo skupaj. Čez mejo
+platforma klic zavrne z izjemo — med potiskom in zapisom nazaj je to pomenilo, da je
+obvestilo odšlo, zapis pa ne, in naslednjo minuto je šlo isto obvestilo še enkrat.
+Cron zato podzahtevke šteje sam: `list` 1, branje zapisa 1, vsak potisk 1, zapis
+nazaj ali brisanje 1, in zapisa ne začne, če zanj ne ostanejo vsaj 4 (branje, potisk,
+zapis, rezerva). Z `OBA_RELAY` ima alarm 48 podzahtevkov (gretja ni), brez njega 32,
+gretje pa 16. Zapisi, ki po metapodatku `next` še ne zvonijo, ne stanejo nič.
+
+**Znano tveganje — izgubljena sprememba.** Če telefon pošlje novo sinhronizacijo
+(izklopi ali doda opomnik) prav v času, ko cron za isto napravo pošilja obvestilo,
+cronov zapis nazaj to sinhronizacijo prepiše: izklopljen opomnik še zvoni, nov ne.
+Ponovno branje pred zapisom tega ne reši — KV na lokaciji crona ponovljena branja
+streže iz svojega predpomnilnika in zapisa z druge Cloudflarove lokacije ne vidi
+(preverjeno s preizkusom, 12.10.2026), zato ga ni. Popravi se ob naslednjem
+odprtju aplikacije, ki ob zagonu sinhronizira znova. Prava rešitev je, da stanje
+crona (kaj je že poslano) živi v D1 ali Durable Objectu — za zdaj ne.
 
 Vsak zagon pusti eno vrstico v dnevniku (`[observability]` je vklopljen):
 
 ```
-alarms cron: naročnin=3/3 poslano=1 spodletelo=0 odpadlo=0 zamujeno=0 odjavljenih=0 412ms
+alarms cron: naročnin=3 preskočenih=2 poslano=1 spodletelo=0 odpadlo=0 zamujeno=0 odjavljenih=0 napakKV=0 podzahtevkov=6/48 412ms
 ```
+
+`preskočenih` so zapisi, ki jih cron po metapodatku `next` ni bral, `podzahtevkov`
+porabljeni od dovoljenih. `PREKINJENO(kvota/čas)` na koncu pomeni, da je ostanek
+počakal na naslednjo minuto.
 
 > **Cron na Cloudflaru ni natančen na sekundo.** Zagon ob »07:43:00« se v praksi
 > zgodi nekaj sekund do nekaj deset sekund kasneje, ob visoki obremenitvi
@@ -456,19 +559,30 @@ vrne na javna posrednika in vgrajen ključ.
 | Pot | Metoda | Predpomnilnik | Omejitve |
 |---|---|---|---|
 | `/oba/GetLines` | GET | 6 h | — |
-| `/oba/GetActiveDeviceDetails` | GET | 20 s | — |
-| `/oba/GetArrivalsForStopPoint?stopPointId=N` | GET | 10 s | `N` mora biti število do 7 mest |
-| `/ors/directions/foot-walking/geojson` | POST | ne | telo ≤ 8 kB, 2–30 koordinat |
-| `/ors/matrix/foot-walking` | POST | ne | telo ≤ 8 kB, 2–30 koordinat |
-| `/alarms/sync` | POST | ne | telo ≤ 256 kB, ≤ 500 zvonjenj, 60 zahtev/h na IP |
+| `/oba/GetActiveDeviceDetails` | GET | 30 s | 300 klicev mimo predpomnilnika/min na IP (vse `/oba`) |
+| `/oba/GetArrivalsForStopPoint?stopPointId=N` | GET | 40 s | `N` mora biti število do 7 mest |
+| `/ors/directions/foot-walking/geojson` | POST | ne | telo ≤ 8 kB, 2–30 `coordinates`; naprej gre samo `coordinates`; 30 zahtev/min na IP (vse `/ors`) |
+| `/ors/matrix/foot-walking` | POST | ne | telo ≤ 8 kB, 2–30 `locations`; naprej gredo samo `locations`, `sources`, `destinations`, `metrics` |
+| `/alarms/sync` | POST | ne | telo ≤ 256 kB, ≤ 500 zvonjenj (meja gostote zgoraj), 60 zahtev/h na IP |
 | `/alarms/sync` | DELETE | ne | telo `{ endpoint }` |
 | `/alarms/resubscribe` | POST | ne | enaka validacija in omejitve kot `/alarms/sync` |
 | `/alarms/status` | GET | ne | neobvezen parameter `endpoint` |
 | `/tts` | POST | 24 h (isto besedilo) | telo `text/plain` ≤ 800 znakov, 20 novih besedil/min na IP |
+| `/ev` | POST | ne | telo ≤ 4 kB, ≤ 20 dogodkov, 30 zahtev/min na IP |
 | `/health` | GET | ne | edina pot brez preverjanja izvora |
 
-Vse drugo vrne 404, tuj izvor vrne 403. Zahteva navzgor se prekine po 4 sekundah
-pri OBA (nato zasilni odgovor) in po 9 sekundah pri ORS.
+Vse drugo vrne 404, tuj izvor vrne 403, prekoračen omejevalnik 429 (z glavami CORS).
+Zahteva navzgor se prekine po 4 sekundah na posrednika pri OBA (vse skupaj največ
+6 s, nato zasilni odgovor), pri ORS po 0,8 s neposredno, posredniki pa si razdelijo
+preostanek (vse skupaj največ 5,5 s, nato 502). Nepričakovana izjema vrne JSON
+500 z glavami CORS (prej Cloudflarova stran 1101 brez njih, ki je brskalnik ni
+pokazal aplikaciji).
+
+**Omejevalniki na naslov IP** so vezave `[[ratelimits]]` v `wrangler.toml` (ne
+pišejo v KV): `TTS_LIMITER` 7101, `OBA_LIMITER` 7102, `ORS_LIMITER` 7103,
+`EV_LIMITER` 7104. Brez vezave omejitve ni, napaka omejevalnika zahteve ne zavrne.
+`/tts` najprej preveri naslov IP in šele nato zavoro izolata, da zavrnjen naslov ne
+porabi števca vsem ostalim.
 
 ## Glasno branje (POST /tts)
 
@@ -493,11 +607,16 @@ Worker piše dogodke v nabor `moha_mobil` prek vezave `ANALYTICS`
 (`wrangler.toml`). Dva vira:
 
 - **strežniško štetje** — vsak klic `/oba/*` in `/ors/*`: metoda, izid
-  (`ok` / `cache` / `napaka` / `nedosegljiv`), odzivni čas, število poskusov,
-  `relay` ali `direct`, oznaka države. Brez podatka o uporabniku.
+  (`ok` / `cache` / `napaka` / `nedosegljiv`; pri OBA še `prazno` = Marprom je
+  odgovoril »ni podatkov«, `neznano` = Marprom je vrnil Status, ki ni ne 1 ne −1
+  (obravnava se kot napaka), `prekinjen` = klic, ki ga je prehitel drugi posrednik
+  (poizvedbe na zaslonu s statistiko in gretje ga ne štejejo), `zavora` =
+  omejevalnik), odzivni čas, število poskusov, `relay` / `relay2` ali `direct`,
+  oznaka države. Brez podatka o uporabniku.
 - **`POST /ev`** — dogodki iz aplikacije. Sprejmejo se samo znana imena in
   znane vrednosti razsežnosti; prosto besedilo se zavrže. Telo do 4 kB,
-  največ 20 dogodkov na zahtevo, zavora 600 dogodkov na minuto na izolat.
+  največ 20 dogodkov na zahtevo, 30 zahtev na minuto na IP, zavora 600 dogodkov
+  na minuto na izolat.
 
 Koordinate, naslov IP in identifikator naprave se ne zapisujejo nikoli. Zato
 ni piškotka in ni privolitvenega okna. V aplikaciji je pod **Nastavitve →

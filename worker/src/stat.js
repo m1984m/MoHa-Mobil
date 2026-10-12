@@ -99,15 +99,16 @@ export function poizvedbe(dni, zdaj = new Date()) {
     zaledjeDnevi: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
              SUM(_sample_interval) AS n,
-             sumIf(_sample_interval, blob4 = 'napaka' OR blob4 = 'nedosegljiv') AS napak,
+             sumIf(_sample_interval, blob4 = 'napaka' OR blob4 = 'nedosegljiv' OR blob4 = 'neznano') AS napak,
              quantileExactWeighted(0.5)(double1, _sample_interval) AS ms_p50
-      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 IN ('oba', 'ors') AND ${OD}
+      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 IN ('oba', 'ors') AND blob4 != 'prekinjen' AND ${OD}
       GROUP BY dan ORDER BY dan FORMAT JSON`,
-    // Najbolj gledana postajalisca (blob8 pri GetArrivalsForStopPoint).
+    // Najbolj gledana postajalisca (blob8 pri GetArrivalsForStopPoint). Brez
+    // 'prekinjen': poraženec rezerve je isti vpogled še enkrat.
     postaje: `
       SELECT blob8 AS postaja, SUM(_sample_interval) AS n
       FROM ${NABOR}
-      WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND ${OD}
+      WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND blob4 != 'prekinjen' AND ${OD}
       GROUP BY postaja ORDER BY n DESC LIMIT 60 FORMAT JSON`,
     zaledje: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,

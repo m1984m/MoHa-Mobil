@@ -27,6 +27,11 @@ export const OBA_METHODS = {
 // gremo, ker bi obljubljali avtobus, ki je že šel.
 export const STALE_MAX_MS = 90_000;
 
+// Odgovor »ni podatkov« (Status −1 pri živi metodi, glej razvrstiOdgovor) sme
+// ležati le kratko in nikoli kot zasilni: ponoči je pravilen (ni vozil), podnevi pa
+// je lahko muha Marproma, ki jo naslednji klic že popravi.
+export const TTL_PRAZNO = 20;
+
 // Glave, s katerimi se predstavimo Marpromu. Preverjeno 22.09.2026, da osip na
 // poti NI vezan nanje (z istim UA neposredno 10/10).
 export const OBA_HEADERS = {
@@ -50,13 +55,43 @@ export function kljucPredpomnilnika(method, parametri = {}) {
   return new Request(obaUrl(method, parametri), { method: 'GET' });
 }
 
-/** Odgovor, kakršen gre v predpomnilnik na robu (daljši max-age od TTL). */
-export function zaPredpomnilnik(body, ttl) {
-  return new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `public, max-age=${ttl + Math.round(STALE_MAX_MS / 1000)}`,
-    },
-  });
+/**
+ * Razvrsti telo odgovora OBA, preden gre komurkoli naprej ali v predpomnilnik.
+ *
+ * Marprom tudi napako vrne s statusom HTTP 200, napako pa zapiše v telo:
+ * {"Response":{"Status":-1,"Message":"Data is not available"}}. Prej je šlo vsako
+ * telo s 200 v predpomnilnik kot dober odgovor — tudi HTML ali prazno, GetLines
+ * pa tam leži 6 ur (aplikacija si seznam linij zapomni za celo sejo).
+ *
+ *   'ok'      Status 1 (pri GetLines še neprazen seznam linij)
+ *   'prazno'  živa metoda s Status −1: ni podatkov. Ponoči je to pravilen odgovor
+ *             (ni vozil in ni prihodov), enako za neobstoječe postajališče.
+ *   'neznano' Status, ki ni ne 1 ne −1 — obravnava se kot napaka, v statistiki pa
+ *             je viden posebej, da se novo vedenje Marproma opazi
+ *   'napaka'  vse drugo: HTML, prazno ali neveljavno telo, GetLines brez Status 1
+ */
+export function razvrstiOdgovor(method, body) {
+  let j;
+  try { j = JSON.parse(body); } catch { return 'napaka'; }
+  const status = j && j.Response ? j.Response.Status : undefined;
+  if (status === 1) {
+    if (method === 'GetLines' && !(Array.isArray(j.Lines) && j.Lines.length > 0)) return 'napaka';
+    return 'ok';
+  }
+  if (status === -1) return method !== 'GetLines' ? 'prazno' : 'napaka';
+  return status === undefined ? 'napaka' : 'neznano';
+}
+
+/**
+ * Odgovor, kakršen gre v predpomnilnik na robu (daljši max-age od TTL).
+ * `prazno` (odgovor »ni podatkov«) leži samo svoj TTL, brez zasilnega podaljška,
+ * in nosi oznako, da ga bralec loči od dobre kopije.
+ */
+export function zaPredpomnilnik(body, ttl, prazno = false) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': `public, max-age=${prazno ? ttl : ttl + Math.round(STALE_MAX_MS / 1000)}`,
+  };
+  if (prazno) headers['X-Oba-Prazno'] = '1';
+  return new Response(body, { status: 200, headers });
 }

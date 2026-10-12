@@ -32,11 +32,17 @@
  * dodatek, ki se obnese takrat, ko Cloudflare cron postavi bliže.
  */
 
-import { OBA_HEADERS, OBA_METHODS, kljucPredpomnilnika, obaUrl, zaPredpomnilnik } from './oba.js';
+import { OBA_HEADERS, OBA_METHODS, kljucPredpomnilnika, obaUrl, zaPredpomnilnik, razvrstiOdgovor } from './oba.js';
 import { zapisiGretje } from './analytics.js';
 
 const NABOR = 'moha_mobil';
-const KLJUC_KV = 'warm:postaje';
+// Seznam postaj v rabi si zapomnimo v pomnilniku izolata in v caches.default —
+// oboje je zastonj. Prej je šel v KV pod `warm:postaje` in se zapisal ob VSAKI
+// osvežitvi, tudi ponoči s praznim seznamom: 288 pisanj na dan od 1.000, ki jih
+// ima ves račun. Posledica predpomnilnika na lokaciji je le, da cron, ko teče iz
+// druge lokacije, poizvedbo v statistiko ponovi (do 10.000 poizvedb na dan).
+const KLJUC_SEZNAMA = 'https://warm.moha-mobil.cache/postaje';
+let spomin = null;              // { ob, ids }
 
 const NAJVEC_POSTAJ = 8;        // zgornja meja klicev proti Marpromu na minuto
 const OKNO_MIN = 30;            // katera postajališča so »v rabi«
@@ -57,19 +63,27 @@ async function kjeTecem() {
 
 /**
  * Katera postajališča so ljudje gledali v zadnjih OKNO_MIN minutah.
- * Rezultat se shrani v KV za SEZNAM_VELJA_MS, da se poizvedba v Analytics Engine
- * ne ponovi vsako minuto (branja so omejena na 10.000/dan).
+ * Rezultat velja SEZNAM_VELJA_MS, da se poizvedba v Analytics Engine ne ponovi
+ * vsako minuto (branja so omejena na 10.000/dan); glej KLJUC_SEZNAMA.
  */
 async function postajeVRabi(env) {
+  if (spomin && Date.now() - spomin.ob < SEZNAM_VELJA_MS) return spomin.ids;
+  const cache = caches.default;
   try {
-    const shranjeno = await env.ALARMS_KV.get(KLJUC_KV, 'json');
-    if (shranjeno && Date.now() - shranjeno.ob < SEZNAM_VELJA_MS) return shranjeno.ids;
-  } catch { /* KV ni na voljo — poskusimo naravnost v statistiko */ }
+    const hit = await cache.match(KLJUC_SEZNAMA);
+    const shranjeno = hit ? await hit.json() : null;
+    if (shranjeno && Array.isArray(shranjeno.ids) && Date.now() - shranjeno.ob < SEZNAM_VELJA_MS) {
+      spomin = shranjeno;
+      return shranjeno.ids;
+    }
+  } catch { /* predpomnilnik ni na voljo — poskusimo naravnost v statistiko */ }
 
+  // Brez vrstic 'prekinjen': klic, ki ga je prehitel drugi posrednik, je isti
+  // vpogled še enkrat in bi postajališče napihnil.
   const poizvedba = `
     SELECT blob8 AS postaja, SUM(_sample_interval) AS n
     FROM ${NABOR}
-    WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != ''
+    WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND blob4 != 'prekinjen'
       AND timestamp > NOW() - INTERVAL '${OKNO_MIN}' MINUTE
     GROUP BY postaja ORDER BY n DESC LIMIT ${NAJVEC_POSTAJ}
     FORMAT JSON`;
@@ -83,8 +97,11 @@ async function postajeVRabi(env) {
   const vrstice = (await res.json()).data ?? [];
   const ids = vrstice.map(v => String(v.postaja)).filter(id => /^\d{1,7}$/.test(id));
 
+  spomin = { ob: Date.now(), ids };
   try {
-    await env.ALARMS_KV.put(KLJUC_KV, JSON.stringify({ ob: Date.now(), ids }), { expirationTtl: 3600 });
+    await cache.put(KLJUC_SEZNAMA, new Response(JSON.stringify(spomin), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${SEZNAM_VELJA_MS / 1000}` },
+    }));
   } catch { /* zapis ni nujen; brez njega se poizvedba samo ponovi */ }
   return ids;
 }
@@ -104,7 +121,13 @@ async function osvezi(id, cache, ttl) {
       signal: AbortSignal.timeout(CAS_KLICA_MS),
     });
     if (!res.ok) return false;
-    await cache.put(kljuc, zaPredpomnilnik(await res.text(), ttl));
+    // Enako preverjanje kot na poti za uporabnika (razvrstiOdgovor): napaka v
+    // telesu s statusom 200 ni uspeh. Odgovor »ni podatkov« pomeni, da pot do
+    // Marproma dela, v predpomnilnik pa ne gre — tam bi prepisal dobro kopijo.
+    const telo = await res.text();
+    const vrsta = razvrstiOdgovor('GetArrivalsForStopPoint', telo);
+    if (vrsta !== 'ok' && vrsta !== 'prazno') return false;   // napaka ali neznan Status
+    if (vrsta === 'ok') await cache.put(kljuc, zaPredpomnilnik(telo, ttl));
     return true;
   } catch {
     return false;
@@ -114,8 +137,13 @@ async function osvezi(id, cache, ttl) {
 /**
  * Glavni vstop, kliče se iz `scheduled`. Nikoli ne vrže — ogrevanje ne sme
  * podreti cron-a, ki poganja tudi zvonjenja.
+ *
+ * @param {number} podzahtevki  koliko podzahtevkov sme porabiti (meja 50 na klic
+ *        velja za cel cron, glej PODZAHTEVKI_NA_KLIC v worker.js). Seznam postaj
+ *        stane do 3 (cache.match, poizvedba, cache.put), vsako postajališče do 3
+ *        (cache.match, fetch, cache.put) — temu primerno je postajališč manj.
  */
-export async function ogrejPredpomnilnik(env) {
+export async function ogrejPredpomnilnik(env, podzahtevki = Infinity) {
   if (!env.ANALYTICS || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return null;
 
   let ids;
@@ -125,6 +153,7 @@ export async function ogrejPredpomnilnik(env) {
     console.log('gretje: seznama postaj ni bilo mogoče dobiti — ' + String(e && e.message ? e.message : e));
     return null;
   }
+  ids = ids.slice(0, Math.max(0, Math.min(NAJVEC_POSTAJ, Math.floor((podzahtevki - 3) / 3))));
   if (!ids.length) {
     // Zapišemo tudi prazno rundo: sicer se »nihče ne uporablja aplikacije« ne loči
     // od »gretje se sploh ni izvedlo«, in to je prva stvar, ki jo človek pogleda.

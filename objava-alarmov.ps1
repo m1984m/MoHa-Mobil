@@ -61,13 +61,17 @@ if ([string]::IsNullOrWhiteSpace($kvId) -or $kvId -notmatch '^[0-9a-f]{32}$') {
 }
 
 $toml = Join-Path $worker 'wrangler.toml'
-$vsebina = Get-Content $toml -Raw
+# Branje in pisanje izrecno kot UTF-8 BREZ BOM. Get-Content v PowerShell 5.1 bere
+# datoteko brez BOM kot cp1250 in Set-Content -Encoding utf8 zapise BOM: tako so
+# sumniki v komentarjih wrangler.toml postali dvojno kodirana nesnaga (popravljeno
+# 12.10.2026). Ta skripta sama mora ostati cisti ASCII (glej glavo).
+$utf8 = New-Object System.Text.UTF8Encoding $false
+$vsebina = [IO.File]::ReadAllText($toml, $utf8)
 if ($vsebina -notmatch '<VPISI_PO_wrangler_kv_namespace_create>') {
   Write-Host "V wrangler.toml ni vec oznake za vpis - id je ocitno ze vpisan. Preskakujem." -ForegroundColor Yellow
 } else {
   Copy-Item $toml "$toml.bak" -Force
-  ($vsebina -replace '<VPISI_PO_wrangler_kv_namespace_create>', $kvId) |
-    Set-Content $toml -Encoding utf8 -NoNewline
+  [IO.File]::WriteAllText($toml, ($vsebina -replace '<VPISI_PO_wrangler_kv_namespace_create>', $kvId), $utf8)
   Write-Host "Vpisano v wrangler.toml (varnostna kopija: wrangler.toml.bak)." -ForegroundColor Green
 }
 

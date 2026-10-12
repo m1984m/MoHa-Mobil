@@ -91,7 +91,37 @@ curl -H "Origin: https://m1984m.github.io" \
 ```
 
 Posrednik sam odgovori na `/health` brez ključa; vse ostalo brez pravilne glave
-`x-relay-key` dobi 403.
+`x-relay-key` dobi 403 (ključ se primerja v stalnem času, metode po
+`Object.hasOwn` — `/oba/toString` je 404, ne klic na Marprom).
+
+**Preverjanje telesa (12.10.2026).** Marprom tudi napako vrne s HTTP 200
+(`{"Response":{"Status":-1,...}}`). Posrednik zato telo razvrsti enako kot Worker
+(`razvrstiOdgovor` v `worker/src/oba.js`): `Status: 1` gre v predpomnilnik,
+`Status: -1` pri živi metodi gre naprej kot 200, a **ne** v predpomnilnik (ponoči je
+to pravilen odgovor, kako dolgo ga hraniti, odloči Worker), vse drugo (HTML, prazno,
+`GetLines` brez `Status: 1`) je 502 in se ne shrani; neznan `Status` (ne 1 ne -1) je
+prav tako 502, z glavo `X-Relay-Razlog: neznano`, da ga Worker v statistiki pokaže
+posebej (stari Worker glavo prezre). Na Marprom čaka največ **3,5 s**
+(prej 8 s): Worker po 0,8 s isti klic pošlje še drugemu posredniku in vsakemu da
+4 s, zato mora posrednik odnehati prej. Isto velja za `../relay-vercel/` — po
+spremembi je treba objaviti **oba**.
+
+**ORS (12.10.2026).** Tudi openrouteservice tiho zavrže promet s Cloudflara, zato
+posrednik nosi še pešpoti. Sprejme samo `POST` na natanko dve poti:
+
+| Pot pri posredniku | Gre na |
+|---|---|
+| `/ors/directions/foot-walking/geojson` | `https://api.openrouteservice.org/v2/directions/foot-walking/geojson` |
+| `/ors/matrix/foot-walking` | `https://api.openrouteservice.org/v2/matrix/foot-walking` |
+
+Zahteva mora imeti `x-relay-key` (primerjava v stalnem času, kot pri OBA) in
+`x-ors-key` (ključ ORS, ki ga pošlje Worker; posrednik ga ne hrani in ne beleži),
+telo največ 8 kB. ORS dobi `Authorization: <x-ors-key>` in `Content-Type:
+application/json`, čaka se največ 2 s (Worker da posredniku vsaj 2,35 s). Status, telo in Content-Type gredo nazaj
+nespremenjeni, **brez predpomnjenja**, z oznako `X-Relay-Ors: 1` — po njej Worker loči
+odgovor ORS (tudi 4xx) od posrednikove napake (403, 404, 405, 502). Vse drugo (GET
+na `/ors`, POST na `/oba`, druga pot, manjkajoč ključ) se zavrne brez klica na ORS.
+OBA se ni spremenil.
 
 Izmerjeno ob objavi 20.09.2026: posrednik do Marproma 0,45 s, cela veriga prek
 Workerja 0,35 do 0,83 s, v aplikaciji na GitHub Pages 11 klicev OBA in vsi 200.

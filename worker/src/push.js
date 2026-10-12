@@ -25,6 +25,9 @@
 
 const te = new TextEncoder();
 
+// Koliko sme čakati en potisk. Potisne storitve odgovorijo v delčku sekunde.
+const PUSH_TIMEOUT_MS = 5000;
+
 // ── Pretvorbe bajtov ─────────────────────────────────────────────────────────
 
 /** base64url (brez obrobnih `=`) → bajti. */
@@ -160,7 +163,8 @@ export async function encryptPayload(subscription, payloadText) {
  * @param {object} env         Okolje Workerja (VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT).
  * @param {number} ttl         Koliko sekund naj potisna storitev čaka na napravo.
  * @returns {Promise<{ok: boolean, status: number}>}
- *          `status` 0 pomeni, da zahteva sploh ni odšla (kripto ali omrežna napaka).
+ *          `status` 0 pomeni, da zahteva ni odšla ali ni dobila odgovora (kripto ali
+ *          omrežna napaka, iztek PUSH_TIMEOUT_MS).
  *          `status` 404 ali 410 pomeni, da je naročnina mrtva — kličoči jo mora izbrisati.
  */
 export async function sendPush(subscription, payloadObj, env, ttl = 600) {
@@ -185,6 +189,10 @@ export async function sendPush(subscription, payloadObj, env, ttl = 600) {
         'Urgency': 'high',
       },
       body,
+      // Brez meje je ena viseča potisna storitev ustavila ves zagon crona in vsa
+      // obvestila za njo. Iztek časa vrne status 0 = prehodna napaka (processDue
+      // poskusi znova), ne mrtva naročnina — to sta le 404 in 410.
+      signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
     });
     return { ok: res.status >= 200 && res.status < 300, status: res.status };
   } catch {
