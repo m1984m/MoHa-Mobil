@@ -58,7 +58,12 @@
     font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line);
     border-radius: 10px; padding: 0 12px; min-height: 40px; touch-action: manipulation;
   }
-  input[type=search] { flex: 1; min-width: 0; }
+  /* width:0 + flex-basis 0: brez tega polje ostane pri privzeti širini in gumb
+     »Sledi« pri 390 px pade čez rob. */
+  input[type=search] { flex: 1 1 0; width: 0; min-width: 0; }
+  #dan { flex: 0 1 auto; min-width: 0; max-width: 46%; }
+  #stikaloSledi { white-space: nowrap; }
+  #stikaloSledi[aria-pressed="true"] { background: var(--sel); border-color: var(--accent); color: var(--accent); font-weight: 600; }
   button { cursor: pointer; }
   button.glavni { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
   .ploscice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
@@ -125,6 +130,7 @@
     <div class="vrsta">
       <select id="dan" aria-label="Dan"></select>
       <input id="isci" type="search" placeholder="Bus ali linija" aria-label="Išči bus ali linijo">
+      <button id="stikaloSledi" type="button" aria-pressed="true" title="Poti vseh vozil čez dan">Sledi</button>
     </div>
   </header>
   <div class="ploscice">
@@ -174,6 +180,9 @@
 
   const beriKljuc = () => { try { return localStorage.getItem(KLJUC) ?? ''; } catch { return ''; } };
   const pisiKljuc = (v) => { try { v ? localStorage.setItem(KLJUC, v) : localStorage.removeItem(KLJUC); } catch {} };
+  const KLJUC_SLEDI = 'mm.spremljanje.sledi';
+  function beriSledi() { try { return localStorage.getItem(KLJUC_SLEDI) !== '0'; } catch { return true; } }
+  const pisiSledi = (v) => { try { localStorage.setItem(KLJUC_SLEDI, v ? '1' : '0'); } catch {} };
 
   const s = {
     kljuc: beriKljuc(),
@@ -187,6 +196,10 @@
     izbran: null,
     oznake: new Map(),     // bus -> maplibregl.Marker
     isci: '',
+    sledi: beriSledi(),    // poti vseh vozil na karti (stikalo »Sledi«)
+    poti: new Map(),       // bus -> [[lon, lat, prekinitev], …]
+    potiDan: '',           // dan, za katerega so naložene poti
+    potiOd: 0,             // zadnja naložena točka (s) — naslednji klic vzame samo novejše
   };
 
   // ── Karta ──────────────────────────────────────────────────────────────────
@@ -200,6 +213,8 @@
   karta.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   const kartaPripravljena = new Promise(r => karta.on('load', r));
   kartaPripravljena.then(() => {
+    karta.addSource('sledi', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    karta.addLayer({ id: 'sledi', type: 'line', source: 'sledi', paint: { 'line-color': ['get', 'barva'], 'line-width': 2.5, 'line-opacity': 0.55 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
     karta.addSource('pot', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     karta.addLayer({ id: 'pot-obroba', type: 'line', source: 'pot', paint: { 'line-color': '#fff', 'line-width': 7, 'line-opacity': .8 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
     karta.addLayer({ id: 'pot', type: 'line', source: 'pot', paint: { 'line-color': ['get', 'barva'], 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
@@ -262,6 +277,50 @@
     }
     izrisi();
     if (s.izbran) naloziPot(s.izbran);
+  }
+
+  // Sledi: prvič cel dan, nato vsako minuto samo nove točke (od zadnje naložene).
+  async function naloziSledi() {
+    if (!s.sledi) return;
+    const dan = s.dan;
+    const od = s.potiDan === dan ? s.potiOd : 0;
+    try {
+      const j = await api(`/spremljanje/poti?dan=${dan}${od ? `&od=${od}` : ''}`);
+      if (s.dan !== dan || !s.sledi) return;
+      if (!j.rep || s.potiDan !== dan) { s.poti = new Map(); s.potiOd = 0; }
+      s.potiDan = dan;
+      for (const [bus, besedilo] of Object.entries(j.poti)) {
+        let tocke = s.poti.get(bus);
+        if (!tocke) s.poti.set(bus, tocke = []);
+        for (const del of besedilo.split(';')) {
+          const prek = del.startsWith('!');
+          const [t, lat, lon] = (prek ? del.slice(1) : del).split(',').map(Number);
+          if (!Number.isFinite(t) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          tocke.push([lon, lat, prek ? 1 : 0]);
+          if (t > s.potiOd) s.potiOd = t;
+        }
+      }
+      izrisiSledi();
+    } catch { /* sledi ostanejo, kot so bile */ }
+  }
+
+  async function izrisiSledi() {
+    await kartaPripravljena;
+    const features = [];
+    if (s.sledi) for (const [bus, tocke] of s.poti) {
+      const deli = [];
+      for (const [lon, lat, prek] of tocke) {
+        if (prek || !deli.length) deli.push([]);
+        deli.at(-1).push([lon, lat]);
+      }
+      const koord = deli.filter(d => d.length > 1);
+      if (!koord.length) continue;
+      const idLinije = s.zivo.get(bus)?.LineId ?? s.km.get(bus)?.linije?.at(-1);
+      features.push({ type: 'Feature', properties: { bus, barva: linija(idLinije).barva }, geometry: { type: 'MultiLineString', coordinates: koord } });
+    }
+    karta.getSource('sledi').setData({ type: 'FeatureCollection', features });
+    // Ob izbranem vozilu se ostale sledi umaknejo v ozadje.
+    karta.setPaintProperty('sledi', 'line-opacity', s.izbran ? 0.22 : 0.55);
   }
 
   async function naloziPot(bus) {
@@ -370,6 +429,7 @@
     const { k, z } = v;
     const vrstice = [];
     vrstice.push(['Danes', `${fmtKm(v.km)} km`]);
+    if (k && k.km > 0.05) vrstice.push(['Po trasi', `${Math.round(100 * Math.min(1, (k.kmTrasa ?? 0) / k.km))} % kilometrov`]);
     if (k) {
       const cas = k.zadnja - k.prva;
       vrstice.push(['Na terenu', `${fmtUra.format(new Date(k.prva))}–${fmtUra.format(new Date(k.zadnja))} (${trajanje(cas)})`]);
@@ -394,6 +454,7 @@
     s.izbran = bus;
     kartaPripravljena.then(() => karta.getSource('pot').setData({ type: 'FeatureCollection', features: [] }));
     izrisi();
+    kartaPripravljena.then(() => karta.setPaintProperty('sledi', 'line-opacity', bus ? 0.22 : 0.55));
     if (!bus) return;
     const v = vozila().find(x => x.bus === bus);
     if (v && Number.isFinite(v.lat)) karta.flyTo({ center: [v.lon, v.lat], zoom: Math.max(karta.getZoom(), 14), essential: true });
@@ -419,14 +480,26 @@
     if (b) izberi(b.dataset.bus === s.izbran ? null : b.dataset.bus);
   });
   $('isci').addEventListener('input', (e) => { s.isci = e.target.value; izrisi(); });
+  const stikalo = $('stikaloSledi');
+  stikalo.setAttribute('aria-pressed', String(s.sledi));
+  stikalo.addEventListener('click', () => {
+    s.sledi = !s.sledi;
+    pisiSledi(s.sledi);
+    stikalo.setAttribute('aria-pressed', String(s.sledi));
+    if (s.sledi) { s.potiDan = ''; naloziSledi(); }
+    else { s.poti = new Map(); s.potiDan = ''; izrisiSledi(); }
+  });
   $('dan').addEventListener('change', (e) => {
     s.dan = e.target.value;
     s.slediDanes = s.dan === danes();
     s.izbran = null;
     s.km = new Map();
+    s.poti = new Map(); s.potiDan = '';
+    izrisiSledi();
     nastaviStanje();
     osveziKm();
     osveziZivo();
+    naloziSledi();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { osveziZivo(); osveziKm(); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && s.izbran) izberi(null); });
@@ -451,11 +524,13 @@
     if (!s.kljuc || tece) return;
     tece = true;
     osveziZivo();
+    naloziSledi();
     setInterval(osveziZivo, ZIVO_MS);
     setInterval(() => {
       // Kdor gleda »Danes«, po polnoči preide na nov dan; pretekli dan ostane izbran.
-      if (s.slediDanes && s.dan !== danes()) { s.dan = danes(); s.izbran = null; s.km = new Map(); }
+      if (s.slediDanes && s.dan !== danes()) { s.dan = danes(); s.izbran = null; s.km = new Map(); s.poti = new Map(); s.potiDan = ''; }
       osveziKm(true);
+      naloziSledi();
     }, KM_MS);
   }
 
