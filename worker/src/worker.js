@@ -42,6 +42,7 @@ import {
 } from './oba.js';
 import { ogrejPredpomnilnik } from './warm.js';
 import { handleTts } from './tts.js';
+import { zabeleziVozila, handleSpremljanje } from './spremljanje.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
 // Pot Cloudflare → vozniredi.marprom.si je NEZANESLJIVA in to niha po urah.
@@ -392,6 +393,44 @@ function klicNavzgor(cilji, poskus, stej, { zamik, skupaj, razdeli = false }) {
   });
 }
 
+// Cilji enega klica OBA: posredniki iz OBA_RELAY po vrsti ali Marprom neposredno.
+// Isti seznam uporabljata pot za uporabnika (handleOba) in cron za spremljanje.
+function obaCilji(env, method, upstream) {
+  const relays = posredniki(env);
+  return relays.length
+    ? relays.map((relay, i) => {
+        const viaRelay = new URL(relay + '/oba/' + method);
+        for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
+        return {
+          url: viaRelay.toString(),
+          headers: { ...OBA_HEADERS, 'x-relay-key': String(env.RELAY_KEY ?? '') },
+          preko: i === 0 ? 'relay' : 'relay' + (i + 1),
+          kljuc: relay,
+          najvec: OBA_TIMEOUT_MS,
+        };
+      })
+    : [{ url: upstream.toString(), headers: { ...OBA_HEADERS }, preko: 'direct', kljuc: 'direct', najvec: OBA_TIMEOUT_MS }];
+}
+
+/**
+ * Pozicije vozil za cron (spremljanje.js): klic prek istih ciljev kot za
+ * uporabnika. Dober odgovor gre tudi v oba predpomnilnika, da ga aplikacija v
+ * naslednjih 30 s dobi brez novega klica na posrednika. Vrne telo ali null.
+ * Nikoli ne vrže.
+ */
+async function vozilaZaCron(env) {
+  const method = 'GetActiveDeviceDetails';
+  const ttl = OBA_METHODS[method];
+  const upstream = new URL(`${OBA_BASE}/${method}`);
+  const izid = await klicNavzgor(obaCilji(env, method, upstream),
+    (c, ctl, ms) => poskusiCilj(c, method, ctl, ms), () => {},
+    { zamik: ZAMIK_REZERVE_MS, skupaj: OBA_SKUPAJ_MS }).catch(() => null);
+  if (!izid || izid.vrsta !== 'ok') return null;
+  memPut(upstream.toString(), izid.telo, ttl);
+  try { await caches.default.put(kljucPredpomnilnika(method), zaPredpomnilnik(izid.telo, ttl)); } catch { /* ostane v pomnilniku izolata */ }
+  return izid.telo;
+}
+
 async function handleOba(request, env, ctx, path, cors) {
   const method = path.replace(/^\/oba\//, '');
   // Object.hasOwn in ne `OBA_METHODS[method] === undefined`: podedovana imena
@@ -479,20 +518,7 @@ async function handleOba(request, env, ctx, path, cors) {
   // OBA_RELAY je seznam posrednikov, ločen z vejicami, v vrstnem redu poskusov
   // (Deno, nato Vercel). Ob napaki prvega gre isti klic na drugega — septembra je
   // Deno po dveh dneh porabil kvoto in prihodi so utihnili, ker rezerve ni bilo.
-  const relays = posredniki(env);
-  const cilji = relays.length
-    ? relays.map((relay, i) => {
-        const viaRelay = new URL(relay + '/oba/' + method);
-        for (const [k, v] of upstream.searchParams) viaRelay.searchParams.set(k, v);
-        return {
-          url: viaRelay.toString(),
-          headers: { ...OBA_HEADERS, 'x-relay-key': String(env.RELAY_KEY ?? '') },
-          preko: i === 0 ? 'relay' : 'relay' + (i + 1),
-          kljuc: relay,
-          najvec: OBA_TIMEOUT_MS,
-        };
-      })
-    : [{ url: upstream.toString(), headers: { ...OBA_HEADERS }, preko: 'direct', kljuc: 'direct', najvec: OBA_TIMEOUT_MS }];
+  const cilji = obaCilji(env, method, upstream);
   const preko = cilji.map(c => c.preko).join('>');
 
   // Shrani veljaven izid klica in pove, kaj naj dobi uporabnik. Odgovor »ni
@@ -766,6 +792,10 @@ const PODZAHTEVKI_REZERVA = 2;
 // pa ostanek. Z OBA_RELAY gretja ni, ker kliče Marprom neposredno.
 const PODZAHTEVKI_GRETJE = 16;
 const PODZAHTEVKI_ZA_ZAPIS = 4;   // branje + potisk + zapis nazaj + 1 rezerve
+// Spremljanje vozil (spremljanje.js) teče za zvonjenji v istem klicu: dva vzorca po
+// največ dva posrednika in zapis v predpomnilnik, nato branje in paketni zapis v
+// D1 (ob 3h še čiščenje). Toliko podzahtevkov se zvonjenjem odvzame vnaprej.
+const PODZAHTEVKI_SPREMLJANJE = 10;
 
 // Endpoint naročnine sme kazati samo na znano potisno storitev. Brez tega bi bil
 // /alarms/sync orodje, s katerim bi kdorkoli pošiljal poljubne zahteve z naslova
@@ -1275,6 +1305,7 @@ async function usmeri(request, env, ctx, cors) {
   if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
   if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);
   if (path === '/tts') return handleTts(request, env, ctx, cors);
+  if (path === '/spremljanje' || path.startsWith('/spremljanje/')) return handleSpremljanje(request, env, path, cors);
 
   return json({ error: 'not found' }, 404, cors);
 }
@@ -1303,14 +1334,22 @@ export default {
     // takrat ne teče, alarmi pa dobijo vse podzahtevke (glej PODZAHTEVKI_NA_KLIC).
     const greje = posredniki(env).length === 0;
     const zaGretje = greje ? PODZAHTEVKI_GRETJE : 0;
-    const zvonjenja = runDueAlarms(env, PODZAHTEVKI_NA_KLIC - PODZAHTEVKI_REZERVA - zaGretje).catch(e => {
+    const zaSpremljanje = env.SPREMLJANJE_DB ? PODZAHTEVKI_SPREMLJANJE : 0;
+    const zvonjenja = runDueAlarms(env, PODZAHTEVKI_NA_KLIC - PODZAHTEVKI_REZERVA - zaGretje - zaSpremljanje).catch(e => {
       console.log('alarms cron: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
     });
     // Ogrevanje teče vzporedno z zvonjenji in ju ne sme podreti.
     const gretje = !greje ? Promise.resolve(null) : ogrejPredpomnilnik(env, zaGretje).catch(e => {
       console.log('gretje: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
     });
-    const work = Promise.all([zvonjenja, gretje]);
+    // Spremljanje vozil (kilometri za zasebno stran) začne šele, ko so zvonjenja
+    // končana: brezplačni paket ima 10 ms procesorja na klic, in če bi ga spremljanje
+    // kdaj preseglo, so obvestila takrat že poslana in zapisana — izgubi se samo
+    // ena minuta spremljanja. Ločen sprožilec ne gre (glej [triggers]).
+    const work = Promise.all([zvonjenja, gretje]).then(() => zabeleziVozila(env, () => vozilaZaCron(env)))
+      .catch(e => {
+        console.log('spremljanje: nepričakovana napaka — ' + String(e && e.message ? e.message : e));
+      });
     ctx.waitUntil(work);
     await work;
   },

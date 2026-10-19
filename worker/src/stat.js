@@ -19,8 +19,9 @@ const NABOR = 'moha_mobil';
 const CACHE_MS = 60_000;      // branja so omejena (10.000/dan); minuta je dovolj sveže
 let cache = new Map();        // 'dni' -> { ob, telo }
 
-// Primerjava, ki ne izda dolžine ujemanja po času izvajanja.
-function enakaKljuca(a, b) {
+// Primerjava, ki ne izda dolžine ujemanja po času izvajanja. Uporablja jo tudi
+// spremljanje.js (isto geslo).
+export function enakaKljuca(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   if (a.length !== b.length) return false;
   let r = 0;

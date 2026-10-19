@@ -50,11 +50,28 @@ VAPID_SUBJECT = "mailto:matej.moharic@gmail.com"
 binding = "ALARMS_KV"
 id = "e911212a8da84372b3feed1002153230"
 
+# Spremljanje vozil (src/spremljanje.js): kilometri po avtobusih za zasebno stran
+# /MoHa-Mobil/spremljanje/. Shema je v spremljanje.sql (enkrat:
+# npx wrangler d1 execute moha-spremljanje --remote --file spremljanje.sql).
+# Brez te vezave cron spremljanja ne izvaja, /spremljanje vrne 503.
+[[d1_databases]]
+binding = "SPREMLJANJE_DB"
+database_name = "moha-spremljanje"
+database_id = "6e3218a0-091d-4e87-a5e9-c72a956ef6c0"
+
 # Cron vsako minuto: pošlje zapadla obvestila. Cloudflare zagona ne jamči na
 # sekundo natančno (zamik nekaj deset sekund je običajen) — zato Worker pobere
 # tudi zvonjenja, ki zapadejo v naslednjih 30 s.
+# En sam urnik: drugi enakovreden niz (npr. */1) Cloudflare združi s tem in ga
+# nikoli ne sproži posebej (preverjeno 19.10.2026, 8 minut brez enega zagona).
 [triggers]
 crons = ["* * * * *"]
+
+# Zgornja meja procesorja na klic (racun je na Workers Paid, privzeto 30 s, najvec
+# 5 min). Cron s spremljanjem porabi ~10 ms, posamezen klic aplikacije nekaj ms;
+# 2 s je dalec nad tem in ustavi le zanko, ki bi sicer trosila placljiv procesor.
+[limits]
+cpu_ms = 2000
 
 [observability]
 enabled = true
@@ -112,6 +129,18 @@ namespace_id = "7103"
 [[ratelimits]]
 name = "EV_LIMITER"
 namespace_id = "7104"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Omejevalnik za /spremljanje na naslov IP (ugibanje gesla). Glavo Origin lahko
+# ponaredi vsak odjemalec razen brskalnika, zato je to edina zavora pred
+# poskušanjem gesel. Zasebna stran pošlje ~2 zahtevi na minuto (kilometri vsako
+# minuto, pot ob izbiri vozila).
+[[ratelimits]]
+name = "STAT_LIMITER"
+namespace_id = "7105"
 
   [ratelimits.simple]
   limit = 30
