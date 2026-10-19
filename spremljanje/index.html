@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Spremljanje vozil</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<!--
+  Zasebna stran: položaji avtobusov v živo in prevoženi kilometri po vozilih.
+  Ni povezana iz aplikacije. Podatke o kilometrih da Worker samo z geslom
+  (isto kot zaslon s statistiko, ključ mm.statKey.v1 na istem izvoru), zbira pa
+  jih cron v Workerju (worker/src/spremljanje.js). Paket aplikacije se ne dotika:
+  datoteka gre iz public/ nespremenjena na GitHub Pages.
+-->
+<!-- SRI: na tem izvoru je shranjeno geslo, zato tuj skript brez kontrolne vsote ne sme teči.
+     Vsota je ista kot za node_modules/maplibre-gl@5.23.0 (preverjeno 19.10.2026). -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.23.0/dist/maplibre-gl.css"
+  integrity="sha384-uTttxo/aOKbdE5RlD/SPzSDoDmNvGlUYPjONi2MN/b7c9HPSvW07OIuyP7uL6jxK" crossorigin="anonymous">
+<script src="https://unpkg.com/maplibre-gl@5.23.0/dist/maplibre-gl.js"
+  integrity="sha384-XUm39RJVRRZhhm3KBfi4/fn/dxDBFEa1wA/yRSYhlb83K5ggl6ApLqbfwcJFlK/W" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #F5F5F7; --surface: #FFFFFF; --surface-2: #F2F2F7; --line: #E5E5EA;
+    --text: #1C1C1E; --muted: #6E6E73; --accent: #D32027; --ok: #1E8E3E; --warn: #A85700;
+    --sel: rgba(211, 32, 39, .08);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000000; --surface: #1C1C1E; --surface-2: #2C2C2E; --line: #3A3A3C;
+      --text: #F2F2F7; --muted: #AEAEB2; --accent: #EF4F54; --ok: #4CC26B; --warn: #F0A33A;
+      --sel: rgba(239, 79, 84, .14);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-columns: 1fr 400px; height: 100dvh; overflow: hidden;
+  }
+  #karta { position: relative; min-height: 0; }
+  #panel { background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  @media (max-width: 860px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 52dvh 1fr; }
+    #panel { border-left: 0; border-top: 1px solid var(--line); }
+  }
+  header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .stanje { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .pika { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pika.ziv { background: var(--ok); }
+  .pika.star { background: var(--warn); }
+  .vrsta { display: flex; gap: 8px; }
+  select, input[type=search], input[type=password], button {
+    font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 0 12px; min-height: 40px; touch-action: manipulation;
+  }
+  input[type=search] { flex: 1; min-width: 0; }
+  button { cursor: pointer; }
+  button.glavni { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+  .ploscice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+  .ploscica { background: var(--surface); padding: 10px 12px; }
+  .ploscica b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .ploscica span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  #seznam { overflow-y: auto; flex: 1; min-height: 0; }
+  .vozilo {
+    display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none;
+    text-align: left; min-height: 56px;
+  }
+  .vozilo:hover { background: var(--surface-2); }
+  .vozilo.izbran { background: var(--sel); }
+  .vozilo.neaktiven { opacity: .55; }
+  .vozilo .bus { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .vozilo .podrobno { font-size: 12px; color: var(--muted); }
+  .vozilo .km { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+  .vozilo .km small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+  .znacka { display: inline-block; min-width: 30px; padding: 1px 6px; border-radius: 6px; font-size: 12px; font-weight: 700; text-align: center; margin-right: 3px; }
+  .prazno { padding: 24px 16px; color: var(--muted); text-align: center; }
+  #podrobnosti {
+    position: absolute; left: 12px; bottom: 12px; z-index: 2; width: min(340px, calc(100% - 24px));
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  }
+  #podrobnosti[hidden] { display: none; }
+  #podrobnosti .naslov { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; }
+  #podrobnosti .naslov button { margin-left: auto; min-height: 44px; padding: 0 12px; }
+  @media (max-width: 860px) {
+    body { grid-template-rows: 58dvh 1fr; }
+    #podrobnosti { bottom: 30px; left: 8px; width: calc(100% - 16px); padding: 8px 12px; }
+    #podrobnosti .naslov { font-size: 15px; }
+    #podrobnosti dl { font-size: 12px; gap: 1px 10px; margin-top: 4px; }
+  }
+  #podrobnosti dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 8px 0 0; font-size: 13px; }
+  #podrobnosti dt { color: var(--muted); }
+  #podrobnosti dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .oznaka {
+    font: 700 12px/1 -apple-system, "Segoe UI", Roboto, sans-serif; padding: 4px 6px; border-radius: 8px;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); white-space: nowrap; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .oznaka.izbran { transform: scale(1.25); border-color: var(--accent); z-index: 5; }
+  .oznaka.neaktiven { opacity: .5; }
+  #prijava {
+    position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-items: center; padding: 16px;
+  }
+  #prijava[hidden] { display: none; }
+  #prijava form { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; width: min(360px, 100%); display: grid; gap: 10px; }
+  #prijava h2 { margin: 0; font-size: 18px; }
+  #prijava p { margin: 0; color: var(--muted); font-size: 13px; }
+  #napaka { color: var(--accent); font-size: 13px; min-height: 1em; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="karta">
+  <div id="podrobnosti" hidden></div>
+</div>
+<aside id="panel">
+  <header>
+    <h1>Spremljanje vozil <span class="stanje"><span class="pika" id="pika"></span><span id="stanje">nalagam …</span></span></h1>
+    <div class="vrsta">
+      <select id="dan" aria-label="Dan"></select>
+      <input id="isci" type="search" placeholder="Bus ali linija" aria-label="Išči bus ali linijo">
+    </div>
+  </header>
+  <div class="ploscice">
+    <div class="ploscica"><b id="pVozil">–</b><span>vozil</span></div>
+    <div class="ploscica"><b id="pKm">–</b><span>km skupaj</span></div>
+    <div class="ploscica"><b id="pPovp">–</b><span>km / vozilo</span></div>
+    <div class="ploscica"><b id="pZdaj">–</b><span>zdaj vozi</span></div>
+  </div>
+  <div id="seznam"></div>
+</aside>
+
+<div id="prijava" hidden>
+  <form id="obrazec">
+    <h2>Spremljanje vozil</h2>
+    <p>Geslo je isto kot za zaslon s statistiko v aplikaciji.</p>
+    <input id="geslo" type="password" autocomplete="current-password" placeholder="Geslo" required>
+    <div id="napaka"></div>
+    <button class="glavni" type="submit">Odpri</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  // ?api=http://127.0.0.1:8799 velja samo lokalno (preizkus z `wrangler dev`) in samo
+  // za naslov na tem računalniku — geslo ne sme oditi na tuj strežnik.
+  const API = (() => {
+    const privzeto = 'https://moha-mobil-proxy.meteleni.workers.dev';
+    if (location.hostname !== 'localhost') return privzeto;
+    try {
+      const u = new URL(new URLSearchParams(location.search).get('api') ?? '');
+      return ['127.0.0.1', 'localhost'].includes(u.hostname) ? u.origin : privzeto;
+    } catch { return privzeto; }
+  })();
+  const KLJUC = 'mm.statKey.v1';           // isti ključ kot src/lib/stats.ts
+  const ZIVO_MS = 15_000, KM_MS = 60_000;
+  const TZ = 'Europe/Ljubljana';
+
+  const $ = (id) => document.getElementById(id);
+  const fmtUra = new Intl.DateTimeFormat('sl-SI', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  const fmtUraS = new Intl.DateTimeFormat('sl-SI', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const fmtDan = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const fmtDanLep = new Intl.DateTimeFormat('sl-SI', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric' });
+  const fmtKm = (km) => km.toLocaleString('sl-SI', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const danes = () => fmtDan.format(new Date());
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const beriKljuc = () => { try { return localStorage.getItem(KLJUC) ?? ''; } catch { return ''; } };
+  const pisiKljuc = (v) => { try { v ? localStorage.setItem(KLJUC, v) : localStorage.removeItem(KLJUC); } catch {} };
+
+  const s = {
+    kljuc: beriKljuc(),
+    dan: danes(),
+    slediDanes: true,
+    linije: new Map(),     // LineId -> { koda, barva }
+    postaje: new Map(),    // StopPointId -> ime
+    zivo: new Map(),       // bus -> vozilo iz GetActiveDeviceDetails
+    zivoOb: 0,
+    km: new Map(),         // bus -> vrstica iz /spremljanje
+    izbran: null,
+    oznake: new Map(),     // bus -> maplibregl.Marker
+    isci: '',
+  };
+
+  // ── Karta ──────────────────────────────────────────────────────────────────
+  const temna = matchMedia('(prefers-color-scheme: dark)').matches;
+  const karta = new maplibregl.Map({
+    container: 'karta',
+    style: temna ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+                 : 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    center: [15.6467, 46.5547], zoom: 12.3, attributionControl: { compact: true },
+  });
+  karta.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  const kartaPripravljena = new Promise(r => karta.on('load', r));
+  kartaPripravljena.then(() => {
+    karta.addSource('pot', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    karta.addLayer({ id: 'pot-obroba', type: 'line', source: 'pot', paint: { 'line-color': '#fff', 'line-width': 7, 'line-opacity': .8 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
+    karta.addLayer({ id: 'pot', type: 'line', source: 'pot', paint: { 'line-color': ['get', 'barva'], 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
+  });
+
+  function svetla(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return false;
+    const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6;
+  }
+  const linija = (id) => s.linije.get(id) ?? { koda: id == null ? '?' : String(id), barva: '#6E6E73' };
+  const znacka = (id) => { const l = linija(id); return `<span class="znacka" style="background:${l.barva};color:${svetla(l.barva) ? '#1C1C1E' : '#fff'}">${esc(l.koda)}</span>`; };
+
+  // ── Klici ──────────────────────────────────────────────────────────────────
+  async function api(pot) {
+    const res = await fetch(API + pot, { headers: { 'x-stat-key': s.kljuc }, cache: 'no-store' });
+    if (res.status === 401) { pisiKljuc(''); s.kljuc = ''; prijava('Napačno geslo.'); throw new Error('401'); }
+    if (!res.ok) throw new Error(`${pot} ${res.status}`);
+    return res.json();
+  }
+
+  async function naloziOsnove() {
+    const [l, p] = await Promise.allSettled([
+      fetch(API + '/oba/GetLines').then(r => r.json()),
+      fetch('../gtfs/stops.json').then(r => r.json()),
+    ]);
+    // Barva gre v atribut style: sprejme se samo #rrggbb, sicer bi lahko pokvarjen
+    // ali zlonameren odgovor OBA vstavil HTML na izvor, kjer je shranjeno geslo.
+    if (l.status === 'fulfilled') for (const x of l.value.Lines ?? []) {
+      const c = String(x.Color ?? '').trim().replace(/^#?/, '#');
+      s.linije.set(x.LineId, { koda: String(x.Code ?? x.LineId), barva: /^#[0-9a-f]{6}$/i.test(c) ? c : '#6E6E73' });
+    }
+    if (p.status === 'fulfilled') for (const x of p.value) s.postaje.set(x.id, x.name);
+  }
+
+  async function osveziZivo() {
+    if (s.dan !== danes() || document.hidden) return;
+    try {
+      const res = await fetch(API + '/oba/GetActiveDeviceDetails', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const j = await res.json();
+      s.zivo = new Map((j.Vehicles ?? []).filter(v => v.BusCode && v.Lat && v.Lon).map(v => [String(v.BusCode), v]));
+      // Worker pove, koliko sekund je odgovor star (predpomnilnik ali zasilni odgovor).
+      s.zivoOb = Date.now() - 1000 * (Number(res.headers.get('X-Proxy-Age')) || 0);
+      nastaviStanje();
+    } catch {
+      nastaviStanje(true);
+    }
+    izrisi();
+  }
+
+  async function osveziKm(zDnevi = false) {
+    try {
+      const j = await api(`/spremljanje?dan=${s.dan}${zDnevi ? '&dnevi=1' : ''}`);
+      s.km = new Map(j.vozila.map(v => [v.bus, v]));
+      if (j.dnevi) napolniDneve(j.dnevi);
+    } catch (e) {
+      if (String(e.message) !== '401') $('stanje').textContent = 'kilometri niso dosegljivi';
+    }
+    izrisi();
+    if (s.izbran) naloziPot(s.izbran);
+  }
+
+  async function naloziPot(bus) {
+    try {
+      const j = await api(`/spremljanje/pot?dan=${s.dan}&bus=${encodeURIComponent(bus)}`);
+      if (s.izbran !== bus) return;
+      const barva = linija(s.zivo.get(bus)?.LineId ?? s.km.get(bus)?.linije?.at(-1)).barva;
+      const deli = [];
+      for (const [, lat, lon, prek] of j.pot) {
+        if (prek || !deli.length) deli.push([]);
+        deli.at(-1).push([lon, lat]);
+      }
+      const v = s.zivo.get(bus);
+      if (v && deli.length) deli.at(-1).push([v.Lon, v.Lat]);
+      await kartaPripravljena;
+      karta.getSource('pot').setData({ type: 'FeatureCollection', features: [{
+        type: 'Feature', properties: { barva },
+        geometry: { type: 'MultiLineString', coordinates: deli.filter(d => d.length > 1) },
+      }] });
+    } catch { /* pot ostane, kot je bila */ }
+  }
+
+  // ── Izris ──────────────────────────────────────────────────────────────────
+  function nastaviStanje(napaka = false) {
+    const pika = $('pika');
+    if (s.dan !== danes()) { pika.className = 'pika'; $('stanje').textContent = 'pretekli dan'; return; }
+    const star = napaka || Date.now() - s.zivoOb > 90_000;
+    pika.className = 'pika ' + (star ? 'star' : 'ziv');
+    $('stanje').textContent = star ? 'v živo ni dosegljivo' : 'v živo · ' + fmtUraS.format(new Date(s.zivoOb));
+  }
+
+  function vozila() {
+    const vsi = new Set([...s.km.keys(), ...(s.dan === danes() ? s.zivo.keys() : [])]);
+    const q = s.isci.trim().toLowerCase();
+    return [...vsi].map(bus => {
+      const k = s.km.get(bus), z = s.dan === danes() ? s.zivo.get(bus) : null;
+      const idLinije = z?.LineId ?? k?.linije?.at(-1) ?? null;
+      return {
+        bus, k, z, idLinije,
+        km: k?.km ?? 0,
+        lat: z?.Lat ?? k?.lat, lon: z?.Lon ?? k?.lon,
+        linije: k?.linije?.length ? k.linije : (idLinije != null ? [idLinije] : []),
+      };
+    }).filter(v => !q || v.bus.toLowerCase().includes(q) || v.linije.some(id => linija(id).koda.toLowerCase().includes(q)))
+      .sort((a, b) => (!!b.z - !!a.z) || (b.km - a.km) || a.bus.localeCompare(b.bus, 'sl', { numeric: true }));
+  }
+
+  function trajanje(ms) {
+    const min = Math.round(ms / 60000), h = Math.floor(min / 60);
+    return h ? `${h} h ${min % 60} min` : `${min} min`;
+  }
+
+  function izrisi() {
+    const seznam = vozila();
+    const vsiKm = [...s.km.values()];
+    const skupaj = vsiKm.reduce((a, v) => a + v.km, 0);
+    $('pVozil').textContent = vsiKm.length || '0';
+    $('pKm').textContent = fmtKm(skupaj);
+    $('pPovp').textContent = vsiKm.length ? fmtKm(skupaj / vsiKm.length) : '–';
+    $('pZdaj').textContent = s.dan === danes() ? String(s.zivo.size) : '–';
+
+    $('seznam').innerHTML = seznam.length ? seznam.map(v => `
+      <button type="button" class="vozilo${v.bus === s.izbran ? ' izbran' : ''}${v.z ? '' : ' neaktiven'}" data-bus="${esc(v.bus)}">
+        <span>${v.linije.slice(-2).map(znacka).join('')}</span>
+        <span><span class="bus">Bus ${esc(v.bus)}</span><br><span class="podrobno">${
+          v.k ? `${fmtUra.format(new Date(v.k.prva))}–${fmtUra.format(new Date(v.k.zadnja))}` : 'še brez podatkov'
+        }${v.z ? '' : ' · ni na terenu'}</span></span>
+        <span class="km">${fmtKm(v.km)}<small>km</small></span>
+      </button>`).join('')
+      : `<div class="prazno">${s.dan === danes() ? 'Ni vozil na terenu in še ni podatkov za danes.' : 'Za ta dan ni podatkov.'}</div>`;
+
+    // Oznake na karti
+    const vidni = new Set();
+    for (const v of seznam) {
+      if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
+      vidni.add(v.bus);
+      let m = s.oznake.get(v.bus);
+      if (!m) {
+        const el = document.createElement('div');
+        el.addEventListener('click', (e) => { e.stopPropagation(); izberi(el.dataset.bus); });
+        m = new maplibregl.Marker({ element: el }).setLngLat([v.lon, v.lat]).addTo(karta);
+        s.oznake.set(v.bus, m);
+      }
+      const el = m.getElement();
+      const l = linija(v.idLinije);
+      el.dataset.bus = v.bus;
+      // className bi pobrisal MapLibrov razred maplibregl-marker (pozicioniranje).
+      el.classList.add('oznaka');
+      el.classList.toggle('izbran', v.bus === s.izbran);
+      el.classList.toggle('neaktiven', !v.z);
+      el.style.background = l.barva;
+      el.style.color = svetla(l.barva) ? '#1C1C1E' : '#fff';
+      el.textContent = `${l.koda} · ${v.bus}`;
+      el.title = `Bus ${v.bus}, ${fmtKm(v.km)} km danes`;
+      m.setLngLat([v.lon, v.lat]);
+    }
+    for (const [bus, m] of s.oznake) if (!vidni.has(bus)) { m.remove(); s.oznake.delete(bus); }
+
+    izrisiPodrobnosti();
+  }
+
+  function izrisiPodrobnosti() {
+    const box = $('podrobnosti');
+    const v = s.izbran && vozila().find(x => x.bus === s.izbran);
+    if (!v) { box.hidden = true; return; }
+    const { k, z } = v;
+    const vrstice = [];
+    vrstice.push(['Danes', `${fmtKm(v.km)} km`]);
+    if (k) {
+      const cas = k.zadnja - k.prva;
+      vrstice.push(['Na terenu', `${fmtUra.format(new Date(k.prva))}–${fmtUra.format(new Date(k.zadnja))} (${trajanje(cas)})`]);
+      if (cas > 10 * 60000) vrstice.push(['Povprečno', `${Math.round(v.km / (cas / 3600000))} km/h z ustavljanjem`]);
+      vrstice.push(['Linije', k.linije.map(id => linija(id).koda).join(', ') || '–']);
+    }
+    if (z) {
+      if (z.DirectionDescription) vrstice.push(['Smer', z.DirectionDescription]);
+      const post = s.postaje.get(z.NextStopPointId);
+      if (post) vrstice.push(['Naslednje', `${post}${Number.isFinite(z.ETA) && z.ETA >= 0 ? ` čez ${z.ETA} min` : ''}`]);
+    } else {
+      vrstice.push(['Stanje', s.dan === danes() ? 'ni na terenu (zadnji znani položaj)' : 'zadnji položaj tega dne']);
+    }
+    box.innerHTML = `
+      <div class="naslov">${znacka(v.idLinije)} Bus ${esc(v.bus)} <button type="button" id="zapri">Zapri</button></div>
+      <dl>${vrstice.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>`;
+    box.hidden = false;
+    $('zapri').onclick = () => izberi(null);
+  }
+
+  function izberi(bus) {
+    s.izbran = bus;
+    kartaPripravljena.then(() => karta.getSource('pot').setData({ type: 'FeatureCollection', features: [] }));
+    izrisi();
+    if (!bus) return;
+    const v = vozila().find(x => x.bus === bus);
+    if (v && Number.isFinite(v.lat)) karta.flyTo({ center: [v.lon, v.lat], zoom: Math.max(karta.getZoom(), 14), essential: true });
+    naloziPot(bus);
+    document.querySelector(`.vozilo[data-bus="${CSS.escape(bus)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function napolniDneve(dnevi) {
+    const sel = $('dan');
+    const seznam = dnevi.map(d => d.dan);
+    if (!seznam.includes(danes())) seznam.unshift(danes());
+    const km = new Map(dnevi.map(d => [d.dan, d.km]));
+    sel.innerHTML = seznam.map(d => {
+      const ime = d === danes() ? 'Danes' : fmtDanLep.format(new Date(d + 'T12:00:00'));
+      return `<option value="${d}">${ime}${km.has(d) ? ` · ${fmtKm(km.get(d))} km` : ''}</option>`;
+    }).join('');
+    sel.value = s.dan;
+  }
+
+  // ── Dogodki ────────────────────────────────────────────────────────────────
+  $('seznam').addEventListener('click', (e) => {
+    const b = e.target.closest('.vozilo');
+    if (b) izberi(b.dataset.bus === s.izbran ? null : b.dataset.bus);
+  });
+  $('isci').addEventListener('input', (e) => { s.isci = e.target.value; izrisi(); });
+  $('dan').addEventListener('change', (e) => {
+    s.dan = e.target.value;
+    s.slediDanes = s.dan === danes();
+    s.izbran = null;
+    s.km = new Map();
+    nastaviStanje();
+    osveziKm();
+    osveziZivo();
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { osveziZivo(); osveziKm(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && s.izbran) izberi(null); });
+
+  function prijava(napaka = '') {
+    $('napaka').textContent = napaka;
+    $('prijava').hidden = false;
+    $('geslo').focus();
+  }
+  $('obrazec').addEventListener('submit', (e) => {
+    e.preventDefault();
+    s.kljuc = $('geslo').value.trim();
+    pisiKljuc(s.kljuc);
+    $('prijava').hidden = true;
+    zazeni();
+  });
+
+  let tece = false;
+  async function zazeni() {
+    if (!s.kljuc) return prijava();
+    await osveziKm(true);
+    if (!s.kljuc || tece) return;
+    tece = true;
+    osveziZivo();
+    setInterval(osveziZivo, ZIVO_MS);
+    setInterval(() => {
+      // Kdor gleda »Danes«, po polnoči preide na nov dan; pretekli dan ostane izbran.
+      if (s.slediDanes && s.dan !== danes()) { s.dan = danes(); s.izbran = null; s.km = new Map(); }
+      osveziKm(true);
+    }, KM_MS);
+  }
+
+  naloziOsnove().finally(() => { izrisi(); zazeni(); });
+})();
+</script>
+</body>
+</html>
