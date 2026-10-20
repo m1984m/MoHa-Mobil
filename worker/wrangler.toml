@@ -134,10 +134,10 @@ namespace_id = "7104"
   limit = 30
   period = 60
 
-# Omejevalnik za /spremljanje na naslov IP (ugibanje gesla). Glavo Origin lahko
-# ponaredi vsak odjemalec razen brskalnika, zato je to edina zavora pred
-# poskušanjem gesel. Zasebna stran pošlje ~2 zahtevi na minuto (kilometri vsako
-# minuto, pot ob izbiri vozila).
+# Omejevalnik za poti z geslom (/stat in /spremljanje) na naslov IP: ugibanje
+# gesla. Glavo Origin lahko ponaredi vsak odjemalec razen brskalnika, zato je to
+# edina zavora pred poskušanjem gesel. Zasebna stran pošlje ~3 zahteve na minuto
+# (kilometri, sledi, pot ob izbiri vozila), zaslon s statistiko nekaj ob odprtju.
 [[ratelimits]]
 name = "STAT_LIMITER"
 namespace_id = "7105"

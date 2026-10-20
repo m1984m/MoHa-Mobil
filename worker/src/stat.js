@@ -29,6 +29,23 @@ export function enakaKljuca(a, b) {
   return r === 0;
 }
 
+/**
+ * Omejevalnik poskusov gesla (STAT_LIMITER, 30 na minuto na naslov IP) za vse poti
+ * z x-stat-key: /stat in /spremljanje. Glavo Origin lahko ponaredi vsak odjemalec
+ * razen brskalnika, zato je to edina zavora pred ugibanjem gesla. Vrne true, kadar
+ * je zahtevo treba zavrniti. Napaka omejevalnika zahteve ne zavrne (kot omejeno()
+ * v worker.js) — varovalo ne sme ugasniti statistike.
+ */
+export async function prevecPoskusov(env, request) {
+  if (!env.STAT_LIMITER) return false;
+  try {
+    const { success } = await env.STAT_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'neznan' });
+    return !success;
+  } catch {
+    return false;
+  }
+}
+
 async function sql(env, poizvedba) {
   const res = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
@@ -129,6 +146,7 @@ export async function handleStat(request, env, cors) {
 
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
   if (!env.STAT_KEY) return json({ error: 'STAT_KEY ni nastavljen' }, 503);
+  if (await prevecPoskusov(env, request)) return json({ error: 'preveč zahtev' }, 429);
   if (!enakaKljuca(request.headers.get('x-stat-key') ?? '', env.STAT_KEY)) {
     return json({ error: 'napacen kljuc' }, 401);
   }

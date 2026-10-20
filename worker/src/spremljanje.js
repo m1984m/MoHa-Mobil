@@ -15,7 +15,8 @@
  * Shramba je D1 (`SPREMLJANJE_DB`, shema v ../spremljanje.sql): ena vrstica na
  * vozilo in dan, pot je v isti vrstici kot besedilo, ki se mu sproti dodaja. Tako
  * je pisanj eno na vozilo na minuto (~30 vozil × ~1.140 minut ≈ 34.000 na dan,
- * brezplačna meja je 100.000). Kilometri ostanejo 30 dni, pot 7 dni.
+ * brezplačna meja je 100.000). Kilometri in poti ostanejo 30 dni (~3 MB poti na dan,
+ * skupaj ~100 MB; baza D1 na Workers Paid sprejme do 10 GB).
  *
  * GET /spremljanje?dan=YYYY-MM-DD[&dnevi=1]   vozila izbranega dne (+ seznam dni)
  * GET /spremljanje/pot?dan=YYYY-MM-DD&bus=123  pot enega vozila
@@ -24,7 +25,7 @@
  * Vse zahteva glavo x-stat-key (isto geslo kot zaslon s statistiko).
  */
 
-import { enakaKljuca } from './stat.js';
+import { enakaKljuca, prevecPoskusov } from './stat.js';
 import { razdaljaPoTrasi } from './trase.js';
 
 export const RAZMIK_VZORCEV_MS = 30_000;
@@ -45,7 +46,7 @@ export const NAJVEC_VOZIL = 150;
 // paketu 50 poizvedb na klic Workerja — zato več vozil v enem stavku INSERT.
 export const VOZIL_NA_STAVEK = 8;
 export const DNI_KM = 30;
-export const DNI_POT = 7;
+export const DNI_POT = 30;   // podaljšano s 7 dni 20.10.2026
 // Grob okvir območja, ki ga Marprom pokriva; položaj zunaj je napaka.
 const OKVIR = { latMin: 46.3, latMax: 46.8, lonMin: 15.3, lonMax: 16.0 };
 
@@ -277,17 +278,8 @@ export async function handleSpremljanje(request, env, path, cors) {
 
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
   if (!env.STAT_KEY) return json({ error: 'STAT_KEY ni nastavljen' }, 503);
-  // Glavo Origin lahko ponaredi vsak odjemalec razen brskalnika, zato omejevalnik na
-  // naslov IP ustavi ugibanje gesla. Stran pošlje ~2 zahtevi na minuto. Napaka
-  // omejevalnika zahteve ne zavrne (kot omejeno() v worker.js).
-  if (env.STAT_LIMITER) {
-    let prepovedano = false;
-    try {
-      const { success } = await env.STAT_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'neznan' });
-      prepovedano = !success;
-    } catch { /* omejevalnik ne sme ugasniti strani */ }
-    if (prepovedano) return json({ error: 'preveč zahtev' }, 429);
-  }
+  // Stran pošlje ~3 zahteve na minuto (kilometri, sledi, pot izbranega).
+  if (await prevecPoskusov(env, request)) return json({ error: 'preveč zahtev' }, 429);
   if (!enakaKljuca(request.headers.get('x-stat-key') ?? '', env.STAT_KEY)) {
     return json({ error: 'napacen kljuc' }, 401);
   }
@@ -341,6 +333,12 @@ export async function handleSpremljanje(request, env, path, cors) {
       'SELECT dan, ROUND(SUM(km), 1) AS km, COUNT(*) AS vozil FROM dnevno GROUP BY dan ORDER BY dan DESC LIMIT ?1',
     ).bind(DNI_KM + 1).all();
     telo.dnevi = d.results;
+    // Velikost arhiva za prikaz na strani: `size_after` je velikost cele baze D1 v
+    // bajtih (vse tabele), ki jo D1 vrne ob vsaki poizvedbi; znaki poti so delež sledi.
+    const a = await db.prepare(
+      'SELECT COUNT(*) AS vrstic, COUNT(DISTINCT dan) AS dni, MIN(dan) AS od, COALESCE(SUM(length(pot)), 0) AS znakovPoti FROM dnevno',
+    ).all();
+    telo.arhiv = { ...a.results[0], bajtov: a.meta?.size_after ?? null };
   }
   return json(telo, 200);
 }

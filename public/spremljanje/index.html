@@ -49,7 +49,9 @@
   }
   header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
   h1 { font-size: 18px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
-  .stanje { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .desno { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .stanje { font-size: 12px; font-weight: 500; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .arhiv { font-size: 11px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
   .pika { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .pika.ziv { background: var(--ok); }
   .pika.star { background: var(--warn); }
@@ -126,7 +128,7 @@
 </div>
 <aside id="panel">
   <header>
-    <h1>Spremljanje vozil <span class="stanje"><span class="pika" id="pika"></span><span id="stanje">nalagam …</span></span></h1>
+    <h1>Spremljanje vozil <span class="desno"><span class="stanje"><span class="pika" id="pika"></span><span id="stanje">nalagam …</span></span><span class="arhiv" id="arhiv"></span></span></h1>
     <div class="vrsta">
       <select id="dan" aria-label="Dan"></select>
       <input id="isci" type="search" placeholder="Bus ali linija" aria-label="Išči bus ali linijo">
@@ -272,6 +274,7 @@
       const j = await api(`/spremljanje?dan=${s.dan}${zDnevi ? '&dnevi=1' : ''}`);
       s.km = new Map(j.vozila.map(v => [v.bus, v]));
       if (j.dnevi) napolniDneve(j.dnevi);
+      if (j.arhiv) izrisiArhiv(j.arhiv);
     } catch (e) {
       if (String(e.message) !== '401') $('stanje').textContent = 'kilometri niso dosegljivi';
     }
@@ -460,6 +463,19 @@
     if (v && Number.isFinite(v.lat)) karta.flyTo({ center: [v.lon, v.lat], zoom: Math.max(karta.getZoom(), 14), essential: true });
     naloziPot(bus);
     document.querySelector(`.vozilo[data-bus="${CSS.escape(bus)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Velikost arhiva v D1 (cela baza), da se vidi rast skozi čas. Meja baze D1 na
+  // Workers Paid je 10 GB; poti se hranijo 30 dni.
+  const fmtVelikost = (b) => b >= 1e6 ? `${(b / 1e6).toLocaleString('sl-SI', { maximumFractionDigits: 1 })} MB`
+    : `${Math.max(1, Math.round(b / 1e3)).toLocaleString('sl-SI')} kB`;
+  const dniBesedilo = (n) => n === 1 ? '1 dan' : n === 2 ? '2 dneva' : n <= 4 ? `${n} dnevi` : `${n} dni`;
+  function izrisiArhiv(a) {
+    const el = $('arhiv');
+    if (!Number.isFinite(a.bajtov)) { el.textContent = ''; return; }
+    el.textContent = `Arhiv ${fmtVelikost(a.bajtov)} · ${dniBesedilo(a.dni)}`;
+    el.title = `Baza D1: ${fmtVelikost(a.bajtov)} od 10 GB · sledi ${fmtVelikost(a.znakovPoti)} · `
+      + `${a.vrstic} vrstic (vozilo × dan)${a.od ? ` od ${fmtDanLep.format(new Date(a.od + 'T12:00:00'))}` : ''} · hramba 30 dni`;
   }
 
   function napolniDneve(dnevi) {
