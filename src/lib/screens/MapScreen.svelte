@@ -10,6 +10,7 @@
   import PlanSteps from '../ui/PlanSteps.svelte';
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
+  import IjppDepartures from '../ui/IjppDepartures.svelte';
   import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
   import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, LIVE_FRESH_MS } from '../departures';
   import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, todayServiceIds, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
@@ -1359,6 +1360,8 @@
             <span class="t-callout font-medium">{$t('Celoten vozni red postaje')}</span>
           </button>
         {/if}
+
+        <IjppDepartures stop={selectedStop} />
 
       {:else if selectedVehicle}
         {#if stopBeforeVehicle}

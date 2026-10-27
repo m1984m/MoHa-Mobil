@@ -5,6 +5,8 @@
 //   node scripts/fetch-gtfs.mjs           prenesi + namesti (če je feed drugačen) + preveri poteke
 //   node scripts/fetch-gtfs.mjs --check   samo preveri lokalni feed, brez prenosa
 //   node scripts/fetch-gtfs.mjs --force   prepiši tudi, če je feed identičen ali slabši
+//   node scripts/fetch-gtfs.mjs --derp    vir derp.si (zrcalo Marpromovega feeda, ki ga vzdržuje
+//                                         skupnost, CC-BY-SA 4.0); rezerva, ko uradni zip ni dosegljiv
 //
 // Feed se NE namesti (exit 1, zato `npm run gtfs` ne požene build-gtfs.mjs), če bi kateri
 // dan v tednu, ki ga lokalni feed še pokriva, v prenešenem feedu potekel prej. Tako
@@ -23,7 +25,9 @@ import { inflateRawSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
 
-const GTFS_URL = 'https://vozniredi.marprom.si/gtfs/gtfs.zip';
+const URADNI = 'https://vozniredi.marprom.si/gtfs/gtfs.zip';
+// Zrcalo derp.si (gitlab.com/derp-si/gtfs-generators), ki ga uporablja tudi Transitous.
+const DERP = 'https://gitlab.com/api/v4/projects/derp-si%2Fgtfs-generators/packages/generic/marprom_official/latest/marprom_gtfs.zip';
 const WARN_DAYS = 14; // koliko dni pred potekom začnemo opozarjati
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +37,7 @@ const DAYS = ['pon', 'tor', 'sre', 'čet', 'pet', 'sob', 'ned'];
 const args = process.argv.slice(2);
 const CHECK_ONLY = args.includes('--check') || args.includes('-c');
 const FORCE = args.includes('--force');
+const GTFS_URL = args.includes('--derp') ? DERP : URADNI;
 
 // --- minimalni ZIP reader (brez odvisnosti; ZIP64 ni podprt — GTFS je ~0,5 MB) ---
 function unzip(buf) {

@@ -21,6 +21,11 @@ export default {
   'Znova pokaži uvodne kartice in namige': 'Show the intro cards and tips again',
   'Kolesa: MBajk / JCDecaux.': 'Bikes: MBajk / JCDecaux.',
   'Glas za branje: Microsoft Azure.': 'Read-aloud voice: Microsoft Azure.',
+  'Medkrajevni vozni redi: derp.si / NAP, CC-BY-SA 4.0.': 'Intercity timetables: derp.si / NAP, CC-BY-SA 4.0.',
+  'Medkrajevni odhodi': 'Intercity departures',
+  'Danes ni več medkrajevnih odhodov.': 'No more intercity departures today.',
+  'Medkrajevni prevozniki, vozni red brez podatkov v živo.': 'Intercity operators, timetable only (no live data).',
+  'Vlak': 'Train',
 
   // PetraIntro, PetraCard
   'Spoznaj Petro': 'Meet Petra',
