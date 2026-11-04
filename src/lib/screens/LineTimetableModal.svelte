@@ -17,7 +17,7 @@
   export let initialDir: number = 0;
   export let initialStopId: number | null = null;
   export let onClose: () => void;
-  // Klik na "Odpri postajo" → parent naj odpre postajni pogled (Karta) za izbrano postajo.
+  // Klik na "Odpri postajališče" → parent naj odpre postajni pogled (Karta) za izbrano postajo.
   // Brez tega prop-a se gumb ne izriše.
   export let onOpenStop: ((stopId: number) => void) | null = null;
 
@@ -192,8 +192,8 @@
                 on:click={() => pickerOpen = !pickerOpen}>
           <MapPin size={16} color="var(--accent)" />
           <div class="flex-1 min-w-0">
-            <div class="t-footnote text-muted">{$t('Postaja')}</div>
-            <div class="t-body font-semibold truncate">{selectedStopName ?? $t('Vse postaje (od izhodišča)')}</div>
+            <div class="t-footnote text-muted">{$t('Postajališče')}</div>
+            <div class="t-body font-semibold truncate">{selectedStopName ?? $t('Vsa postajališča (od izhodišča)')}</div>
           </div>
           <ChevronDown size={16} style="transform: rotate({pickerOpen ? 180 : 0}deg); transition: transform 180ms" />
         </button>
@@ -201,7 +201,7 @@
           {#if onOpenStop}
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"
                     on:click={() => onOpenStop!(selectedStopId!)}
-                    aria-label={$t('Odpri postajo na karti')}>
+                    aria-label={$t('Odpri postajališče na karti')}>
               <ExternalLink size={18} color="var(--accent)" />
             </button>
           {/if}
@@ -247,7 +247,7 @@
             <li>
               <button class="pressable w-full text-left px-4 py-3 flex items-center gap-3"
                       on:click={() => { selectedStopId = null; pickerOpen = false; }}>
-                <div class="flex-1 t-body font-medium">{$t('Vse postaje (od izhodišča)')}</div>
+                <div class="flex-1 t-body font-medium">{$t('Vsa postajališča (od izhodišča)')}</div>
                 {#if selectedStopId == null}<Check size={18} color="var(--accent)" />{/if}
               </button>
             </li>
@@ -264,7 +264,7 @@
           </ul>
         {:else if selectedStopId != null}
           {#if stopSchedule.length === 0}
-            <div class="t-body text-muted text-center py-8">{$t('Ta dan ni voženj skozi to postajo.')}</div>
+            <div class="t-body text-muted text-center py-8">{$t('Ta dan ni voženj skozi to postajališče.')}</div>
           {:else}
             <div class="t-footnote text-muted mb-2">{stopSchedule.length} {plural(stopSchedule.length, ['prihod', 'prihoda', 'prihodi', 'prihodov'], ['departure', 'departures'])} · {selectedStopName}</div>
             <ul class="surface rounded-2xl border border-base overflow-hidden">
@@ -297,7 +297,7 @@
                 <div class="tabular-nums font-bold w-12" style={past ? 'color: var(--text-muted)' : ''}>{fmtTime(first?.[2] ?? 0)}</div>
                 <div class="t-footnote text-muted">→</div>
                 <div class="tabular-nums font-bold w-12" style={past ? 'color: var(--text-muted)' : ''}>{fmtTime(last?.[1] ?? 0)}</div>
-                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)} min · {trip.stops.length} {plural(trip.stops.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
+                <div class="ml-auto t-footnote text-muted">{Math.round(durSec / 60)} min · {trip.stops.length} {plural(trip.stops.length, ['postajališče', 'postajališči', 'postajališča', 'postajališč'], ['stop', 'stops'])}</div>
                 {#if i === nextTripIdx}<span class="sr-only">{$t('naslednji')}</span>{/if}
               </li>
             {/each}

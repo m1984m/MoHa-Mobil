@@ -403,8 +403,16 @@
     selectedVehicle = v;
     selectedLive = isLive ? (live.vehicles.find(lv => lv.deviceId === v.tripId) ?? null) : null;
     onStopChange(null);
-    mapRef?.flyTo(v.lat, v.lon, 16);
+    showLine(v, v.lat, v.lon);
     sheetRef?.setSnap(sheetOpenSnap);
+  }
+
+  // Kamera zajame izbrani avtobus in ostale avtobuse iste linije; brez drugih
+  // avtobusov ostane približan pogled na izbranega.
+  function showLine(v: Vehicle, lat: number, lon: number) {
+    const others = vehicles.filter(o => o.routeShort === v.routeShort && o.tripId !== v.tripId);
+    if (others.length === 0) { mapRef?.flyTo(lat, lon, 16); return; }
+    mapRef?.fitBounds([[lon, lat], ...others.map(o => [o.lon, o.lat] as [number, number])], 15);
   }
 
   // Višina lista ob izbiri postaje ali avtobusa (indeks v `snaps` od BottomSheet).
@@ -428,7 +436,7 @@
     selectedLive = lv;
     onStopChange(null);
     const sm = smoothedById.get(lv.deviceId);
-    mapRef?.flyTo(sm?.displayLat ?? lv.lat, sm?.displayLon ?? lv.lon, 16);
+    showLine(dv, sm?.displayLat ?? lv.lat, sm?.displayLon ?? lv.lon);
     sheetRef?.setSnap(sheetOpenSnap);
   }
   function closeVehicle() {
@@ -490,7 +498,10 @@
   $: shownVehicles = selectedRouteShorts
     ? vehicles.filter(v => selectedRouteShorts!.has(v.routeShort))
     : selectedVehicle
-      ? vehicles.filter(v => v.tripId === selectedVehicle!.tripId)
+      // Izbran avtobus: vsi avtobusi iste linije, izbrani poudarjen (Matej 04.11.2026:
+      // »označi linijo in vse ostale avtobuse na tej liniji, da imam pregled«).
+      ? vehicles.filter(v => v.routeShort === selectedVehicle!.routeShort)
+          .map(v => ({ ...v, selected: v.tripId === selectedVehicle!.tripId }))
       : vehicles;
 
   // Eksplicitni parametri namesto comma-operator trika — TS-čisto in jasna odvisnost od tick30.
@@ -499,7 +510,7 @@
   }
   $: departures = calcDepartures(gtfs, selectedStop, tick30);
   // Ko danes ni več odhodov, poišči prvi odhod naslednjega dne s prometom —
-  // sicer je "Danes ni več odhodov s te postaje" slepa ulica.
+  // sicer je "Danes ni več odhodov s tega postajališča" slepa ulica.
   $: nextDayDep = (gtfs && selectedStop && departures.length === 0 && liveArrivals.length === 0)
     ? nextServiceDeparture(gtfs, selectedStop.id)
     : null;
@@ -620,13 +631,19 @@
   // Identity guard po await-u: ob hitri menjavi vozil je pozni callback za bus A
   // sicer izrisal linijo A, čeprav je bil izbran že bus B.
   $: {
-    if (selectedVehicle && vehTrip && vehTrip.shape != null) {
+    if (selectedVehicle && vehTrip && vehTrip.shape != null && gtfs) {
       const shapeId = vehTrip.shape;
       const color = selectedVehicle.color;
       const capturedTripId = selectedVehicle.tripId;
+      // Cela linija: vse trase (obe smeri, različice) iste linije, trasa izbrane vožnje zadnja,
+      // da je narisana na vrhu.
+      const ids = new Set<number>();
+      for (const t of gtfs.trips) if (t.route === vehTrip.route && t.shape != null && t.shape !== shapeId) ids.add(t.shape);
       loadShapes().then(sh => {
-        const s = sh.get(shapeId);
-        if (selectedVehicle?.tripId === capturedTripId && s) vehicleShapes = [{ ...s, color }];
+        const own = sh.get(shapeId);
+        if (selectedVehicle?.tripId !== capturedTripId || !own) return;
+        const rest = [...ids].map(id => sh.get(id)).filter(Boolean).map(x => ({ ...x!, color }));
+        vehicleShapes = [...rest, { ...own, color }];
       }).catch(() => {});
     } else {
       vehicleShapes = [];
@@ -958,7 +975,7 @@
     <button class="pressable absolute z-30 right-4 w-11 h-11 rounded-full surface border border-base shadow-card grid place-items-center"
             style="top: calc(env(safe-area-inset-top) + 0.75rem)"
             on:click={openStopSearch}
-            aria-label={$t('Poišči postajo')}>
+            aria-label={$t('Poišči postajališče')}>
       <Search size={18} color="var(--accent)" />
     </button>
   {/if}
@@ -1153,7 +1170,7 @@
         <!-- Naslov v svoji vrstici, akcije pod njim: s 44 px tarčami so štirje gumbi
              odjedli toliko širine, da so se daljša imena postaj obrezala na tretjini. -->
         <div class="mb-3">
-          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Postaja')}</div>
+          <div class="t-footnote text-muted uppercase tracking-wide">{$t('Postajališče')}</div>
           <h2 class="t-title2 font-semibold">{selectedStop.name}</h2>
           {#if selectedStop.code}<div class="t-footnote text-muted">{selectedStop.code}</div>{/if}
           {#if simple}
@@ -1162,7 +1179,7 @@
               <!-- Preberi na glas prvi (zgoraj levo), kot v listu avtobusa. -->
               <ReadAloud variant="big" wide resetKey={selectedStop.id} text={stopText} />
               <button type="button" class="pressable mm-ms-act mm-ms-act-accent" on:click={() => onPlanToStop(selectedStop!)}>
-                <Navigation size={22} /> {$t('Pot do postaje')}
+                <Navigation size={22} /> {$t('Pot do postajališča')}
               </button>
               <button type="button" class="pressable mm-ms-act" on:click={() => favStops.toggle(selectedStop!.id)}>
                 <Star size={22} fill={isFav ? 'var(--status-delay)' : 'none'} color={isFav ? 'var(--status-delay)' : 'currentColor'} />
@@ -1179,12 +1196,12 @@
             <button class="pressable w-11 h-11 rounded-full grid place-items-center shadow-card shrink-0"
                     style="background: var(--accent); color: #ffffff"
                     on:click={() => onPlanToStop(selectedStop!)}
-                    aria-label={$t('Načrtuj pot do te postaje')}>
+                    aria-label={$t('Načrtuj pot do tega postajališča')}>
               <Navigation size={18} color="#ffffff" />
             </button>
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
                     on:click={() => stopTimetableOpen = true}
-                    aria-label={$t('Vozni red postaje')}>
+                    aria-label={$t('Vozni red postajališča')}>
               <CalendarClock size={18} />
             </button>
             <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
@@ -1305,7 +1322,7 @@
             <MoonStar size={20} color="var(--text-muted)" />
             <div class="flex-1 min-w-0">
               <div class="t-callout text-muted">
-                {gtfs && selectedStop && !departsFromStop(gtfs, selectedStop.id) ? $t('Končna postaja: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov s te postaje.')}
+                {gtfs && selectedStop && !departsFromStop(gtfs, selectedStop.id) ? $t('Končno postajališče: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov s tega postajališča.')}
               </div>
               {#if nextDayDep}
                 <div class="t-footnote mt-0.5">
@@ -1357,7 +1374,7 @@
                   class="pressable w-full h-11 mt-3 rounded-xl surface-2 border border-base flex items-center justify-center gap-2"
                   on:click={() => stopTimetableOpen = true}>
             <CalendarClock size={16} />
-            <span class="t-callout font-medium">{$t('Celoten vozni red postaje')}</span>
+            <span class="t-callout font-medium">{$t('Celoten vozni red postajališča')}</span>
           </button>
         {/if}
 
@@ -1367,10 +1384,10 @@
         {#if stopBeforeVehicle}
           <button class="pressable w-full min-h-[48px] mb-3 px-3 py-2 rounded-xl surface-2 flex items-center gap-2.5 text-left"
                   on:click={backToStop}
-                  aria-label={$t('Nazaj na postajo {name}', { name: stopBeforeVehicle.name })}>
+                  aria-label={$t('Nazaj na postajališče {name}', { name: stopBeforeVehicle.name })}>
             <ArrowLeft size={18} color="var(--text-muted)" />
             <span class="min-w-0">
-              <span class="block t-footnote text-muted">{$t('Nazaj na postajo')}</span>
+              <span class="block t-footnote text-muted">{$t('Nazaj na postajališče')}</span>
               <span class="block t-subhead font-semibold truncate">{stopBeforeVehicle.name}</span>
             </span>
           </button>
@@ -1432,7 +1449,7 @@
               <Bus size={20} />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="t-footnote text-muted">{$t('Naslednja postaja')}</div>
+              <div class="t-footnote text-muted">{$t('Naslednje postajališče')}</div>
               {#if liveNextStopName}
                 <div class="t-headline font-semibold {simple ? '' : 'truncate'}">{liveNextStopName}</div>
                 <div class="t-subhead text-muted">
@@ -1452,7 +1469,7 @@
           </div>
         {/if}
         <div class="flex items-center justify-between mb-2">
-          <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Naslednje postaje')}</h2>
+          <h2 class="t-footnote text-muted uppercase tracking-wide">{$t('Naslednja postajališča')}</h2>
           <LiveDot live={isLive} label={isLive ? $t('V živo') : $t('Ocenjeno')} />
         </div>
         <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
@@ -1460,7 +1477,7 @@
             <li class="flex items-stretch {i > 0 ? 'border-t border-base' : ''}">
               <button class="pressable w-full px-4 py-2.5 flex items-center gap-3 text-left"
                       on:click={() => jumpToStopFromBus(ns.stop)}
-                      aria-label={$t('Odpri postajo {name}', { name: ns.stop.name })}>
+                      aria-label={$t('Odpri postajališče {name}', { name: ns.stop.name })}>
                 <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {i === 0 ? selectedVehicle.color : 'var(--border-strong)'}"></div>
                 <div class="flex-1 min-w-0 t-body {i === 0 ? 'font-semibold' : ''} {simple ? '' : 'truncate'}">{ns.stop.name}</div>
                 <div class="t-footnote text-muted shrink-0">{fmtTime(ns.arr)} · {ns.minutes <= 0 ? $t('zdaj') : $t('čez {n} min', { n: ns.minutes })}</div>
@@ -1485,7 +1502,7 @@
          role="presentation">
       <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface w-full sm:max-w-lg mx-auto rounded-b-3xl shadow-float flex flex-col overflow-hidden"
            style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - 4rem);"
-           role="dialog" aria-modal="true" aria-label={$t('Poišči postajo')} tabindex="-1"
+           role="dialog" aria-modal="true" aria-label={$t('Poišči postajališče')} tabindex="-1"
            use:focusTrap>
         <div class="flex items-center gap-2 px-4 pt-3 pb-3 shrink-0">
           <div class="relative flex-1 surface-2 rounded-xl border border-base">
@@ -1494,8 +1511,8 @@
             <input bind:value={stopQuery}
                    autofocus
                    class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
-                   placeholder={$t('Ime postaje…')}
-                   aria-label={$t('Ime postaje')} />
+                   placeholder={$t('Ime postajališča…')}
+                   aria-label={$t('Ime postajališča')} />
           </div>
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center shrink-0"
                   on:click={() => stopSearchOpen = false} aria-label={$t('Zapri')}>
@@ -1504,7 +1521,7 @@
         </div>
         <div class="flex-1 overflow-y-auto px-4 pb-4">
           {#if stopQuery.trim().length < 2}
-            <div class="t-footnote text-muted text-center py-6">{$t('Vnesi vsaj dve črki imena postaje.')}</div>
+            <div class="t-footnote text-muted text-center py-6">{$t('Vnesi vsaj dve črki imena postajališča.')}</div>
           {:else if stopSearchResults.length === 0}
             <div class="t-body text-muted text-center py-6">{$t('Ni zadetkov.')}</div>
           {:else}

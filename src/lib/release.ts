@@ -10,11 +10,11 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '12. 10. 2026';
+export const RELEASE_DATE = '4. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Opomnik nastaviš z zvoncem pri odhodu, vozni red se odpre pri naslednjem odhodu',
-  'Vozni red od 7. oktobra (P8 ob 14.00), pravilni prazniki in konec leta v voznih redih',
-  'Načrtovalnik brez nepotrebnih prestopov, »Prihod do« samo z avtobusi, ki še niso odpeljali',
-  'Zanesljivejši živi podatki, pešpoti in opomniki ter popravki okna Vreme in gumba nazaj',
+  'Načrtovalnik po vsej Sloveniji: mestni avtobus, vlak in medkrajevni avtobusi, izbira načina prevoza',
+  'Rdeč okvir na Domu, ko avtobus pripelje v 3 minutah',
+  'Na karti dotik avtobusa pokaže njegovo linijo in vse avtobuse na njej',
+  'Postajališče namesto postaja, ikona za iPhone in glas Petra brez ključa Azure',
 ];

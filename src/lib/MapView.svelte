@@ -15,7 +15,7 @@
   export let shapes: (Shape & { color: string })[] = [];
   export let planLegs: { kind: 'walk' | 'bus'; coords: [number, number][]; color: string }[] = [];
   export let planEndpoints: { lat: number; lon: number; kind: 'origin' | 'dest' }[] = [];
-  export let vehicles: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[] = [];
+  export let vehicles: { lat: number; lon: number; color: string; routeShort: string; bearing: number; selected?: boolean }[] = [];
   // Vozila so ocenjena iz voznega reda (ni živih podatkov). Narišejo se bledeje,
   // s sivim robom in brez sija — prej so bila videti enako kot živa (evalvacija
   // 04.10.2026, N15), razliko je povedal le napis na vrhu karte.
@@ -204,13 +204,13 @@
     };
   }
 
-  function vehiclesFC(vs: { lat: number; lon: number; color: string; routeShort: string; bearing: number }[], est: boolean): any {
+  function vehiclesFC(vs: { lat: number; lon: number; color: string; routeShort: string; bearing: number; selected?: boolean }[], est: boolean): any {
     return {
       type: 'FeatureCollection',
       features: vs.map((v, i) => ({
         type: 'Feature',
         // tc: napis na krogu po istem pravilu kontrasta kot značke linij.
-        properties: { i, color: v.color, tc: textOnColor(v.color), label: v.routeShort, bearing: v.bearing, est },
+        properties: { i, color: v.color, tc: textOnColor(v.color), label: v.routeShort, bearing: v.bearing, est, sel: v.selected ? 1 : 0 },
         geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
       })),
     };
@@ -519,9 +519,13 @@
         type: 'circle',
         source: 'vehicles',
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 8, 14, 13, 17, 18],
+          // Izbrani avtobus (ob drugih avtobusih iste linije) ima večji in močnejši obroč.
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
+            11, ['case', ['==', ['get', 'sel'], 1], 14, 8],
+            14, ['case', ['==', ['get', 'sel'], 1], 22, 13],
+            17, ['case', ['==', ['get', 'sel'], 1], 28, 18]],
           'circle-color': ['get', 'color'],
-          'circle-opacity': ['case', est, 0, 0.25],
+          'circle-opacity': ['case', ['==', ['get', 'sel'], 1], 0.45, est, 0, 0.25],
           'circle-blur': 0.3,
         },
       } as any);
@@ -534,8 +538,8 @@
           'circle-color': ['get', 'color'],
           // 0,7: pri 0,5 je napis linije na piki izgubil kontrast (pregled 05.10.).
           'circle-opacity': ['case', est, 0.7, 1],
-          'circle-stroke-color': ['case', est, '#8E8E93', '#ffffff'],
-          'circle-stroke-width': 2.5,
+          'circle-stroke-color': ['case', ['==', ['get', 'sel'], 1], '#111111', est, '#8E8E93', '#ffffff'],
+          'circle-stroke-width': ['case', ['==', ['get', 'sel'], 1], 3.5, 2.5],
         },
       } as any);
       // Smer gibanja (puščica) — zunaj kroga v smeri vožnje, majhna zelena.

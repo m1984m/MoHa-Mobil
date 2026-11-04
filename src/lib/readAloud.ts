@@ -72,7 +72,7 @@ type NextDay = { dayOffset: number; weekday: number; depSec: number; route: { sh
 
 // Prazno postajališče: končna postaja, s katere nič ne odpelje, ali »danes ni več odhodov«.
 export function emptyStopSpeech(g: GTFS, stopId: number): string {
-  return departsFromStop(g, stopId) ? noMoreToday(nextServiceDeparture(g, stopId)) : tr('Končna postaja: od tu avtobusi ne odpeljejo.');
+  return departsFromStop(g, stopId) ? noMoreToday(nextServiceDeparture(g, stopId)) : tr('Končno postajališče: od tu avtobusi ne odpeljejo.');
 }
 
 // Ko danes ni več odhodov: kdaj je prvi naslednji.
@@ -107,16 +107,16 @@ export function vehicleSpeech(v: {
   let s = tr('Avtobus linije {line}, smer {dest}.', { line: v.line, dest: dest(v.line, v.headsign) });
   if (v.nextStop) {
     const eta = v.etaMin;
-    if (eta == null) s += ' ' + tr('Naslednja postaja {stop}.', { stop: v.nextStop });
-    else if (eta <= 0) s += ' ' + tr('Naslednja postaja {stop}, prihaja zdaj.', { stop: v.nextStop });
-    else s += ' ' + tr('Naslednja postaja {stop}, čez {n} {enota}.', { stop: v.nextStop, n: eta, enota: minuteWord(eta) });
+    if (eta == null) s += ' ' + tr('Naslednje postajališče {stop}.', { stop: v.nextStop });
+    else if (eta <= 0) s += ' ' + tr('Naslednje postajališče {stop}, prihaja zdaj.', { stop: v.nextStop });
+    else s += ' ' + tr('Naslednje postajališče {stop}, čez {n} {enota}.', { stop: v.nextStop, n: eta, enota: minuteWord(eta) });
   }
   const d = v.delayMin ?? 0;
   if (d >= 1) s += ' ' + tr('Zamuja {n} {enota}.', { n: d, enota: minuteWord(d) });
   else if (d <= -1) s += ' ' + tr('Vozi {n} {enota} pred voznim redom.', { n: -d, enota: minuteWord(-d) });
   const rest = v.stops.filter(x => x.name !== v.nextStop).slice(0, 4);
   if (rest.length) {
-    s += ' ' + tr('Naslednje postaje: {list}.', {
+    s += ' ' + tr('Naslednja postajališča: {list}.', {
       list: rest.map(x => tr('{stop} ob {time}', { stop: x.name, time: fmtClock(x.sec) })).join(', '),
     });
   }

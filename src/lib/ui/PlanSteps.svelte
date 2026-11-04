@@ -177,9 +177,9 @@
               {#if leg.toStop && leg.fromStop}
                 {leg.fromStop.name} → {leg.toStop.name}
               {:else if leg.toStop}
-                {$t('do postaje {stop}', { stop: leg.toStop.name })}
+                {$t('do postajališča {stop}', { stop: leg.toStop.name })}
               {:else if leg.fromStop}
-                {$t('od postaje {stop} do cilja', { stop: leg.fromStop.name })}
+                {$t('od postajališča {stop} do cilja', { stop: leg.fromStop.name })}
               {:else}
                 {$t('do cilja')}
               {/if}
@@ -201,7 +201,7 @@
               <span class="mm-izstop-ura tabular-nums">{fmtClock(leg.arrSec)}</span>
               {$t('Izstopi na')} <b>{leg.to.name}</b>
               <span class="text-muted">
-                · {leg.stopCount} {plural(leg.stopCount, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}
+                · {leg.stopCount} {plural(leg.stopCount, ['postajališče', 'postajališči', 'postajališča', 'postajališč'], ['stop', 'stops'])}
                 · {fmtDuration((leg.arrSec - leg.depSec) / 60)}
               </span>
             </div>

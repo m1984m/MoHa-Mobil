@@ -24,6 +24,8 @@ export type BusLeg = {
   depSec: number; arrSec: number;
   stopCount: number;
   shapeId: number | null;
+  // Postanki med vstopom in izstopom [lat, lon] — za risanje medkrajevnih voženj brez trase.
+  path?: [number, number][];
 };
 export type PlanLeg = WalkLeg | BusLeg;
 export type Plan = {
@@ -141,13 +143,25 @@ export function precomputePlannerIndexes(gtfs: GTFS): PlannerIndexes {
     }
   }
 
+  // Mreža ~0,005° (≈ 550 m × 380 m): pri vseh postajališčih Slovenije (~9.500) bi primerjava
+  // vsak z vsakim pomenila 90 milijonov razdalj; tako se primerja samo s sosednjimi celicami.
+  const CELL = 0.005;
+  const cellKey = (lat: number, lon: number) => `${Math.floor(lat / CELL)}|${Math.floor(lon / CELL)}`;
+  const grid = new Map<string, Stop[]>();
+  for (const a of gtfs.stops) {
+    const k = cellKey(a.lat, a.lon);
+    let c = grid.get(k); if (!c) { c = []; grid.set(k, c); } c.push(a);
+  }
   const nearByStop = new Map<number, { id: number; m: number }[]>();
   for (const a of gtfs.stops) {
     const arr: { id: number; m: number }[] = [];
-    for (const b of gtfs.stops) {
-      if (a.id === b.id) continue;
-      const m = dist(a, b);
-      if (m <= MAX_TRANSFER_M) arr.push({ id: b.id, m });
+    const ci = Math.floor(a.lat / CELL), cj = Math.floor(a.lon / CELL);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      for (const b of grid.get(`${ci + di}|${cj + dj}`) ?? []) {
+        if (a.id === b.id) continue;
+        const m = dist(a, b);
+        if (m <= MAX_TRANSFER_M) arr.push({ id: b.id, m });
+      }
     }
     nearByStop.set(a.id, arr);
   }
@@ -168,7 +182,7 @@ export function planAll(
   when: Date = nowMb(),
   accessMap?: WalkMap,
   egressMap?: WalkMap,
-  opts: { maxAccessM?: number; raw?: boolean } = {},
+  opts: { maxAccessM?: number; raw?: boolean; maxRounds?: number; tripOk?: (t: Trip) => boolean } = {},
 ): Plan[] {
   const WALK_MPS = getWalkMps();
   const maxAccessM = opts.maxAccessM ?? MAX_ACCESS_M;
@@ -204,7 +218,8 @@ export function planAll(
   let marked: Iterable<number> = origin0.keys();
   let prevRoundLabels = origin0;
 
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
+  const maxRounds = opts.maxRounds ?? MAX_ROUNDS;
+  for (let round = 1; round <= maxRounds; round++) {
     const roundLabels = new Map<number, Label>(prevRoundLabels);
     // Postaje, kamor je ta krog pripeljal avtobus — od tod gredo prehodi peš.
     const busLabels = new Map<number, Label>();
@@ -219,6 +234,7 @@ export function planAll(
       if (!boards) continue;
       for (const { trip, idx } of boards) {
         if (!active.has(trip.service)) continue;
+        if (opts.tripOk && !opts.tripOk(trip)) continue;
         // Iste linije zapored ne, v nobeni smeri in tudi ne prek prehoda peš: »P18 do
         // Bezjakove, 171 m peš, P18 nazaj« ali »P10, 20 m, P10 naprej« — na avtobusu se ostane.
         if (trip.route === cur.route) continue;
@@ -406,6 +422,8 @@ function reconstruct(
         arrSec: p.trip.stops[p.alightIdx][1],
         stopCount: p.alightIdx - p.boardIdx,
         shapeId: p.trip.shape,
+        path: p.trip.stops.slice(p.boardIdx, p.alightIdx + 1)
+          .map(x => stopById.get(x[0])).filter((x): x is Stop => !!x).map(x => [x.lat, x.lon] as [number, number]),
       });
       busCount++;
     } else {
@@ -482,12 +500,14 @@ export function planArriveBy(
   when: Date = nowMb(),
   accessMap?: WalkMap,
   egressMap?: WalkMap,
+  opts: { maxRounds?: number; tripOk?: (t: Trip) => boolean; spanSec?: number } = {},
 ): Plan[] {
-  const STEP_SEC = 20 * 60, SPAN_SEC = 180 * 60, GRACE_SEC = 60;
+  // Medkrajevne poti trajajo tudi več ur (Maribor–Koper), zato je razpon nastavljiv.
+  const STEP_SEC = 20 * 60, SPAN_SEC = opts.spanSec ?? 180 * 60, GRACE_SEC = 60;
   const byTrips = new Map<string, Plan>();
   for (let back = STEP_SEC; back <= SPAN_SEC; back += STEP_SEC) {
     const ds = Math.max(targetSec - back, earliestSec);
-    for (const p of planAll(gtfs, from, to, ds, when, accessMap, egressMap)) {
+    for (const p of planAll(gtfs, from, to, ds, when, accessMap, egressMap, { maxRounds: opts.maxRounds, tripOk: opts.tripOk })) {
       if (p.arrSec > targetSec) continue;
       const buses = p.legs.filter((l): l is BusLeg => l.kind === 'bus');
       // Samo peš ni vezano na vozni red: krene se tako, da pride ob izbranem času.

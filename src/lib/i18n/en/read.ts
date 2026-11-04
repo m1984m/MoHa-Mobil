@@ -9,11 +9,11 @@ export default {
 
   // Avtobus
   'Avtobus linije {line}, smer {dest}.': 'Bus on line {line} to {dest}.',
-  'Naslednja postaja {stop}.': 'Next stop {stop}.',
-  'Naslednja postaja {stop}, prihaja zdaj.': 'Next stop {stop}, arriving now.',
-  'Naslednja postaja {stop}, čez {n} {enota}.': 'Next stop {stop}, in {n} {enota}.',
+  'Naslednje postajališče {stop}.': 'Next stop {stop}.',
+  'Naslednje postajališče {stop}, prihaja zdaj.': 'Next stop {stop}, arriving now.',
+  'Naslednje postajališče {stop}, čez {n} {enota}.': 'Next stop {stop}, in {n} {enota}.',
   'Vozi {n} {enota} pred voznim redom.': 'Running {n} {enota} early.',
-  'Naslednje postaje: {list}.': 'Next stops: {list}.',
+  'Naslednja postajališča: {list}.': 'Next stops: {list}.',
   '{stop} ob {time}': '{stop} at {time}',
 
   // Pot

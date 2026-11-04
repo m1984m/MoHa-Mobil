@@ -113,7 +113,14 @@ function accessible(hex: string): { bg: string; fg: string } {
 const ROUTE_BADGES = ROUTE_PALETTE.map(accessible);
 
 // Deterministic color per route id; multiplier 17 razprši sosednje ID-je.
+// Medkrajevne linije (ijppPlan.ts) imajo barvo prevoznika, ne barve iz palete.
+const extColors = new Map<number, { bg: string; fg: string }>();
+export function setExtRouteColor(routeId: number, bg: string) {
+  extColors.set(routeId, { bg, fg: textOnColor(bg) });
+}
 function badgeOf(routeId: number) {
+  const ext = extColors.get(routeId);
+  if (ext) return ext;
   const idx = ((routeId * 17) % ROUTE_BADGES.length + ROUTE_BADGES.length) % ROUTE_BADGES.length;
   return ROUTE_BADGES[idx];
 }

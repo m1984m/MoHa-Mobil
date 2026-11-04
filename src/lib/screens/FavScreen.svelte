@@ -60,7 +60,7 @@
     const snapshot = [...$favStops];
     favStops.clear();
     clearConfirmOpen = false;
-    toast.showUndo(tr('Priljubljene postaje počiščene'), () => {
+    toast.showUndo(tr('Priljubljena postajališča počiščena'), () => {
       for (const id of snapshot) favStops.toggle(id);
     });
   }
@@ -314,10 +314,10 @@
     {/if}
 
     {#if favList.length === 0 && $savedRoutes.length === 0}
-      <EmptyState icon={Star} title={$t('Še ni priljubljenih')} body={$t('Dodaj postajo s pritiskom na zvezdico ali shrani pot iz načrtovalca.')} />
+      <EmptyState icon={Star} title={$t('Še ni priljubljenih')} body={$t('Dodaj postajališče s pritiskom na zvezdico ali shrani pot iz načrtovalca.')} />
     {:else if favList.length > 0}
       <div class="flex items-center justify-between">
-        <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postaja', 'postaji', 'postaje', 'postaj'], ['stop', 'stops'])}</div>
+        <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postajališče', 'postajališči', 'postajališča', 'postajališč'], ['stop', 'stops'])}</div>
         <div class="flex items-center gap-2">
           <ReadAloud text={() => departuresSpeech(boards.map(b => ({
             name: b.stop.name, rows: b.deps.map(gtfsRow),
@@ -354,7 +354,7 @@
             </button>
             {#if b.deps.length === 0}
               <div class="px-4 pb-3 t-footnote text-muted">
-                {gtfs && !departsFromStop(gtfs, b.stop.id) ? $t('Končna postaja: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov')}
+                {gtfs && !departsFromStop(gtfs, b.stop.id) ? $t('Končno postajališče: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov')}
               </div>
             {:else}
               <ul>
@@ -430,7 +430,7 @@
       </div>
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         {#if pickerChoices.length === 0}
-          <div class="t-body text-muted text-center py-8">{$t('Ni linij za to postajo.')}</div>
+          <div class="t-body text-muted text-center py-8">{$t('Ni linij za to postajališče.')}</div>
         {:else}
           <ul class="surface-2 rounded-2xl overflow-hidden">
             {#each pickerChoices as c, i}
@@ -490,7 +490,7 @@
 {/if}
 
 <ConfirmDialog open={clearConfirmOpen}
-               title={$t('Počisti vse priljubljene postaje?')}
+               title={$t('Počisti vsa priljubljena postajališča?')}
                body={$t('Shranjene poti ostanejo. Dejanje lahko takoj razveljaviš.')}
                confirmLabel={$t('Počisti')} destructive
                onConfirm={clearAll}

@@ -408,7 +408,7 @@
 
         <!-- Linija -->
         <div>
-          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Linija in postaja')}</div>
+          <div class="t-footnote text-muted uppercase tracking-wide mb-2">{$t('Linija in postajališče')}</div>
           {#if editorLines.length === 0}
             <div class="t-footnote text-muted">{$t('Ni pripetih linij.')}</div>
           {:else}

@@ -71,10 +71,10 @@
 
 <Screen title={$t('Vozni redi')}>
   <div class="max-w-screen-sm mx-auto px-4 pb-6">
-    <p class="t-footnote text-muted mb-4">{$t('Izberi linijo ali poišči postajo za vozni red.')}</p>
+    <p class="t-footnote text-muted mb-4">{$t('Izberi linijo ali poišči postajališče za vozni red.')}</p>
 
     <div class="surface-2 rounded-xl p-1 flex gap-1 mb-4">
-      {#each [{id: 'lines' as Mode, label: $t('Linije')}, {id: 'stops' as Mode, label: $t('Postaje')}] as tab}
+      {#each [{id: 'lines' as Mode, label: $t('Linije')}, {id: 'stops' as Mode, label: $t('Postajališča')}] as tab}
         {@const a = mode === tab.id}
         <button class="pressable flex-1 h-10 rounded-lg t-subhead font-semibold transition-colors"
                 style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
@@ -86,7 +86,7 @@
       <Search size={18} color="var(--text-muted)" class="absolute left-3 top-1/2 -translate-y-1/2" />
       <input bind:value={query}
              class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
-             placeholder={mode === 'lines' ? $t('Poišči linijo (npr. P16)…') : $t('Poišči postajo…')} />
+             placeholder={mode === 'lines' ? $t('Poišči linijo (npr. P16)…') : $t('Poišči postajališče…')} />
     </div>
 
     {#key mode}
@@ -108,7 +108,7 @@
     {:else}
       <!-- Iskanje začne pri dveh črkah; ena črka ni »Ni zadetkov« (pregled 05.10.). -->
       {#if q.length < 2}
-        <div class="t-body text-muted text-center py-12">{$t('Vnesi ime postaje za iskanje voznega reda.')}</div>
+        <div class="t-body text-muted text-center py-12">{$t('Vnesi ime postajališča za iskanje voznega reda.')}</div>
       {:else if stops.length === 0}
         <div class="t-body text-muted text-center py-12">{$t('Ni zadetkov.')}</div>
       {:else}

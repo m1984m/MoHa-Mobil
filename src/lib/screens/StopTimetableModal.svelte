@@ -105,7 +105,7 @@
        role="presentation">
     <div in:sheet out:sheet={{ out: true }} class="surface w-full sm:max-w-lg mx-auto mt-auto rounded-t-3xl sm:rounded-3xl sm:my-8 shadow-float flex flex-col overflow-hidden"
          style="max-height: calc(100dvh - 2rem);"
-         role="dialog" aria-modal="true" aria-label={$t('Vozni red postaje {postaja}', { postaja: stop.name })} tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Vozni red postajališča {postaja}', { postaja: stop.name })} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center gap-3 px-5 pt-4 pb-2 shrink-0">
         <div class="min-w-0 flex-1">

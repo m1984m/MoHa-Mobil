@@ -5,6 +5,34 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.28.0 — 2026-11-04
+
+**Načrtovalnik po vsej Sloveniji**
+- Iz Maribora kamorkoli v Sloveniji: Marpromov avtobus do postaje, nato vlak SŽ ali medkrajevni avtobus
+  (Arriva, Nomago, AP Murska Sobota …), s prestopi. Vir je ves medkrajevni vozni red IJPP brez LPP
+  (`public/gtfs/ijpp-si.json`, 8.993 postajališč, 15.506 voženj, 425 kB stisnjeno, naloži se šele ob
+  medkrajevnem iskanju; `npm run gtfs:ijpp`, okno 60 dni).
+- Izbira načina: Vse, Avtobus, Vlak, Bus + vlak. Medkrajevno odloča prihod (prestop šteje 10 min), mestni del
+  poti do vlaka se izračuna nazaj od njegovega odhoda (prej »Vlak do Kopra 13 h 45 min« zaradi čakanja na postaji).
+- Iskanje cilja po vsej Sloveniji (Nominatim brez dodanega »Maribor«, medkrajevna postajališča med predlogi);
+  na karti se medkrajevni odsek nariše čez postanke.
+- Povezava »Deljeni prevozi na prevoz.org« za isti od, do in dan (njihovega API-ja brez dovoljenja ne kličemo).
+- Načrtovalnik: sosednja postajališča prek mreže namesto primerjave vsak z vsakim (9.500 postajališč).
+
+**Dom in karta**
+- Kartica postajališča dobi rdeč okvir in napis (»P16 čez 2 min«), ko avtobus odpelje v 3 minutah.
+- Dotik avtobusa na karti pokaže vse avtobuse iste linije in vse njene trase; izbrani ima poudarjen krog,
+  kamera zajame vse.
+- »Postajališče« namesto »postaja« po vsej aplikaciji (Avtobusna in železniška postaja ter postaje MBajk ostanejo).
+
+**Ostalo**
+- PNG ikone: `apple-touch-icon.png` za iPhone (iOS SVG ne podpira), PNG v manifestu, PNG ikona obvestil
+  opomnikov. Na iPhonu ikono odstrani z začetnega zaslona in dodaj znova.
+- Glas Petra prek storitve Microsoft Edge brez ključa (Worker `edge.js`, žeton Sec-MS-GEC v2 iz edge-tts 7.3.1);
+  ključ Azure je vračal 401.
+
+---
+
 ## 0.27.0 — 2026-10-12
 
 Popravki po analizi delovanja 12.10.2026 (`../analiza_2026-10-12/ANALIZA_DELOVANJA.md`: 34 najdb + 8 v
@@ -775,7 +803,25 @@ Popravek uvoza voznega reda. Brez sprememb v vmesniku.
 - **Vsak poseg se izpiše** skupaj s kontaktom za prijavo (`marprom.transit@gmail.com`), `public/gtfs/meta.json` pa nosi števec `anomalies` (0 = čist feed), da se napaka v prihodnjem feedu opazi tudi ob samodejnem prevzemu.
 - Preverjeno na sintetično pokvarjenem feedu (prvi postanek, zadnji postanek, dva zaporedna sredi vožnje): vseh 5 primerov ujetih, po popravku 0 nazadujočih razmikov. Na resničnem feedu spremenjena natanko 1 vožnja, izgubljenih postankov 0.
 
-> Opomba: različice 0.9.1–0.9.3 v tem zapisu niso dokumentirane — objavljene so bile brez vnosa v changelog.
+---
+
+## 0.9.3 — 2026-08-05
+
+- Tabla prihodov: za avtobus tik pred postajališčem (`ETAMin` ≤ 2) se uporabi ETA vozila iz
+  `GetActiveDeviceDetails`, ki je na kratkem horizontu natančnejši (meritvi 04. in 05.08.: tabla
+  ~45 s prepozna). Vozila v 25-sekundnem predpomnilniku, en klic za vsa postajališča na Domu.
+
+## 0.9.2 — 2026-08-01
+
+- Hitrejši prvi zagon: Karta (MapLibre, ~1,1 MB) in načrtovalnik se naložita posebej, po prvem
+  izrisu v ozadju. Začetni paket 87 kB.
+
+## 0.9.1 — 2026-08-01
+
+- Lasten posrednik na Cloudflare Workers za podatke v živo (Marprom OBA) in pešpoti
+  (openrouteservice) namesto javnih posrednikov `corsproxy.io`/`allorigins`.
+- Ključ openrouteservice ni več v javnem paketu (živi samo kot skrivnost Workerja; stari ključ
+  zamenjan).
 
 ---
 

@@ -119,7 +119,7 @@
             <MoonStar size={26} color="var(--text-muted)" />
             <div class="t-body">
               {#if gtfs && stop && !departsFromStop(gtfs, stop.id)}
-                {$t('Končna postaja: od tu avtobusi ne odpeljejo.')}
+                {$t('Končno postajališče: od tu avtobusi ne odpeljejo.')}
               {:else if nextDay}
                 {$t('Danes ni več odhodov · prvi {dan} ob', { dan: fmtDayOffset(nextDay.dayOffset, nextDay.weekday) })}
                 <b>{fmtClock(nextDay.depSec)}</b>

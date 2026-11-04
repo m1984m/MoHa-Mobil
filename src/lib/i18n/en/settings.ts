@@ -63,12 +63,12 @@ export default {
   'Zagon': 'Startup',
   'Privzeti zavihek ob zagonu': 'Tab shown at startup',
   'Najbližja postajališča': 'Nearby stops',
-  'Prikaži postaje v bližini tvoje lokacije': 'Show stops near your location',
+  'Prikaži postajališča v bližini tvoje lokacije': 'Show stops near your location',
   'Preklopi bližnja postajališča': 'Toggle nearby stops',
   'Radij iskanja': 'Search radius',
   'Oddaljenost iskanja bližnjih postaj': 'How far to look for nearby stops',
   'Priljubljena postajališča': 'Saved stops',
-  'Prikaži shranjene postaje s tvojega seznama': 'Show the stops you have saved',
+  'Prikaži shranjena postajališča s tvojega seznama': 'Show the stops you have saved',
   'Preklopi priljubljena postajališča': 'Toggle saved stops',
   'Odhodi': 'Departures',
   'Prikaz časa odhoda': 'Departure time format',
@@ -162,7 +162,7 @@ export default {
   'Opomniki': 'Reminders',
   '{n} od {total} vklopljenih': '{n} of {total} on',
   'Najprej pripni linijo': 'Pin a line first',
-  'Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajo in tapni »Pripni linijo«.':
+  'Opomnik nastaviš za linijo, ki jo imaš pripeto v Priljubljenih. Odpri Priljubljene, izberi postajališče in tapni »Pripni linijo«.':
     'Reminders are set for a line pinned in Saved. Open Saved, choose a stop and tap “Pin line”.',
   'Ni opomnikov': 'No reminders',
   'Izberi postajališče, avtobus in uro ali tapni zvonec pri odhodu na listu postajališča.':
@@ -180,7 +180,7 @@ export default {
   'Uredi opomnik': 'Edit reminder',
   'Opomnik za odhod': 'Departure reminder',
   'Zapri': 'Close',
-  'Linija in postaja': 'Line and stop',
+  'Linija in postajališče': 'Line and stop',
   'Ni pripetih linij.': 'No pinned lines.',
   'Dnevi': 'Days',
   'Delavniki': 'Weekdays',
@@ -222,8 +222,8 @@ export default {
   // besedilo potisnega obvestila (sestavi ga telefon ob uskladitvi)
   'Kreni — {line} odhaja zdaj': 'Time to go — {line} leaving now',
   'Kreni — {line} čez {time}': 'Time to go — {line} in {time}',
-  'Odhod ob {time} s postaje {stop} (proti {dir}).': 'Departs {stop} at {time} (towards {dir}).',
-  'Odhod ob {time} s postaje {stop}.': 'Departs {stop} at {time}.',
+  'Odhod ob {time} s postajališča {stop} (proti {dir}).': 'Departs {stop} at {time} (towards {dir}).',
+  'Odhod ob {time} s postajališča {stop}.': 'Departs {stop} at {time}.',
   'Vozni red za danes ne velja več, zato opomniki ne bodo zazvonili. Posodobi podatke v aplikaciji.':
     'The timetable no longer covers today, so reminders will not go off. Update the data in the app.',
   'V voznem redu ni več odhodov za nastavljene opomnike.': 'The timetable has no more departures for your reminders.',
@@ -278,4 +278,8 @@ export default {
   'Pošlji preizkusno obvestilo in kratko navodilo, kako vklopiš zvok obvestil': 'Send a test notification, plus short instructions for turning on notification sound',
   'Pri postajališču vidiš najbližjo postajo mBajk s prostimi kolesi': 'At a stop you can see the nearest MBajk station with available bikes',
   'Na karti postaja mBajk pokaže najbližje avtobusno postajališče in njegove odhode': 'On the map an MBajk station shows the nearest bus stop and its departures',
+  'Načrtovalnik po vsej Sloveniji: mestni avtobus, vlak in medkrajevni avtobusi, izbira načina prevoza': 'Journey planner for all of Slovenia: city bus, train and intercity buses, choice of transport mode',
+  'Rdeč okvir na Domu, ko avtobus pripelje v 3 minutah': 'Red frame on Home when a bus arrives within 3 minutes',
+  'Na karti dotik avtobusa pokaže njegovo linijo in vse avtobuse na njej': 'On the map, tapping a bus shows its line and all buses on it',
+  'Postajališče namesto postaja, ikona za iPhone in glas Petra brez ključa Azure': 'Stop wording, iPhone icon and Petra’s voice without an Azure key',
 };

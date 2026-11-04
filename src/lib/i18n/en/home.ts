@@ -29,13 +29,13 @@ export default {
   'Po voznem redu': 'Scheduled',
 
   // TimetablesScreen
-  'Izberi linijo ali poišči postajo za vozni red.': 'Pick a line or search for a stop to see its timetable.',
+  'Izberi linijo ali poišči postajališče za vozni red.': 'Pick a line or search for a stop to see its timetable.',
   'Linije': 'Lines',
-  'Postaje': 'Stops',
+  'Postajališča': 'Stops',
   'Poišči linijo (npr. P16)…': 'Search lines (e.g. P16)…',
-  'Poišči postajo…': 'Search stops…',
+  'Poišči postajališče…': 'Search stops…',
   'Ni zadetkov.': 'No results.',
-  'Vnesi ime postaje za iskanje voznega reda.': 'Enter a stop name to find its timetable.',
+  'Vnesi ime postajališča za iskanje voznega reda.': 'Enter a stop name to find its timetable.',
   'Odstrani iz priljubljenih': 'Remove from saved',
   'Dodaj med priljubljene': 'Add to saved',
 
@@ -50,14 +50,14 @@ export default {
   'Zamenjaj smer': 'Switch direction',
   'od {kraj}': 'from {kraj}',
   'naslednji': 'next',
-  'Postaja': 'Stop',
-  'Vse postaje (od izhodišča)': 'All stops (from start)',
-  'Odpri postajo na karti': 'Show stop on map',
-  'Ta dan ni voženj skozi to postajo.': 'No trips through this stop on this day.',
+  'Postajališče': 'Stop',
+  'Vsa postajališča (od izhodišča)': 'All stops (from start)',
+  'Odpri postajališče na karti': 'Show stop on map',
+  'Ta dan ni voženj skozi to postajališče.': 'No trips through this stop on this day.',
   'konča {cas}': 'ends {cas}',
   'Ta dan ni voženj v izbrani smeri.': 'No trips in this direction on this day.',
   '{n} post.': '{n} stops',
-  'Vozni red postaje {postaja}': '{postaja} timetable',
+  'Vozni red postajališča {postaja}': '{postaja} timetable',
   'Vozni red': 'Timetable',
 
   // WeatherModal
@@ -99,7 +99,7 @@ export default {
   '{linija} proti {smer}': '{linija} to {smer}',
   'prek {via}': 'via {via}',
   'točno': 'on time',
-  'Končna postaja: od tu avtobusi ne odpeljejo.': 'Last stop: buses do not depart from here.',
+  'Končno postajališče: od tu avtobusi ne odpeljejo.': 'Last stop: buses do not depart from here.',
 
   // BottomSheet, ui/*
   'Podrobnosti': 'Details',
@@ -115,4 +115,6 @@ export default {
   'Danes je praznik: avtobusi vozijo po nedeljskem redu.': 'Today is a public holiday: buses run on the Sunday timetable.',
   'Danes je praznik: avtobusi vozijo po sobotnem redu.': 'Today is a public holiday: buses run on the Saturday timetable.',
   'Danes avtobusi vozijo po delavniškem redu.': 'Today buses run on the weekday timetable.',
+  '{linija} prihaja zdaj': '{linija} arriving now',
+  '{linija} čez {n} min': '{linija} in {n} min',
 };

@@ -47,6 +47,11 @@
   // Smer, ki loči dve postajališči z istim imenom (par čez cesto).
   export let directionHint: string = '';
   export let onSelect: (s: Stop) => void;
+  // Rdeč okvir, ko avtobus odpelje čez največ toliko minut (Matej, 04.11.2026: »da vidiš,
+  // da ti bus pride že kmalu«). 0 ali manj = brez okvirja.
+  export let soonMin = 3;
+
+  $: soonRow = soonMin > 0 ? rows.find(r => r.minutesFromNow >= 0 && r.minutesFromNow <= soonMin) : undefined;
 
   // Izračuna se samo, kadar danes ni več odhodov — takrat je "Danes ni več odhodov"
   // slepa ulica brez podatka, kdaj gre naslednji.
@@ -61,7 +66,8 @@
   $: badgeSize = ($largeUI ? 'lg' : ($compactLists ? 'sm' : 'md')) as 'sm' | 'md' | 'lg';
 </script>
 
-<div class="surface rounded-2xl border border-base shadow-card overflow-hidden">
+<div class="surface rounded-2xl border shadow-card overflow-hidden"
+     class:border-base={!soonRow} class:mm-soon={!!soonRow}>
   <button type="button"
           class="pressable w-full text-left px-4 pt-3 pb-2 flex items-center justify-between gap-3"
           style="touch-action: manipulation;"
@@ -72,6 +78,13 @@
       {/if}
       <div class="min-w-0">
         <div class="t-title3 font-semibold truncate">{stop.name}</div>
+        {#if soonRow}
+          <div class="mm-soon-label t-footnote font-semibold">
+            {soonRow.minutesFromNow <= 0
+              ? $t('{linija} prihaja zdaj', { linija: soonRow.routeShort })
+              : $t('{linija} čez {n} min', { linija: soonRow.routeShort, n: soonRow.minutesFromNow })}
+          </div>
+        {/if}
         <div class="t-footnote text-muted truncate">
           {#if distanceM != null}{$t('{m} m stran', { m: Math.round(distanceM) })}{/if}
           {#if distanceM != null && (directionHint || stop.code)}&nbsp;·&nbsp;{/if}
@@ -85,7 +98,7 @@
   {#if rows.length === 0}
     <div class="px-4 pb-3 pt-1 border-t border-base">
       {#if terminal}
-        <div class="t-footnote text-muted">{$t('Končna postaja: od tu avtobusi ne odpeljejo.')}</div>
+        <div class="t-footnote text-muted">{$t('Končno postajališče: od tu avtobusi ne odpeljejo.')}</div>
       {:else if nextDay}
         <div class="flex items-center gap-2">
           <MoonStar size={15} color="var(--text-muted)" />
@@ -134,6 +147,8 @@
 </div>
 
 <style>
+  .mm-soon { border: 2px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .mm-soon-label { color: var(--accent-on-tint); }
   /* Razmik med tarčami namesto skupne črte. Vklopi ga --row-gap, ki ga postavi
      način za starejše; v privzetem načinu je 0 in postavitev ostane, kot je bila. */
   .mm-board-roomy {

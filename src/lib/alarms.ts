@@ -147,8 +147,8 @@ function occurrenceBody(a: Alarm, depSec: number, headsign: string): string {
   const smer = headsign || a.headsign;
   const vars = { time: fmtClock(depSec), stop: a.stopName, dir: smer };
   return smer
-    ? tr('Odhod ob {time} s postaje {stop} (proti {dir}).', vars)
-    : tr('Odhod ob {time} s postaje {stop}.', vars);
+    ? tr('Odhod ob {time} s postajališča {stop} (proti {dir}).', vars)
+    : tr('Odhod ob {time} s postajališča {stop}.', vars);
 }
 
 /**

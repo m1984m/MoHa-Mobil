@@ -492,7 +492,7 @@
           <MapPinned size={20} color="var(--text-muted)" />
           <div class="flex-1">
             <div class="t-body">{$t('Najbližja postajališča')}</div>
-            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži postaje v bližini tvoje lokacije')}</div>
+            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži postajališča v bližini tvoje lokacije')}</div>
           </div>
           <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$homeShowNearby ? 'var(--accent)' : 'var(--surface-3)'}"
@@ -506,7 +506,7 @@
           <Star size={20} color="var(--status-delay)" fill="var(--status-delay)" />
           <div class="flex-1">
             <div class="t-body">{$t('Priljubljena postajališča')}</div>
-            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži shranjene postaje s tvojega seznama')}</div>
+            <div class="t-footnote text-muted mt-0.5">{$t('Prikaži shranjena postajališča s tvojega seznama')}</div>
           </div>
           <button class="pressable mm-tap44 relative w-12 h-7 rounded-full transition-colors"
                   style="background: {$homeShowFavs ? 'var(--accent)' : 'var(--surface-3)'}"

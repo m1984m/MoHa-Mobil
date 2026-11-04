@@ -36,7 +36,7 @@ export default {
   'Pot po korakih': 'Step by step',
 
   // Karta
-  'Poišči postajo': 'Find a stop',
+  'Poišči postajališče': 'Find a stop',
   'pred {s} s': '{s} s ago',
   'Povezovanje…': 'Connecting…',
   'Offline · po voznem redu': 'Offline · scheduled',
@@ -49,9 +49,9 @@ export default {
   'Izberi cilj na karti': 'Pick destination on map',
 
   // Postaja
-  'Postaja': 'Stop',
-  'Načrtuj pot do te postaje': 'Plan a route to this stop',
-  'Vozni red postaje': 'Stop timetable',
+  'Postajališče': 'Stop',
+  'Načrtuj pot do tega postajališča': 'Plan a route to this stop',
+  'Vozni red postajališča': 'Stop timetable',
   'Odstrani iz priljubljenih': 'Remove from saved',
   'Dodaj med priljubljena': 'Add to saved',
   'Zapri': 'Close',
@@ -70,29 +70,29 @@ export default {
   'v živo': 'live',
   'po redu': 'scheduled',
   'Nalagam žive prihode…': 'Loading live arrivals…',
-  'Danes ni več odhodov s te postaje.': 'No more departures from this stop today.',
-  'Celoten vozni red postaje': 'Full stop timetable',
+  'Danes ni več odhodov s tega postajališča.': 'No more departures from this stop today.',
+  'Celoten vozni red postajališča': 'Full stop timetable',
 
   // Avtobus
-  'Nazaj na postajo {name}': 'Back to stop {name}',
-  'Nazaj na postajo': 'Back to stop',
+  'Nazaj na postajališče {name}': 'Back to stop {name}',
+  'Nazaj na postajališče': 'Back to stop',
   'Avtobus': 'Bus',
   'Prenehaj slediti': 'Stop following',
   'Sledim avtobus': 'Follow bus',
-  'Naslednja postaja': 'Next stop',
+  'Naslednje postajališče': 'Next stop',
   'prihaja zdaj': 'arriving now',
   'čez {n} min': 'in {n} min',
   'ocena': 'estimate',
-  'Naslednje postaje': 'Next stops',
+  'Naslednja postajališča': 'Next stops',
   'Ocenjeno': 'Estimated',
-  'Odpri postajo {name}': 'Open stop {name}',
+  'Odpri postajališče {name}': 'Open stop {name}',
   'Pozicija je GPS v živo; časi prihodov so iz voznega reda.': 'Position is live GPS; arrival times are from the timetable.',
   'Pozicija je ocenjena iz voznega reda (±1–2 min).': 'Position is estimated from the timetable (±1–2 min).',
 
   // Iskanje postaje
-  'Ime postaje…': 'Stop name…',
-  'Ime postaje': 'Stop name',
-  'Vnesi vsaj dve črki imena postaje.': 'Type at least two letters of the stop name.',
+  'Ime postajališča…': 'Stop name…',
+  'Ime postajališča': 'Stop name',
+  'Vnesi vsaj dve črki imena postajališča.': 'Type at least two letters of the stop name.',
   'Ni zadetkov.': 'No results.',
 
   // Deljenje

@@ -26,6 +26,8 @@ const APP_SHELL = [
   './icon-192.svg',
   './icon-512.svg',
   './icon-maskable.svg',
+  './apple-touch-icon.png',
+  './icon-192.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -259,7 +261,7 @@ self.addEventListener('push', (event) => {
     // tag je unikaten na ponovitev, zato podvojeno zvonjenje samo tiho posodobi
     // obstoječe obvestilo namesto da bi zazvonilo še enkrat.
     renotify: false,
-    icon: scopedUrl('./icon-192.svg'),
+    icon: scopedUrl('./icon-192.png'),
     badge: scopedUrl('./icon-maskable.svg'),
     vibrate,
     data: { url, fireAt: isFinite(fireAt) ? fireAt : null, stale },

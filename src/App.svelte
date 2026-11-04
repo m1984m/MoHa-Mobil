@@ -119,7 +119,7 @@
     statsOpen = true;
   }
   // Predizpolnjen cilj za PlannerModal — bodisi iz long-pressa na karti (brez imena, reverse-geocode
-   // naknadno), bodisi iz gumba "pot do te postaje" (z imenom).
+   // naknadno), bodisi iz gumba "pot do tega postajališča" (z imenom).
   let pendingDest: { lat: number; lon: number; name?: string } | null = null;
   let plannerCandidates: Plan[] = [];
   $: hasPlanAlternatives = plannerCandidates.length > 1;

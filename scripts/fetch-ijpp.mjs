@@ -40,6 +40,9 @@ const SKIP_AGENCIES = new Set(['1118']); // LPP
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(here, '../public/gtfs/ijpp.json');
+// Ves medkrajevni promet Slovenije (brez LPP) s celimi vožnjami — za načrtovalnik poti iz
+// Maribora kamorkoli (src/lib/ijppPlan.ts). Naloži se šele ob medkrajevnem iskanju.
+const OUT_SI = resolve(here, '../public/gtfs/ijpp-si.json');
 
 // --- minimalni ZIP reader (enak kot fetch-gtfs.mjs; ZIP64 ni podprt, zip ima ~50 MB) ---
 function unzip(buf) {
@@ -147,8 +150,10 @@ for (const r of rows(f.get('routes.txt'))) {
   routes.set(r.route_id, r);
 }
 const stopsAll = new Map();
+const stopsSi = new Map();
 for (const s of rows(f.get('stops.txt'))) {
   const lat = +s.stop_lat, lon = +s.stop_lon;
+  stopsSi.set(s.stop_id, { name: s.stop_name, lat, lon });
   if (lat >= BBOX.s && lat <= BBOX.n && lon >= BBOX.w && lon <= BBOX.e) stopsAll.set(s.stop_id, { name: s.stop_name, lat, lon });
 }
 const trips = new Map();
@@ -203,3 +208,47 @@ const perAgency = agencies.map((ag, i) => `${ag[0]}: ${outRoutes.filter(r => r[0
 console.log(`[ijpp] ${outStops.length} postajališč, ${outRoutes.length} linij, ${outTrips.length} voženj, ${days.length} vzorcev dni`);
 console.log(`[ijpp] ${perAgency.join('; ')}`);
 console.log(`[ijpp] ${OUT}: ${(json.length / 1024).toFixed(0)} kB, gzip ${(gzipSync(json).length / 1024).toFixed(0)} kB`);
+
+// --- Vsa Slovenija (za načrtovalnik) ---
+// Oblika: { meta, start, agencies, routes:[[agencija, oznaka, tip]], stops:[[ime, lat, lon]],
+//   heads, days, pats:[[postajališče…]], trips:[[route, days, head, pat, t0, d1, d2, …]] }
+// t0 = odhod s prvega postajališča v minutah od polnoči dneva službe, d_i = razlika do
+// naslednjega postanka (odhod; na zadnjem prihod). Vzorci postankov (pats) se ponavljajo
+// med vožnjami iste linije, zato so ločeni.
+{
+  const sAg = [], sAgIx = new Map(), sRt = [], sRtIx = new Map(), sSt = [], sStIx = new Map();
+  const sHd = [], sHdIx = new Map(), sDy = [], sDyIx = new Map(), sPt = [], sPtIx = new Map();
+  const sTr = [];
+  for (const { t, st } of trips.values()) {
+    st.sort((a, b) => a[0] - b[0]);
+    const ids = [], times = [];
+    for (let i = 0; i < st.length; i++) {
+      const [, sid, time] = st[i];
+      const s = stopsSi.get(sid);
+      if (!s || !time) continue;
+      ids.push(ix(sStIx, sSt, sid, () => [s.name, +s.lat.toFixed(5), +s.lon.toFixed(5)]));
+      times.push(toMin(time));
+    }
+    if (ids.length < 2) continue;
+    const r = routes.get(t.route_id);
+    const a = ix(sAgIx, sAg, r.agency_id, () => [agencyName.get(r.agency_id) ?? r.agency_id, r.route_color ? '#' + r.route_color : '']);
+    const ri = ix(sRtIx, sRt, t.route_id, () => [a, r.route_short_name || r.route_long_name, +r.route_type]);
+    const bits = svc.get(t.service_id).join('');
+    const di = ix(sDyIx, sDy, bits, () => bits);
+    const head = t.trip_headsign || r.route_long_name || '';
+    const hi = ix(sHdIx, sHd, head, () => head);
+    const pk = ids.join(',');
+    const pi = ix(sPtIx, sPt, pk, () => ids);
+    const row = [ri, di, hi, pi, times[0]];
+    for (let i = 1; i < times.length; i++) row.push(Math.max(0, times[i] - times[i - 1]));
+    sTr.push(row);
+  }
+  const outSi = {
+    meta: { built: new Date().toISOString(), source: 'derp.si / NAP (IJPP), CC-BY-SA 4.0', feedVersion: feedInfo.feed_version ?? '' },
+    start: ymd(start), agencies: sAg, routes: sRt, stops: sSt, heads: sHd, days: sDy, pats: sPt, trips: sTr,
+  };
+  const jsonSi = JSON.stringify(outSi);
+  await writeFile(OUT_SI, jsonSi, 'utf8');
+  console.log(`[ijpp-si] ${sSt.length} postajališč, ${sRt.length} linij, ${sTr.length} voženj, ${sPt.length} vzorcev postankov`);
+  console.log(`[ijpp-si] ${OUT_SI}: ${(jsonSi.length / 1024).toFixed(0)} kB, gzip ${(gzipSync(jsonSi).length / 1024).toFixed(0)} kB`);
+}

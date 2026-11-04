@@ -21,6 +21,7 @@
  */
 
 import { recordUpstream } from './analytics.js';
+import { edgeSynth } from './edge.js';
 
 const VOICE = 'sl-SI-PetraNeural';
 // Enako kot `rate = 0.9` pri sistemskem glasu: bere se med hojo ali na postaji.
@@ -92,6 +93,12 @@ export function ssml(text) {
     + `<voice name="${VOICE}">${glava}<prosody rate="${RATE}">${xmlEscape(telo)}</prosody></voice></speak>`;
 }
 
+// Edge sprejme omejen SSML (en <voice>, en <prosody>); pozdrav dobi samo piko.
+export function ssmlEdge(text) {
+  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='sl-SI'>`
+    + `<voice name='${VOICE}'><prosody pitch='+0Hz' rate='${RATE}' volume='+0%'>${xmlEscape(text)}</prosody></voice></speak>`;
+}
+
 async function kljuc(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${VOICE}|${RATE}|${FORMAT}|${text}`));
   const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -107,9 +114,8 @@ function napaka(obj, status, cors) {
 
 export async function handleTts(request, env, ctx, cors) {
   if (request.method !== 'POST') return napaka({ error: 'method not allowed' }, 405, cors);
-  if (!env.AZURE_SPEECH_KEY || !env.AZURE_SPEECH_REGION) {
-    return napaka({ error: 'tts ni nastavljen' }, 503, cors);
-  }
+  // Privzeto Edge (brez ključa). Azure samo, če je TTS_ENGINE = "azure" in je ključ nastavljen.
+  const azure = env.TTS_ENGINE === 'azure' && env.AZURE_SPEECH_KEY && env.AZURE_SPEECH_REGION;
 
   const dolzina = Number(request.headers.get('Content-Length') ?? 0);
   if (dolzina > MAX_CHARS * 4) return napaka({ error: 'body too large' }, 413, cors);
@@ -122,7 +128,7 @@ export async function handleTts(request, env, ctx, cors) {
   // `znaki` samo, kadar je Azure odgovoril z zvokom (tedaj šteje v kvoto) — ne pri
   // zadetku v predpomnilniku ali zavrnitvi.
   const stej = (izid, status, znaki = 0) => recordUpstream(env, {
-    storitev: 'tts', metoda: 'petra', izid, status, preko: 'direct', drzava, ms: Date.now() - zacetek, znaki,
+    storitev: 'tts', metoda: azure ? 'petra' : 'edge', izid, status, preko: 'direct', drzava, ms: Date.now() - zacetek, znaki,
   });
 
   const zvok = (body, oznaka) => new Response(body, {
@@ -146,46 +152,59 @@ export async function handleTts(request, env, ctx, cors) {
     return napaka({ error: 'preveč zahtev' }, 429, cors);
   }
 
-  let res;
-  try {
-    res = await fetch(`https://${env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
-      method: 'POST',
-      headers: {
-        'Ocp-Apim-Subscription-Key': env.AZURE_SPEECH_KEY,
-        'Content-Type': 'application/ssml+xml',
-        'X-Microsoft-OutputFormat': FORMAT,
-        'User-Agent': 'moha-mobil-proxy',
-      },
-      body: ssml(text),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (e) {
-    stej('nedosegljiv', 502);
-    return napaka({ error: 'upstream unreachable', detail: String(e?.name ?? e) }, 502, cors);
-  }
-
-  if (!res.ok) {
-    stej('napaka', res.status);
-    // 401/403 (napačen ključ ali regija, porabljena kvota) se ne popravi sam:
-    // 503 aplikaciji pove, naj Petre do konca seje ne kliče več. 429 je
-    // prehoden, vse drugo 502. Telo Azure ne gre naprej, ker lahko nosi
-    // podrobnosti o naročnini.
-    const status = res.status === 401 || res.status === 403 ? 503 : res.status === 429 ? 429 : 502;
-    return napaka({ error: 'tts', status: res.status }, status, cors);
-  }
-
-  // Meja časa velja tudi za branje telesa: prekinitev tu vrže in brez tega bi
-  // Worker odgovoril s 500 (izjema) namesto z urejeno napako.
   let buf;
-  try {
-    buf = await res.arrayBuffer();
-  } catch (e) {
-    stej('nedosegljiv', 504, text.length);
-    return napaka({ error: 'upstream timeout', detail: String(e?.name ?? e) }, 504, cors);
-  }
-  if (buf.byteLength < MIN_BYTES || !(res.headers.get('Content-Type') ?? '').startsWith('audio/')) {
-    stej('napaka', 200, text.length);
-    return napaka({ error: 'tts', status: 200 }, 502, cors);
+  if (!azure) {
+    try {
+      buf = await edgeSynth(ssmlEdge(text), { format: FORMAT, timeoutMs: TIMEOUT_MS });
+    } catch (e) {
+      stej(e?.name === 'TimeoutError' ? 'nedosegljiv' : 'napaka', e?.status ?? 502);
+      return napaka({ error: 'tts', detail: String(e?.message ?? e).slice(0, 120) }, 502, cors);
+    }
+    if (buf.byteLength < MIN_BYTES) {
+      stej('napaka', 200, text.length);
+      return napaka({ error: 'tts', status: 200 }, 502, cors);
+    }
+  } else {
+    let res;
+    try {
+      res = await fetch(`https://${env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': env.AZURE_SPEECH_KEY,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': FORMAT,
+          'User-Agent': 'moha-mobil-proxy',
+        },
+        body: ssml(text),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (e) {
+      stej('nedosegljiv', 502);
+      return napaka({ error: 'upstream unreachable', detail: String(e?.name ?? e) }, 502, cors);
+    }
+
+    if (!res.ok) {
+      stej('napaka', res.status);
+      // 401/403 (napačen ključ ali regija, porabljena kvota) se ne popravi sam:
+      // 503 aplikaciji pove, naj Petre do konca seje ne kliče več. 429 je
+      // prehoden, vse drugo 502. Telo Azure ne gre naprej, ker lahko nosi
+      // podrobnosti o naročnini.
+      const status = res.status === 401 || res.status === 403 ? 503 : res.status === 429 ? 429 : 502;
+      return napaka({ error: 'tts', status: res.status }, status, cors);
+    }
+
+    // Meja časa velja tudi za branje telesa: prekinitev tu vrže in brez tega bi
+    // Worker odgovoril s 500 (izjema) namesto z urejeno napako.
+    try {
+      buf = await res.arrayBuffer();
+    } catch (e) {
+      stej('nedosegljiv', 504, text.length);
+      return napaka({ error: 'upstream timeout', detail: String(e?.name ?? e) }, 504, cors);
+    }
+    if (buf.byteLength < MIN_BYTES || !(res.headers.get('Content-Type') ?? '').startsWith('audio/')) {
+      stej('napaka', 200, text.length);
+      return napaka({ error: 'tts', status: 200 }, 502, cors);
+    }
   }
   stej('ok', 200, text.length);
   ctx.waitUntil(cache.put(cacheKey, new Response(buf.slice(0), {

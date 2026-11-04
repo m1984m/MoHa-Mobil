@@ -102,7 +102,7 @@ export default {
   'Zadetkov: {n}': 'Results: {n}',
 
   // MapScreen v preprostem pogledu: gumbi z napisi
-  'Pot do postaje': 'Route to stop',
+  'Pot do postajališča': 'Route to stop',
   'Sledi avtobusu': 'Follow bus',
   'Ne sledi več': 'Stop following',
   'smer {dest}': 'towards {dest}',
