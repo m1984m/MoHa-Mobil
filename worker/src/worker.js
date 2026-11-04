@@ -1288,7 +1288,7 @@ async function usmeri(request, env, ctx, cors) {
       ok: true,
       orsConfigured: !!env.ORS_KEY,
       ttsConfigured: true,
-      ttsEngine: env.TTS_ENGINE === 'azure' && env.AZURE_SPEECH_KEY ? 'azure' : 'edge',
+      ttsEngine: env.TTS_ENGINE !== 'edge' && env.AZURE_SPEECH_KEY ? 'azure+edge' : 'edge',
       allowedOrigins: allowedOrigins(env).length,
       obaVia: env.OBA_RELAY ? 'relay' : 'direct',
       relays: String(env.OBA_RELAY ?? '').split(',').filter(s => s.trim()).length,
