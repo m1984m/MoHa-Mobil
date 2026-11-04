@@ -68,7 +68,7 @@
   #stikaloSledi[aria-pressed="true"] { background: var(--sel); border-color: var(--accent); color: var(--accent); font-weight: 600; }
   button { cursor: pointer; }
   button.glavni { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
-  .ploscice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+  .ploscice { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
   .ploscica { background: var(--surface); padding: 10px 12px; }
   .ploscica b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
   .ploscica span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -111,6 +111,7 @@
   }
   .oznaka.izbran { transform: scale(1.25); border-color: var(--accent); z-index: 5; }
   .oznaka.neaktiven { opacity: .5; }
+  .delavnica { padding: 2px 6px; border-radius: 4px; border: 1px dashed currentColor; background: var(--bg, #fff); color: var(--muted, #6E6E73); font: 600 11px system-ui, sans-serif; pointer-events: auto; }
   #prijava {
     position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-items: center; padding: 16px;
   }
@@ -140,6 +141,7 @@
     <div class="ploscica"><b id="pKm">–</b><span>km skupaj</span></div>
     <div class="ploscica"><b id="pPovp">–</b><span>km / vozilo</span></div>
     <div class="ploscica"><b id="pZdaj">–</b><span>zdaj vozi</span></div>
+    <div class="ploscica"><b id="pDel">–</b><span id="pDelNapis">v delavnici</span></div>
   </div>
   <div id="seznam"></div>
 </aside>
@@ -217,6 +219,11 @@
   kartaPripravljena.then(() => {
     karta.addSource('sledi', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     karta.addLayer({ id: 'sledi', type: 'line', source: 'sledi', paint: { 'line-color': ['get', 'barva'], 'line-width': 2.5, 'line-opacity': 0.55 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
+    const d = document.createElement('div');
+    d.className = 'delavnica';
+    d.textContent = 'Delavnica';
+    d.title = 'Delavnica Marprom, Ob Dravi 6';
+    new maplibregl.Marker({ element: d }).setLngLat([DELAVNICA.lon, DELAVNICA.lat]).addTo(karta);
     karta.addSource('pot', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     karta.addLayer({ id: 'pot-obroba', type: 'line', source: 'pot', paint: { 'line-color': '#fff', 'line-width': 7, 'line-opacity': .8 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
     karta.addLayer({ id: 'pot', type: 'line', source: 'pot', paint: { 'line-color': ['get', 'barva'], 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
@@ -228,7 +235,30 @@
     const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6;
   }
-  const linija = (id) => s.linije.get(id) ?? { koda: id == null ? '?' : String(id), barva: '#6E6E73' };
+  const linija = (id) => id === 0 ? { koda: 'brez linije', barva: '#6E6E73' }
+    : s.linije.get(id) ?? { koda: id == null ? '?' : String(id), barva: '#6E6E73' };
+
+  // Delavnica Marprom, Ob Dravi 6 (stavba v OSM, way 396361494). Mimo vozijo tudi avtobusi
+  // na poti v garažo (~30 s v krogu), zato šteje šele postanek vsaj DELAVNICA_MIN_S.
+  // Vozilo, ki stoji, se v sled skoraj ne zapisuje (premik < 25 m), zato obisk traja od
+  // prve točke v krogu do prve točke zunaj njega (ne do zadnje točke v krogu).
+  const DELAVNICA = { lat: 46.55785, lon: 15.67744, r: 100 };
+  const DELAVNICA_MIN_S = 180;
+  const vDelavnici = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon) &&
+    Math.hypot((lat - DELAVNICA.lat) * 111320, (lon - DELAVNICA.lon) * 111320 * Math.cos(DELAVNICA.lat * Math.PI / 180)) <= DELAVNICA.r;
+  // Obiski delavnice iz točk [t, lat, lon]: [{ od, do, traja }] v ms; traja = še v delavnici.
+  function obiskiDelavnice(tocke) {
+    const obiski = [];
+    let od = null, zadnja = null;
+    for (const [t, lat, lon] of tocke) {
+      if (vDelavnici(lat, lon)) { od ??= t; zadnja = t; continue; }
+      if (od != null && t - od >= DELAVNICA_MIN_S) obiski.push({ od: od * 1000, do: t * 1000, traja: false });
+      od = null;
+    }
+    if (od != null) obiski.push({ od: od * 1000, do: zadnja * 1000, traja: true });
+    return obiski;
+  }
+  const casObiskov = (obiski) => obiski.reduce((a, o) => a + (o.do - o.od), 0);
   const znacka = (id) => { const l = linija(id); return `<span class="znacka" style="background:${l.barva};color:${svetla(l.barva) ? '#1C1C1E' : '#fff'}">${esc(l.koda)}</span>`; };
 
   // ── Klici ──────────────────────────────────────────────────────────────────
@@ -299,11 +329,12 @@
           const prek = del.startsWith('!');
           const [t, lat, lon] = (prek ? del.slice(1) : del).split(',').map(Number);
           if (!Number.isFinite(t) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-          tocke.push([lon, lat, prek ? 1 : 0]);
+          tocke.push([lon, lat, prek ? 1 : 0, t]);
           if (t > s.potiOd) s.potiOd = t;
         }
       }
       izrisiSledi();
+      izrisi();   // obiski delavnice v seznamu se računajo iz sledi
     } catch { /* sledi ostanejo, kot so bile */ }
   }
 
@@ -336,6 +367,9 @@
         if (prek || !deli.length) deli.push([]);
         deli.at(-1).push([lon, lat]);
       }
+      // /spremljanje/pot vrne čas v ms, obiskiDelavnice pričakuje sekunde.
+      s.obiskiIzbranega = obiskiDelavnice(j.pot.map(([t, lat, lon]) => [t / 1000, lat, lon])).filter(o => o.do - o.od >= DELAVNICA_MIN_S * 1000);
+      izrisiPodrobnosti();
       const v = s.zivo.get(bus);
       if (v && deli.length) deli.at(-1).push([v.Lon, v.Lat]);
       await kartaPripravljena;
@@ -361,8 +395,18 @@
     return [...vsi].map(bus => {
       const k = s.km.get(bus), z = s.dan === danes() ? s.zivo.get(bus) : null;
       const idLinije = z?.LineId ?? k?.linije?.at(-1) ?? null;
+      const tocke = s.poti.get(bus) ?? [];
+      const vsi = obiskiDelavnice(tocke.map(([lon, lat, , t]) => [t, lat, lon]));
+      // Zdaj v delavnici: položaj v krogu, vstop pred vsaj DELAVNICA_MIN_S (brez naloženih
+      // sledi zadošča položaj vozila brez linije). Obisk, ki še traja, šteje do zdaj.
+      const tece = vsi.at(-1)?.traja ? vsi.at(-1) : null;
+      const doZdaj = s.dan === danes() ? Date.now() : tece?.do;
+      const zdajVDelavnici = !!z && vDelavnici(z.Lat, z.Lon) &&
+        (tece ? doZdaj - tece.od >= DELAVNICA_MIN_S * 1000 : !s.poti.size && !z.LineId);
+      if (tece) tece.do = zdajVDelavnici ? doZdaj : tece.do;
+      const obiski = vsi.filter(o => o.do - o.od >= DELAVNICA_MIN_S * 1000);
       return {
-        bus, k, z, idLinije,
+        bus, k, z, idLinije, obiski, zdajVDelavnici,
         km: k?.km ?? 0,
         lat: z?.Lat ?? k?.lat, lon: z?.Lon ?? k?.lon,
         linije: k?.linije?.length ? k.linije : (idLinije != null ? [idLinije] : []),
@@ -384,13 +428,18 @@
     $('pKm').textContent = fmtKm(skupaj);
     $('pPovp').textContent = vsiKm.length ? fmtKm(skupaj / vsiKm.length) : '–';
     $('pZdaj').textContent = s.dan === danes() ? String(s.zivo.size) : '–';
+    const vDel = seznam.filter(v => v.zdajVDelavnici).length;
+    const zObiskom = seznam.filter(v => v.obiski.length).length;
+    $('pDel').textContent = s.dan === danes() ? String(vDel) : String(zObiskom);
+    $('pDelNapis').textContent = s.dan === danes() ? 'v delavnici' : 'v delavnici ta dan';
 
     $('seznam').innerHTML = seznam.length ? seznam.map(v => `
       <button type="button" class="vozilo${v.bus === s.izbran ? ' izbran' : ''}${v.z ? '' : ' neaktiven'}" data-bus="${esc(v.bus)}">
         <span>${v.linije.slice(-2).map(znacka).join('')}</span>
         <span><span class="bus">Bus ${esc(v.bus)}</span><br><span class="podrobno">${
           v.k ? `${fmtUra.format(new Date(v.k.prva))}–${fmtUra.format(new Date(v.k.zadnja))}` : 'še brez podatkov'
-        }${v.z ? '' : ' · ni na terenu'}</span></span>
+        }${v.zdajVDelavnici ? ' · v delavnici' : v.z ? '' : ' · ni na terenu'}${
+          v.obiski.length && !v.zdajVDelavnici ? ` · delavnica ${trajanje(casObiskov(v.obiski))}` : ''}</span></span>
         <span class="km">${fmtKm(v.km)}<small>km</small></span>
       </button>`).join('')
       : `<div class="prazno">${s.dan === danes() ? 'Ni vozil na terenu in še ni podatkov za danes.' : 'Za ta dan ni podatkov.'}</div>`;
@@ -443,7 +492,12 @@
       if (z.DirectionDescription) vrstice.push(['Smer', z.DirectionDescription]);
       const post = s.postaje.get(z.NextStopPointId);
       if (post) vrstice.push(['Naslednje', `${post}${Number.isFinite(z.ETA) && z.ETA >= 0 ? ` čez ${z.ETA} min` : ''}`]);
-    } else {
+    }
+    const obiski = s.obiskiIzbranega ?? v.obiski;
+    if (v.zdajVDelavnici) vrstice.push(['Stanje', 'v delavnici (Ob Dravi 6)']);
+    if (obiski.length) vrstice.push(['Delavnica', `${trajanje(casObiskov(obiski))}: ${
+      obiski.map(o => `${fmtUra.format(new Date(o.od))}–${fmtUra.format(new Date(o.do))}`).join(', ')}`]);
+    if (!z) {
       vrstice.push(['Stanje', s.dan === danes() ? 'ni na terenu (zadnji znani položaj)' : 'zadnji položaj tega dne']);
     }
     box.innerHTML = `
@@ -455,6 +509,7 @@
 
   function izberi(bus) {
     s.izbran = bus;
+    s.obiskiIzbranega = null;
     kartaPripravljena.then(() => karta.getSource('pot').setData({ type: 'FeatureCollection', features: [] }));
     izrisi();
     kartaPripravljena.then(() => karta.setPaintProperty('sledi', 'line-opacity', bus ? 0.22 : 0.55));

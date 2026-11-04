@@ -9,7 +9,7 @@
 //   - Same-origin static (html/js/css/svg): stale-while-revalidate
 //   - Navigation (SPA): network-first, fallback to cached index.html
 
-const VERSION = '0.27.0-96443e4';
+const VERSION = '0.28.0-dffbeea';
 // Alarmi: SW nima dostopa do import.meta.env, zato vrednosti vstavi build-sw.mjs
 // (iz process.env ob gradnji). Če nista nastavljeni, ostaneta prazna niza in
 // obnovitev naročnine spodaj se tiho preskoči.
@@ -26,6 +26,8 @@ const APP_SHELL = [
   './icon-192.svg',
   './icon-512.svg',
   './icon-maskable.svg',
+  './apple-touch-icon.png',
+  './icon-192.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -259,7 +261,7 @@ self.addEventListener('push', (event) => {
     // tag je unikaten na ponovitev, zato podvojeno zvonjenje samo tiho posodobi
     // obstoječe obvestilo namesto da bi zazvonilo še enkrat.
     renotify: false,
-    icon: scopedUrl('./icon-192.svg'),
+    icon: scopedUrl('./icon-192.png'),
     badge: scopedUrl('./icon-maskable.svg'),
     vibrate,
     data: { url, fireAt: isFinite(fireAt) ? fireAt : null, stale },
