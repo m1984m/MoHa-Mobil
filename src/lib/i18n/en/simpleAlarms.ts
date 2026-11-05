@@ -103,4 +103,34 @@ export default {
   'Ta brskalnik ne podpira obvestil. Na iPhonu najprej dodaj aplikacijo na začetni zaslon.': 'This browser does not support notifications. On iPhone, add the app to the Home Screen first.',
   'Obvestila niso dovoljena. Dovoli jih v nastavitvah telefona ali brskalnika in poskusi znova.': 'Notifications are not allowed. Allow them in your phone or browser settings and try again.',
   'Spremeni dneve ali opozorilo': 'Change days or alert time',
+
+  // F13 (05.11.2026): enkratni opomnik z zvonca, prvo zvonjenje, potrditev strežnika
+  'Samo ta odhod': 'Only this departure',
+  'Ponavljaj ob dnevih': 'Repeat on days',
+  'Kako pogosto': 'How often',
+  'Spremeni opozorilo': 'Change alert time',
+  'Opomnim te samo enkrat, {n} minut pred odhodom avtobusa {line}, smer {dest}, ob {ura} s postajališča {stop}.':
+    'I will remind you once, {n} minutes before bus {line} to {dest} leaves stop {stop} at {ura}.',
+  'Opomnim te samo enkrat, takoj, ker avtobus {line}, smer {dest}, odpelje ob {ura} s postajališča {stop}.':
+    'I will remind you once, right away, because bus {line} to {dest} leaves stop {stop} at {ura}.',
+  'Upoštevana je zamuda {n} min (po voznem redu ob {ura}).': 'A delay of {n} min is included (scheduled at {ura}).',
+  'Do odhoda ni več {n} minut, zato zazvoni prej.': 'There are less than {n} minutes left before departure, so it rings as soon as possible.',
+  'Prvič zazvoni: {when}': 'First alert: {when}',
+  'V voznem redu ni odhoda, ob katerem bi opomnik zazvonil.': 'The timetable has no departure for which this reminder would ring.',
+  'Danes je že prepozno, prvič zazvoni {when}.': 'It is already too late for today, the first alert is {when}.',
+  'Avtobus že odhaja, za opomnik je prepozno.': 'The bus is about to leave, it is too late for a reminder.',
+  'Telefon ti bo poslal obvestilo {when}.': 'Your phone will send a notification {when}.',
+  'Opomnik je shranjen v telefonu, strežnik pa ga ni potrdil, zato morda ne bo zazvonil. Preveri povezavo in poskusi znova.':
+    'The reminder is saved on your phone, but the server did not confirm it, so it may not ring. Check your connection and try again.',
+  'danes ob {time}': 'today at {time}',
+  'jutri ob {time}': 'tomorrow at {time}',
+  'samo enkrat, {when}': 'once, {when}',
+  // Dinamični ključi (alarms.ts DAY_FULL)
+  'ponedeljek': 'Monday',
+  'torek': 'Tuesday',
+  'sreda': 'Wednesday',
+  'četrtek': 'Thursday',
+  'petek': 'Friday',
+  'sobota': 'Saturday',
+  'nedelja': 'Sunday',
 };

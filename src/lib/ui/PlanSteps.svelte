@@ -7,6 +7,7 @@
   import { rowTarget } from '../gtfs';
   import { toMb } from '../clock';
   import type { PlanLeg } from '../planner';
+  import { ijppRouteInfo } from '../ijppPlan';
 
   // Pot po korakih kot časovnica, ne kot seznam vrstic.
   //
@@ -75,44 +76,54 @@
     return null;
   })();
 
-  // Čas, ob katerem se posamezen korak začne. Hoja pred prvim busom se računa
-  // nazaj od njegovega odhoda; vse za busom pa naprej od prihoda.
-  function zacetki(l: PlanLeg[]): (number | null)[] {
-    const out: (number | null)[] = new Array(l.length).fill(null);
-    let zadnjiBus = -1;
-    for (let i = 0; i < l.length; i++) {
-      const x = l[i];
-      if (x.kind === 'bus') { out[i] = x.depSec; zadnjiBus = i; }
-    }
-    // pred prvim busom nazaj
+  // Čas začetka in konca vsakega koraka. Hoja pred prvim busom se računa nazaj od
+  // njegovega odhoda; od prvega busa naprej teče en sam tekoči čas skozi vse
+  // odseke, zato se vsaka vmesna hoja začne ob koncu prejšnjega odseka. Prej je
+  // imela hoja med dvema busoma čas null in čakanje se je računalo od polnoči
+  // (485 min namesto 5, evalvacija 5.11.2026, F3).
+  function casovnica(l: PlanLeg[]): { zac: (number | null)[]; kon: (number | null)[] } {
+    const zac: (number | null)[] = new Array(l.length).fill(null);
+    const kon: (number | null)[] = new Array(l.length).fill(null);
     const prvi = l.findIndex(x => x.kind === 'bus');
-    if (prvi > 0) {
-      let t = (l[prvi] as any).depSec as number;
-      for (let i = prvi - 1; i >= 0; i--) {
-        const x = l[i];
-        if (x.kind === 'walk') { t -= x.sec; out[i] = t; }
-      }
+    if (prvi < 0) return { zac, kon };
+    const prviBus = l[prvi];
+    if (prviBus.kind !== 'bus') return { zac, kon };
+    let t = prviBus.depSec;
+    for (let i = prvi - 1; i >= 0; i--) {
+      const x = l[i];
+      kon[i] = t;
+      if (x.kind === 'walk') t -= x.sec;
+      zac[i] = t;
     }
-    // za zadnjim busom naprej
-    if (zadnjiBus >= 0) {
-      let t = (l[zadnjiBus] as any).arrSec as number;
-      for (let i = zadnjiBus + 1; i < l.length; i++) {
-        const x = l[i];
-        if (x.kind === 'walk') { out[i] = t; t += x.sec; }
-      }
+    t = prviBus.depSec;
+    for (let i = prvi; i < l.length; i++) {
+      const x = l[i];
+      if (x.kind === 'bus') { zac[i] = x.depSec; t = x.arrSec; }
+      else { zac[i] = t; t += x.sec; }
+      kon[i] = t;
     }
-    return out;
+    return { zac, kon };
   }
-  $: casi = zacetki(legs);
+  $: cas = casovnica(legs);
+  $: casi = cas.zac;
 
   // Čakanje pred korakom i: razlika med koncem prejšnjega in začetkom tega.
   function cakanje(i: number): number {
     if (i === 0) return 0;
-    const prej = legs[i - 1], zdajL = legs[i];
+    const zdajL = legs[i];
     if (zdajL.kind !== 'bus') return 0;
-    const konecPrej = prej.kind === 'bus' ? prej.arrSec : (casi[i - 1] ?? 0) + prej.sec;
+    const konecPrej = cas.kon[i - 1];
+    if (konecPrej == null) return 0;
     return Math.max(0, zdajL.depSec - konecPrej);
   }
+
+  // Vlak ali avtobus: medkrajevne linije iz IJPP poznajo vrsto (rail); mestne in
+  // nadomestni avtobus SŽ so avtobus (F17).
+  const jeVlak = (routeId: number) => ijppRouteInfo(routeId)?.rail === true;
+  $: prviVlak = (() => {
+    const bus = legs.find(l => l.kind === 'bus');
+    return bus != null && bus.kind === 'bus' && jeVlak(bus.route.id);
+  })();
 
   const min = (sec: number) => Math.max(1, Math.round(sec / 60));
 
@@ -137,7 +148,7 @@
         <span><b>{$t('Ta odhod je mimo.')}</b> {$t('Poišči novega.')}</span>
       {:else if sekundDoOdhoda !== null && sekundDoOdhoda <= 60}
         <Footprints size={16} class="shrink-0" />
-        <span><b>{$t('Kreni zdaj')}</b> · {$t('bus ob {time}', { time: fmtClock(prviOdhod ?? 0) })}</span>
+        <span><b>{$t('Kreni zdaj')}</b> · {prviVlak ? $t('vlak ob {time}', { time: fmtClock(prviOdhod ?? 0) }) : $t('bus ob {time}', { time: fmtClock(prviOdhod ?? 0) })}</span>
       {:else}
         <Footprints size={16} class="shrink-0" />
         <span>
@@ -195,7 +206,7 @@
             </div>
             <div class="t-footnote text-muted">
               {$t('Linija {line} proti {dest}', { line: leg.route.short, dest: cilj.dest })}
-              {#if prek}<span class="mm-prek">· {$t('prek {via}', { via: prek })}</span>{/if}
+              {#if prek}<span class="mm-prek">· {$t('Vmes: {via}', { via: prek })}</span>{/if}
             </div>
             <div class="mm-izstop t-footnote">
               <span class="mm-izstop-ura tabular-nums">{fmtClock(leg.arrSec)}</span>
@@ -264,7 +275,8 @@
   .mm-vozlisce-cilj { border-color: var(--accent); color: var(--accent); }
   .mm-vsebina { flex: 1; min-width: 0; padding-top: 2px; }
 
-  .mm-prek { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  /* Dve vrstici namesto ene: pri večjem besedilu se je »Vmes: …« odrezal (F22). */
+  .mm-prek { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 
   /* Izstop je del istega koraka: potnik bere "vstopi tu → izstopi tam". */
   .mm-izstop {

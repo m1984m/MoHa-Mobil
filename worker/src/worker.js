@@ -35,7 +35,7 @@
 import { sendPush } from './push.js';
 import { recordUpstream, handleEvent } from './analytics.js';
 import { handleStat } from './stat.js';
-import { processDue, DUE_WINDOW_MS } from './due.js';
+import { processDue, DUE_WINDOW_MS, zdruziPoObdelavi } from './due.js';
 import {
   OBA_BASE, OBA_METHODS, STALE_MAX_MS, TTL_PRAZNO, OBA_HEADERS,
   kljucPredpomnilnika, zaPredpomnilnik, razvrstiOdgovor,
@@ -150,6 +150,8 @@ function corsHeaders(request, env) {
     h['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
     h['Access-Control-Allow-Headers'] = 'Content-Type, x-stat-key';
     h['Access-Control-Max-Age'] = '86400';
+    // Starost odgovora iz predpomnilnika: odjemalec iz nje izračuna absolutni pričakovani čas.
+    h['Access-Control-Expose-Headers'] = 'X-Proxy-Age, X-Proxy-Cache';
   }
   return h;
 }
@@ -791,7 +793,7 @@ const PODZAHTEVKI_REZERVA = 2;
 // Gretje (warm.js) teče samo brez OBA_RELAY in dobi toliko podzahtevkov, alarmi
 // pa ostanek. Z OBA_RELAY gretja ni, ker kliče Marprom neposredno.
 const PODZAHTEVKI_GRETJE = 16;
-const PODZAHTEVKI_ZA_ZAPIS = 4;   // branje + potisk + zapis nazaj + 1 rezerve
+const PODZAHTEVKI_ZA_ZAPIS = 5;   // branje + potisk + ponovno branje + zapis nazaj + 1 rezerve
 // Spremljanje vozil (spremljanje.js) teče za zvonjenji v istem klicu: dva vzorca po
 // največ dva posrednika in zapis v predpomnilnik, nato branje in paketni zapis v
 // D1 (ob 3h še čiščenje). Toliko podzahtevkov se zvonjenjem odvzame vnaprej.
@@ -879,7 +881,10 @@ function validateOccurrences(arr, now) {
     if (o.url !== undefined && (typeof o.url !== 'string' || o.url.length > ALARM_MAX_URL)) {
       return { error: 'neveljaven url' };
     }
-    out.push({ id: o.id, fireAt, title: o.title, body: o.body, tag: o.tag || o.id, url: o.url || '' });
+    // Jezik besedila (F29): storitveni delavec z njim prevede svoje nadomestno besedilo.
+    // Neznana vrednost ni napaka — starejši odjemalci polja ne pošiljajo.
+    const lang = typeof o.lang === 'string' && /^[a-z]{2}$/.test(o.lang) ? o.lang : undefined;
+    out.push({ id: o.id, fireAt, title: o.title, body: o.body, tag: o.tag || o.id, url: o.url || '', ...(lang ? { lang } : {}) });
   }
   out.sort((a, b) => a.fireAt - b.fireAt);
   const { list, capped } = omejiGostoto(out);
@@ -972,6 +977,15 @@ async function alarmsSync(request, env, cors) {
 
   const sub = payload.subscription;
   const id = await subIdFor(sub.endpoint);
+
+  // Prazen razpored (zadnji opomnik odstranjen ali izklopljen): zapis naročnine se
+  // izbriše, namesto da bi prazen ostal do izteka 130 dni (F25). Naslednja
+  // sinhronizacija z zvonjenji ga ustvari znova.
+  if (occ.list.length === 0) {
+    await env.ALARMS_KV.delete('sub:' + id);
+    return json({ ok: true, count: 0, until: null, deleted: true }, 200, cors);
+  }
+
   await env.ALARMS_KV.put('sub:' + id, JSON.stringify({
     endpoint: sub.endpoint,
     keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
@@ -1153,6 +1167,7 @@ function alarmPayload(occ) {
     tag: occ.tag || occ.id,
     url: occ.url || '',
     fireAt: occ.fireAt,
+    ...(occ.lang ? { lang: occ.lang } : {}),
   };
 }
 
@@ -1220,8 +1235,8 @@ async function runDueAlarms(env, podzahtevki) {
         if (!doc.endpoint || !doc.keys) { pod--; await env.ALARMS_KV.delete(key); removed++; continue; }
         subs++;
 
-        // Potiskov največ toliko, da ostaneta podzahtevek za zapis nazaj in rezerva.
-        const zaPotiske = { left: Math.min(budget.left, pod - 2) };
+        // Potiskov največ toliko, da ostanejo podzahtevki za ponovno branje, zapis nazaj in rezervo.
+        const zaPotiske = { left: Math.min(budget.left, pod - 3) };
         const pred = zaPotiske.left;
         const res = await processDue(doc, Date.now(), (d, occ) =>
           sendPush({ endpoint: d.endpoint, keys: d.keys }, alarmPayload(occ), env), zaPotiske);
@@ -1244,19 +1259,30 @@ async function runDueAlarms(env, podzahtevki) {
         // Zapišemo nazaj samo ob dejanski spremembi — vsak put v KV nekaj stane.
         if (!res.changed) continue;
 
-        // Znano tveganje: če je telefon med pošiljanjem poslal novo sinhronizacijo
-        // (izklopil ali dodal opomnik), jo ta zapis prepiše — izklopljen opomnik še
-        // zvoni, nov ne. Ponovno branje pred zapisom tega ne reši: KV na lokaciji
-        // crona ponovljena branja streže iz svojega predpomnilnika in zapisa z druge
-        // lokacije ne vidi (pregled 12.10.2026). Popravi se ob naslednjem odprtju
-        // aplikacije, ki ob zagonu sinhronizira znova; prava rešitev je stanje crona
-        // v D1 ali Durable Objectu.
+        // F8: telefon je lahko med pošiljanjem poslal novo sinhronizacijo (izklopil,
+        // dodal ali izbrisal opomnik). Pred zapisom zapis preberemo znova; če se je
+        // spremenil (updatedAt), obvelja svež zapis, iz obdelave pa prenesemo le
+        // poslana in zavržena zvonjenja (zdruziPoObdelavi). Izbrisanega ne obudimo.
+        // Omejitev: KV je le sčasoma konsistenten — zapis z druge lokacije cron morda
+        // še ne vidi (do ~60 s); takrat ostane staro vedenje in popravi ga naslednja
+        // sinhronizacija ob odprtju aplikacije. Popolna rešitev je Durable Object.
         pod--;
+        let fresh = null;
+        try { fresh = JSON.parse(await env.ALARMS_KV.get(key) || 'null'); } catch { fresh = doc; }
+        const zdruzeno = zdruziPoObdelavi(doc, res.occurrences, fresh);
+        if (!zdruzeno.write) continue;
+        const occs = zdruzeno.doc.occurrences;
+        pod--;
+        if (occs.length === 0) {
+          // Vse poslano: prazen zapis ne ostane do izteka (F25).
+          await env.ALARMS_KV.delete(key);
+          continue;
+        }
         await env.ALARMS_KV.put(key, JSON.stringify({
-          ...doc,
-          occurrences: res.occurrences,
-          updatedAt: Date.now(),
-        }), { expirationTtl: ALARM_SUB_TTL_S, metadata: metaZa(res.occurrences) });
+          ...zdruzeno.doc,
+          // updatedAt ostane od telefona: z njim naslednji cron zazna vmesno sinhronizacijo.
+          cronAt: Date.now(),
+        }), { expirationTtl: ALARM_SUB_TTL_S, metadata: metaZa(occs) });
       } catch (e) {
         errors++;
         continue;

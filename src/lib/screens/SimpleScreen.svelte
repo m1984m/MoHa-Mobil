@@ -11,7 +11,7 @@
   import { nearbyRadiusM } from '../settings';
   import { simpleHome, simpleOthers, simplePlaces, petraGuide, type SimplePlace } from '../simple';
   import { primeAudio } from '../speech';
-  import { alarms, toggleAlarm, removeAlarm, computeOccurrences, daysLabel, alarmsCoverageWarning, type Alarm } from '../alarms';
+  import { alarms, toggleAlarm, removeAlarm, computeOccurrences, daysLabel, whenLabel, alarmsCoverageWarning, type Alarm } from '../alarms';
   import { pushState, enablePush } from '../push';
   import SimpleAlarmWizard from './SimpleAlarmWizard.svelte';
   import {
@@ -418,7 +418,7 @@
                               color={a.enabled ? 'var(--accent)' : 'var(--text-muted)'} />
             <div class="flex-1 min-w-0">
               <div class="t-headline">{alarmTitle(a)}</div>
-              <div class="t-footnote text-muted">{a.stopName} · {daysLabel(a.days)} · {$t('{n} min prej', { n: a.leadMin })}</div>
+              <div class="t-footnote text-muted">{a.stopName} · {whenLabel(a)} · {$t('{n} min prej', { n: a.leadMin })}</div>
             </div>
             {#if editingAlarms}
               <div class="flex gap-2 w-full">

@@ -2,11 +2,11 @@
   import { onMount } from 'svelte';
   import { backdrop, sheet } from '../motion';
   import { X, MapPin, Flag, Navigation, ArrowRightLeft, Star, Clock, Route as RouteIcon, ArrowRight, ChevronDown, Ticket } from 'lucide-svelte';
-  import { cropShape, loadShapes, routeColor, dist, type GTFS, type Stop } from '../gtfs';
+  import { type GTFS, type Stop } from '../gtfs';
   import { searchStops, normName, twinStopHint } from '../simpleStops';
-  import { planAll, planArriveBy, searchDay, shiftPlan, DAY_SEC, syncArrivalWithWalks, dayNumber, type Plan } from '../planner';
-  import { walkRoute, walkMapForStops, walkRoutingDegraded } from '../routing';
+  import { searchDay, DAY_SEC, type Plan } from '../planner';
   import { nowMb, nowSecMb } from '../clock';
+  import { planTrip, materializePlan, parseHM, tomorrowNoon, type Place, type PlaceKind, type TimeMode, type TransferIssue } from '../planTrip';
   import LineBadge from '../ui/LineBadge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import { favStops } from '../favorites';
@@ -17,7 +17,7 @@
   import { t, tr, plural } from '../i18n';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { candidatesSpeech } from '../readAloud';
-  import { EXT, loadIjppSi, mergedGtfs, ijppCoversDate, outsideMaribor, tripFilter, planMatchesMode, searchIjppStops, type Mode } from '../ijppPlan';
+  import { EXT, loadIjppSi, outsideMaribor, searchIjppStops, type Mode } from '../ijppPlan';
 
   export let open: boolean = false;
   export let gtfs: GTFS | null;
@@ -28,20 +28,34 @@
   // Cenik iz rezultatov — prej je bil dosegljiv le prek Nastavitve → Pomoč.
   export let onOpenFares: () => void = () => {};
 
-  type Place = { lat: number; lon: number; name: string };
   // Medkrajevno (cela Slovenija): izhodišče ali cilj zunaj Maribora.
   let mode: Mode = 'all';
-  let siData: Awaited<ReturnType<typeof loadIjppSi>> = null;
   $: intercity = !!((fromPlace && outsideMaribor(fromPlace)) || (toPlace && outsideMaribor(toPlace)));
   // Povezava na prevoz.org za isti od, do in dan (deljeni prevozi). Njihov izvozni API brez
   // pisnega dovoljenja ne (pogoji uporabe 10.1, robots.txt prepoveduje /api/), zato samo povezava.
-  $: prevozHref = intercity && fromPlace && toPlace
-    ? `https://prevoz.org/prevoz/list/?fc=SI&f=${encodeURIComponent(townOf(fromPlace))}&tc=SI&t=${encodeURIComponent(townOf(toPlace))}&d=${ymdDash(nowMb())}`
+  // Dan iskanja (danes, jutri ali izbrani), ne vedno današnji (F19).
+  $: prevozDate = (candidates.length > 0 ? candidatesTomorrow : chipTomorrow) ? tomorrowNoon() : nowMb();
+  $: fromTown = fromPlace ? townOf(fromPlace) : '';
+  $: toTown = toPlace ? townOf(toPlace) : '';
+  $: prevozHref = intercity && fromTown && toTown
+    ? `https://prevoz.org/prevoz/list/?fc=SI&f=${encodeURIComponent(fromTown)}&tc=SI&t=${encodeURIComponent(toTown)}&d=${ymdDash(prevozDate)}`
     : '';
-  // Ime kraja za prevoz.org: v Mariboru »Maribor«, drugje prvi del imena (»Koper AP« → »Koper«).
+  // Ime kraja za prevoz.org: v Mariboru »Maribor«, drugje kraj iz Nominatima (strukturiran
+  // naslov), pri postajah prvi del imena (»Koper AP« → »Koper«). »Moja lokacija« zunaj
+  // Maribora brez znanega kraja: povezave ni (prej je šlo v parameter kraja »Moja lokacija«).
   function townOf(p: Place): string {
     if (!outsideMaribor(p)) return 'Maribor';
+    if (p.town) return p.town;
+    if (p.name === tr('Moja lokacija')) return '';
+    if (p.kind === 'addr') return p.name.split(',').pop()!.trim();
     return p.name.split(/[,(]| - | AP\b| žel\.| železniška/i)[0].trim() || p.name;
+  }
+  function kindLabel(k: PlaceKind | undefined): string {
+    return k === 'rail' ? tr('železniška postaja')
+      : k === 'busStation' ? tr('avtobusna postaja')
+      : k === 'stop' ? tr('postajališče')
+      : k === 'town' ? tr('kraj')
+      : tr('naslov');
   }
   function ymdDash(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
   let fromQuery = '';
@@ -52,6 +66,10 @@
   let toFocus = false;
   let running = false;
   let error = '';
+  // Kratko obvestilo bralniku zaslona (role=status) o izidu iskanja (F23).
+  let statusMsg = '';
+  // Izbrana pot ima prestop, ki ga z dejansko pešpotjo ni mogoče ujeti (F4).
+  let transferWarn: { plan: Plan; geoms: any[]; from: Place; to: Place; issues: TransferIssue[] } | null = null;
   let fromAddrResults: Place[] = [];
   let toAddrResults: Place[] = [];
   let fromAddrTimer: any = null;
@@ -63,8 +81,25 @@
   let arriveLateTime: string | null = null;
   // Predizpolnjen cilj — iz gumba "pot do postajališča" (z imenom) ali long-pressa na karti (brez imena).
   // Nov objekt sproži apply (z reverse-geocode v ozadju, če ime manjka) + auto-run, ko sta oba dela zapolnjena.
-  export let pendingDest: { lat: number; lon: number; name?: string } | null = null;
+  // `from`: izhodišče shranjene poti ali povezave, ki je ni bilo mogoče izračunati (F11).
+  export let pendingDest: { lat: number; lon: number; name?: string; from?: Place } | null = null;
   let lastConsumedDest: typeof pendingDest = null;
+
+  // Predlogi veljajo za poizvedbo, s katero so nastali. Sprememba izhodišča, cilja, časa ali
+  // načina jih razveljavi, da pod novim vnosom ali napako ne ostanejo stari (F1).
+  const placeSig = (p: Place | null, q: string) => p ? `${p.lat.toFixed(5)},${p.lon.toFixed(5)}` : `q:${q.trim()}`;
+  function sigOf(fp: Place | null, fq: string, tp: Place | null, tq: string, tm: TimeMode, ts: string, m: Mode): string {
+    return `${placeSig(fp, fq)}|${placeSig(tp, tq)}|${tm}|${tm === 'now' ? '' : ts}|${m}`;
+  }
+  // Iz trenutnih vrednosti, ne iz reaktivnega querySig: ta se po kliku na način osveži šele
+  // po obdelavi dogodka, run() pa teče sinhrono v njem.
+  const currentSig = () => sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode);
+  $: querySig = sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode);
+  let resultSig = '';
+  $: if (querySig !== resultSig && !running && (candidates.length > 0 || error || transferWarn)) clearResults();
+  function clearResults() {
+    candidates = []; candidatesTomorrow = false; arriveLateTime = null; error = ''; statusMsg = ''; transferWarn = null;
+  }
 
   // Hrani aktivno operacijo, da jo lahko prekličemo ob zapiranju, resetu ali novem run-u.
   let activeCtl: AbortController | null = null;
@@ -78,7 +113,6 @@
   // ki je še čakala na pešpot, je zato sekundo pozneje sama odprla karto (pregled 12.10.2026).
   $: if (!open) abortActive();
 
-  type TimeMode = 'now' | 'depart' | 'arrive';
   let timeMode: TimeMode = 'now';
   let timeExpanded = false;
   let timeStr: string = defaultTimeStr();
@@ -86,16 +120,6 @@
   function defaultTimeStr() {
     const n = nowMb();
     return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
-  }
-  function parseHM(s: string): number {
-    const [h, m] = s.split(':').map(x => parseInt(x, 10));
-    if (!isFinite(h) || !isFinite(m)) return 0;
-    return h * 3600 + m * 60;
-  }
-  // Datum za vozni red jutri: opoldne, da dan s premikom ure (23 ali 25 h) ne zamakne datuma.
-  function tomorrowNoon(): Date {
-    const n = nowMb();
-    return new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 12, 0, 0);
   }
   $: timeModeLabel = timeMode === 'now' ? $t('Zdaj') : timeMode === 'depart' ? $t('Odhod ob {time}', { time: timeStr }) : $t('Prihod do {time}', { time: timeStr });
   // Oznaka »jutri« ob izbranem času že pred iskanjem. Ura se osveži ob odprtju in vsakih 30 s,
@@ -134,7 +158,9 @@
   $: if (!open) prefilled = false;
   $: if (open && !prefilled) {
     prefilled = true;
-    if (hasGeo && ((!fromPlace && !fromQuery.trim()) || fromIsMe)) {
+    // Ob obstoječih predlogih (»Vsi predlogi« s karte) lega ostane, sicer bi jih premik razveljavil;
+    // iskanje jo vzame sveže (run).
+    if (hasGeo && ((!fromPlace && !fromQuery.trim()) || (fromIsMe && candidates.length === 0))) {
       fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
       fromQuery = tr('Moja lokacija');
       fromIsMe = true;
@@ -152,10 +178,14 @@
   // Seq token prepreci out-of-order: pocasnejsi Nominatim odgovor za starejsi
   // niz ne sme prepisati predlogov za novejsi vnos.
   let addrSeq: Record<'from' | 'to', number> = { from: 0, to: 0 };
+  // Poizvedba Nominatim v teku za polje: nov vnos jo prekliče (F28).
+  const addrCtl: Record<'from' | 'to', AbortController | null> = { from: null, to: null };
 
   function scheduleAddr(which: 'from' | 'to', q: string, focus: boolean, place: Place | null) {
     const timerRef = which === 'from' ? fromAddrTimer : toAddrTimer;
     if (timerRef) clearTimeout(timerRef);
+    addrCtl[which]?.abort();
+    addrCtl[which] = null;
     if (!focus || place || !q.trim() || q.trim().length < 3) {
       addrSeq[which]++; // razveljavi morebitni fetch v teku
       if (which === 'from') fromAddrResults = []; else toAddrResults = [];
@@ -163,39 +193,81 @@
     }
     const t = setTimeout(async () => {
       const myToken = ++addrSeq[which];
-      const res = await geocodeMany(q.trim());
-      if (myToken !== addrSeq[which]) return; // medtem je bil sprozen novejsi
+      const ctl = new AbortController();
+      addrCtl[which] = ctl;
+      const res = await geocodeMany(q.trim(), ctl.signal);
+      if (myToken !== addrSeq[which] || ctl.signal.aborted) return; // medtem je bil sprozen novejsi
       if (which === 'from') fromAddrResults = res; else toAddrResults = res;
     }, 350);
     if (which === 'from') fromAddrTimer = t; else toAddrTimer = t;
   }
 
-  async function geocodeMany(q: string): Promise<Place[]> {
+  const NOM_H = { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' };
+  const NOM_TIMEOUT_MS = 5000;
+  // JSON iz Nominatima z omejitvijo 5 s in preklicem; ob napaki `fallback`. Prej brez omejitve:
+  // počasen odgovor je zadržal predloge in iskanje (F28).
+  async function nomJson(url: string, signal?: AbortSignal, fallback: any = null): Promise<any> {
+    const c = new AbortController();
+    const tid = setTimeout(() => c.abort(), NOM_TIMEOUT_MS);
+    const stop = () => c.abort();
+    signal?.addEventListener('abort', stop, { once: true });
+    try {
+      const r = await fetch(url, { headers: NOM_H, signal: c.signal });
+      return r.ok ? await r.json() : fallback;
+    } catch { return fallback; } finally {
+      clearTimeout(tid);
+      signal?.removeEventListener('abort', stop);
+    }
+  }
+
+  const PLACE_TYPES = new Set(['city', 'town', 'village', 'hamlet', 'municipality', 'suburb', 'quarter', 'neighbourhood', 'isolated_dwelling', 'locality']);
+  // Kraj, ulica in vrsta iz strukturiranega naslova Nominatim.
+  function nomPlace(it: any): Place & { mb: boolean } {
+    const a = it.address ?? {};
+    const kraj = a.city || a.town || a.village || a.municipality || '';
+    // Ustanova ali točka z lastnim imenom (»Prešernova koča na Stolu«) pod svojim imenom, ne pod
+    // ulico (prej »Foreplay 67, Zabreznica«, ki ne pove, zakaj je zadetek tu; D1).
+    const poi = it.name && !['highway', 'place', 'boundary', 'building'].includes(it.class) && it.name !== a.road;
+    const ulica = poi ? String(it.name)
+      : a.road ? `${a.road}${a.house_number ? ' ' + a.house_number : ''}` : String(it.display_name ?? '').split(',')[0].trim();
+    const name = kraj && ulica !== kraj ? `${ulica}, ${kraj}` : ulica;
+    const isTown = !a.road && (it.class === 'place' || it.class === 'boundary' || PLACE_TYPES.has(it.addresstype) || PLACE_TYPES.has(it.type));
+    return { lat: parseFloat(it.lat), lon: parseFloat(it.lon), name, kind: isTown ? 'town' : 'addr', town: kraj || (isTown ? ulica : undefined), mb: kraj === 'Maribor' };
+  }
+
+  // Zadetek mora vsebovati vpisane besede (brez šumnikov, ujemanje začetka besede) v imenu,
+  // ulici, hišni številki ali kraju. Nominatim je na »Prešernova« vrnil tudi »Čopova ulica,
+  // Ljubljana« in »Foreplay 67, Zabreznica« (D1).
+  function nomMatches(it: any, words: string[]): boolean {
+    const a = it.address ?? {};
+    const hay = normName([it.name, a.road, a.pedestrian, a.footway, a.square, a.house_number, a.city, a.town, a.village,
+      a.municipality, a.suburb, a.hamlet, a.neighbourhood, a.quarter, a.amenity, a.shop, a.tourism, a.building]
+      .filter(Boolean).join(' ')).split(' ');
+    return words.every(w => hay.some(h => h.startsWith(w)));
+  }
+
+  async function geocodeMany(q: string, signal?: AbortSignal): Promise<Place[]> {
     try {
       // Cela Slovenija, Maribor ima prednost (viewbox brez omejitve). Prej je bil vsakemu iskanju
       // dodan », Maribor« in cilja zunaj mesta ni bilo mogoče najti.
       const si = loadIjppSi();
-      // Dve zaporedni poizvedbi: z viewboxom vrne Nominatim samo Maribor, brez njega mariborskih
-      // ulic ne najde (»Prešernova« → samo Ljubljana). Najprej Maribor, nato ostala Slovenija.
-      const H = { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } };
+      // Dve poizvedbi: z viewboxom vrne Nominatim samo Maribor, brez njega mariborskih ulic ne
+      // najde (»Prešernova« → samo Ljubljana). Najprej Maribor, nato ostala Slovenija.
       const NOM = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=si&addressdetails=1`;
-      const getJ = async (url: string) => { try { const r = await fetch(url, H); return r.ok ? await r.json() : []; } catch { return []; } };
-      const jMb = await getJ(`${NOM}&limit=5&viewbox=15.55,46.60,15.75,46.50&bounded=1`);
-      const jSi = await getJ(`${NOM}&limit=8`);
-      const j = [...(Array.isArray(jMb) ? jMb : []), ...(Array.isArray(jSi) ? jSi : [])];
+      // Zaporedno, ne hkrati: pravila Nominatima dovolijo eno zahtevo naenkrat.
+      const jMb = await nomJson(`${NOM}&limit=5&viewbox=15.55,46.60,15.75,46.50&bounded=1`, signal, []);
+      if (signal?.aborted) return [];
+      const jSi = await nomJson(`${NOM}&limit=8`, signal, []);
+      if (signal?.aborted) return [];
+      const words = normName(q).split(' ').filter(Boolean);
+      const j = [...(Array.isArray(jMb) ? jMb : []), ...(Array.isArray(jSi) ? jSi : [])].filter(it => nomMatches(it, words));
       // »Prešernova ulica 5, Maribor«: ulica in kraj, Maribor prvi, drugi kraji pod njim (Matej 04.11.).
-      const addr: any[] = j.map((it: any) => {
-        const a = it.address ?? {};
-        const kraj = a.city || a.town || a.village || a.municipality || '';
-        const ulica = a.road ? `${a.road}${a.house_number ? ' ' + a.house_number : ''}` : it.display_name.split(',')[0].trim();
-        const name = kraj && ulica !== kraj ? `${ulica}, ${kraj}` : ulica;
-        return { lat: parseFloat(it.lat), lon: parseFloat(it.lon), name, mb: kraj === 'Maribor' };
-      }).filter((p: any, i: number, arr: any[]) => arr.findIndex(q => q.name === p.name) === i);
+      const addr = j.map(nomPlace).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i);
       // Medkrajevna postajališča (avtobusne in železniške postaje po Sloveniji) pred naslovi.
       const sd = await si;
-      const st = sd ? searchIjppStops(sd, q, 4).filter(x => outsideMaribor(x)) : [];
-      const strip = ({ mb, ...p }: any) => p as Place;
-      const all = [...addr.filter((a: any) => a.mb).map(strip), ...st, ...addr.filter((a: any) => !a.mb).map(strip)];
+      const st: Place[] = sd ? searchIjppStops(sd, q, 4).filter(x => outsideMaribor(x)) : [];
+      const strip = ({ mb, ...p }: Place & { mb: boolean }) => p as Place;
+      const all = [...addr.filter(a => a.mb).map(strip), ...st, ...addr.filter(a => !a.mb).map(strip)];
       return all.filter((x, i) => all.findIndex(y => y.name === x.name) === i).slice(0, 8);
     } catch { return []; }
   }
@@ -226,19 +298,19 @@
     fromFocus = false;
     fromIsMe = true;
   }
-  function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name }; fromQuery = s.name; fromFocus = false; fromIsMe = false; }
-  function pickTo(s: Stop) { toPlace = { lat: s.lat, lon: s.lon, name: s.name }; toQuery = s.name; toFocus = false; }
+  function pickFrom(s: Stop) { fromPlace = { lat: s.lat, lon: s.lon, name: s.name, kind: 'stop' }; fromQuery = s.name; fromFocus = false; fromIsMe = false; }
+  function pickTo(s: Stop) { toPlace = { lat: s.lat, lon: s.lon, name: s.name, kind: 'stop' }; toQuery = s.name; toFocus = false; }
   function swap() { const f = fromPlace, q = fromQuery; fromPlace = toPlace; fromQuery = toQuery; toPlace = f; toQuery = q; fromIsMe = false; }
 
-  async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
-    try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18`,
-        { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } });
-      if (!r.ok) return null;
-      const j = await r.json();
-      if (!j?.display_name) return null;
-      return j.display_name.split(',').slice(0, 2).join(',').trim();
-    } catch { return null; }
+  // Kratko ime in kraj točke (long-press na karti, »Moja lokacija« zunaj Maribora za prevoz.org).
+  async function reverseGeocode(lat: number, lon: number, signal?: AbortSignal): Promise<{ name: string; town: string } | null> {
+    const j = await nomJson(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18&addressdetails=1`, signal);
+    if (!j?.display_name) return null;
+    const a = j.address ?? {};
+    return {
+      name: j.display_name.split(',').slice(0, 2).join(',').trim(),
+      town: a.city || a.town || a.village || a.municipality || '',
+    };
   }
 
   $: if (open && pendingDest && pendingDest !== lastConsumedDest) {
@@ -246,12 +318,19 @@
     applyPendingDest(pendingDest);
   }
 
-  async function applyPendingDest(d: { lat: number; lon: number; name?: string }) {
+  async function applyPendingDest(d: { lat: number; lon: number; name?: string; from?: Place }) {
     const placeholder = d.name ?? tr('Izbrana lokacija ({lat}, {lon})', { lat: d.lat.toFixed(4), lon: d.lon.toFixed(4) });
     toPlace = { lat: d.lat, lon: d.lon, name: placeholder };
     toQuery = placeholder;
     toFocus = false;
     toAddrResults = [];
+    // Shranjena pot ali povezava: izhodišče iz nje, ne trenutna lega (F11).
+    if (d.from) {
+      fromPlace = { ...d.from };
+      fromQuery = d.from.name;
+      fromFocus = false;
+      fromIsMe = false;
+    }
     // Avtomatsko zapolni izhodišče z lokacijo uporabnika, če je na voljo in še ni izbrano —
     // iz obeh vstopnih točk (long-press / "pot do postajališča") je "od moje lokacije" prevladujoča izbira.
     if (hasGeo && !fromPlace) {
@@ -267,115 +346,64 @@
     if (!d.name) {
       const better = await reverseGeocode(d.lat, d.lon);
       if (better && toPlace && toPlace.lat === d.lat && toPlace.lon === d.lon) {
-        toPlace = { ...toPlace, name: better };
-        toQuery = better;
+        toPlace = { ...toPlace, name: better.name, town: better.town || undefined, kind: 'addr' };
+        toQuery = better.name;
       }
     }
   }
 
-  async function geocode(q: string): Promise<Place | null> {
-    try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=si&limit=1&viewbox=15.55,46.60,15.75,46.50&bounded=0`, { headers: { 'Accept-Language': 'sl', 'User-Agent': 'MoHaMobil/0.5.1 (github.com/m1984m/MoHa-Mobil)' } });
-      if (!r.ok) return null;
-      const j = await r.json();
-      if (!Array.isArray(j) || j.length === 0) return null;
-      return { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon), name: j[0].display_name.split(',').slice(0, 2).join(',').trim() };
-    } catch { return null; }
+  async function geocode(q: string, signal?: AbortSignal): Promise<Place | null> {
+    const j = await nomJson(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=si&limit=1&addressdetails=1&viewbox=15.55,46.60,15.75,46.50&bounded=0`, signal, []);
+    if (!Array.isArray(j) || j.length === 0) return null;
+    const p = nomPlace(j[0]);
+    return { lat: p.lat, lon: p.lon, name: j[0].display_name.split(',').slice(0, 2).join(',').trim(), kind: p.kind, town: p.town };
   }
 
   async function run() {
     if (!gtfs) return;
-    error = '';
     // Nadzor že pred geokodiranjem, da zaprtje okna prekine tudi to čakanje.
     abortActive();
     const ctl = new AbortController();
     activeCtl = ctl;
     running = true;
+    // Stari predlogi ne ostanejo med novim iskanjem ali pod napako (F1).
+    clearResults();
+    resultSig = currentSig();
     try {
       // Trenutna lega ob iskanju, ne ob odprtju okna.
-      if (fromIsMe && hasGeo) fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') };
+      if (fromIsMe && hasGeo) fromPlace = { lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija'), town: fromPlace?.town };
       if (!fromPlace && fromQuery.trim()) {
         const ql = normName(fromQuery);
         const st = gtfs.stops.find(s => normName(s.name) === ql);
-        fromPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(fromQuery.trim());
+        fromPlace = st ? { lat: st.lat, lon: st.lon, name: st.name, kind: 'stop' } : await geocode(fromQuery.trim(), ctl.signal);
       }
       if (!toPlace && toQuery.trim()) {
         const ql = normName(toQuery);
         const st = gtfs.stops.find(s => normName(s.name) === ql);
-        toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name } : await geocode(toQuery.trim());
+        toPlace = st ? { lat: st.lat, lon: st.lon, name: st.name, kind: 'stop' } : await geocode(toQuery.trim(), ctl.signal);
       }
       if (ctl.signal.aborted) return;
+      // Izhodišče in cilj sta zdaj razrešena v okviru tega iskanja.
+      resultSig = currentSig();
       if (!fromPlace || !toPlace) { error = tr('Ne najdem izhodišča ali cilja.'); return; }
       // Kopiji: polji se med čakanjem na ORS lahko izpraznita (vnos v polje).
       const from = fromPlace, to = toPlace;
-      const isInter = outsideMaribor(from) || outsideMaribor(to);
+      // »Moja lokacija« zunaj Maribora: kraj za povezavo na prevoz.org v ozadju (F19).
+      if (fromIsMe && outsideMaribor(from) && !from.town) {
+        reverseGeocode(from.lat, from.lon).then(r => {
+          if (r?.town && fromIsMe && fromPlace && fromPlace.lat === from.lat && fromPlace.lon === from.lon) {
+            fromPlace = { ...fromPlace, town: r.town };
+          }
+        });
+      }
 
-      // Stenski čas Maribora (clock.ts), ne ura telefona. Izbrani čas, ki je več kot 15 min
-      // mimo, se išče za jutri (z jutrišnjim voznim redom, tudi sobotnim v petek zvečer); do
-      // 15 min mimo od zdaj. Prej je »Odhod ob« tiho iskal po današnjem preteklem redu,
-      // »Prihod do« pa je zavrnil vsak pretekli čas, tudi večerno iskanje za jutri zjutraj.
-      const nowSec = nowSecMb();
-      const day = timeMode === 'now' ? 'today' : searchDay(parseHM(timeStr), nowSec);
-      const tomorrow = day === 'tomorrow';
-      const when = tomorrow ? tomorrowNoon() : nowMb();
-      const timeSec = timeMode === 'now' || day === 'now' ? nowSec : parseHM(timeStr);
-      // Medkrajevno: Marprom + ves promet IJPP za ta dan (vlaki, medkrajevni avtobusi).
-      let net: GTFS = gtfs;
-      if (isInter) {
-        siData = siData ?? await loadIjppSi();
-        if (ctl.signal.aborted) return;
-        if (!siData) { error = tr('Medkrajevnega voznega reda ni bilo mogoče naložiti. Preveri povezavo.'); return; }
-        if (!ijppCoversDate(siData, when)) { error = tr('Medkrajevni vozni red za ta dan še ni na voljo.'); return; }
-        net = mergedGtfs(gtfs, siData, when);
-      }
-      const interOpts = isInter ? { maxRounds: 5, tripOk: tripFilter(mode) } : {};
-      // Prefetch OSRM walk matrike za access/egress postaje — enkrat pred vsemi iteracijami
-      // arrive-by loopa (access/egress stopi so isti, spreminja se le čas odhoda).
-      const [accessMap, egressMap] = await Promise.all([
-        walkMapForStops(from, net.stops, 1200, 25, ctl.signal),
-        walkMapForStops(to, net.stops, 1200, 25, ctl.signal),
-      ]);
-      if (ctl.signal.aborted) return;
-      let plans: Plan[];
-      let lateTime: string | null = null;
-      if (timeMode === 'arrive' && day !== 'now') {
-        // Najpoznejši odhodi, ki pridejo do izbrane ure; danes nobeden pred zdaj.
-        plans = planArriveBy(net, from, to, timeSec, tomorrow ? 0 : nowSec, when, accessMap, egressMap,
-          isInter ? { ...interOpts, spanSec: 8 * 3600 } : {});
-      } else {
-        plans = planAll(net, from, to, timeSec, when, accessMap, egressMap, interOpts);
-        if (timeMode === 'arrive') lateTime = timeStr;
-      }
-      // Jutrišnji časi + 24 h: odštevanje »Kreni čez …« in »Ta odhod je mimo« tako veljata.
-      if (isInter) {
-        // Medkrajevno odloča prihod: mestni izbor »najmanj prestopov« je ob 06:50 za Ljubljano
-        // priporočil avtobus brez prestopa s prihodom ob 12:02 namesto poti s prihodom 09:53.
-        // Prestop šteje kot 10 min, da pot z enim prestopom manj ne izgubi zaradi nekaj minut.
-        const score = (p: Plan) => p.arrSec + p.transfers * 600;
-        plans = plans.filter(p => planMatchesMode(p.legs, mode))
-          .map(p => tightenAccess(p, gtfs!, from, tomorrow ? 0 : nowSec, when, accessMap))
-          .sort((a, b) => score(a) - score(b));
-      }
-      if (tomorrow) plans = plans.map(p => shiftPlan(p, DAY_SEC));
-      if (ctl.signal.aborted) return;
-      if (plans.length === 0) {
-        // Razčlenjena diagnoza namesto generičnega "Ni povezave." (slepa ulica). Po razdalji
-        // do postajališč, ne po matrikah ORS: ob izpadu ali porabljeni kvoti ORS sta matriki
-        // prazni in vsaka »ni povezave« je pisala »Izhodišče je predaleč« (pregled 12.10.2026).
-        const nearStop = (p: { lat: number; lon: number }) => net.stops.some(s => dist(p, s) <= 1200);
-        error = !nearStop(from)
-          ? tr('Izhodišče je predaleč od najbližjega postajališča (več kot 1,2 km). Izberi bližjo točko.')
-          : !nearStop(to)
-            ? tr('Cilj je predaleč od najbližjega postajališča (več kot 1,2 km). Izberi bližjo točko.')
-            : isInter && mode !== 'all'
-              ? tr('S tem načinom prevoza ni povezave — izberi »Vse« ali drug čas.')
-              : tr('Ob izbranem času ni povezave — poskusi drug čas odhoda.');
-        return;
-      }
-      const baseDay = dayNumber(nowMb());
-      candidates = plans.map(p => ({ ...p, baseDay }));
-      candidatesTomorrow = tomorrow;
-      arriveLateTime = lateTime;
+      const res = await planTrip({ gtfs, from, to, mode, timeMode, timeStr, signal: ctl.signal });
+      if (ctl.signal.aborted || (!res.ok && res.aborted)) return;
+      if (!res.ok) { error = res.error; return; }
+      candidates = res.plans;
+      candidatesTomorrow = res.tomorrow;
+      arriveLateTime = res.lateTime;
+      statusMsg = tr('Najdenih poti: {n}', { n: res.plans.length });
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
       error = tr('Napaka: {msg}', { msg: String(e?.message ?? e) });
@@ -386,29 +414,6 @@
     }
   }
 
-  // RAPTOR išče najzgodnejši prihod, zato vzame prvi mestni avtobus do postaje, tudi če vlak
-  // odpelje šele čez ure (Glavni trg → Koper z vlakom: »13 h 45 min«, kreni ob 06:50 za vlak
-  // ob 11:35). Mestni del do prvega medkrajevnega vozila se zato izračuna nazaj od njegovega
-  // odhoda (5 min rezerve), s Marpromovim voznim redom. Če to ne uspe, pot ostane, kot je.
-  const ACCESS_BUFFER_SEC = 5 * 60;
-  function tightenAccess(p: Plan, city: GTFS, from: Place, earliest: number, when: Date, accessMap: any): Plan {
-    const k = p.legs.findIndex(l => l.kind === 'bus' && l.route.id >= EXT);
-    if (k <= 0) return p;
-    const ext = p.legs[k];
-    if (ext.kind !== 'bus') return p;
-    const target = ext.depSec - ACCESS_BUFFER_SEC;
-    const access = planArriveBy(city, from, { lat: ext.from.lat, lon: ext.from.lon }, target, earliest, when, accessMap);
-    const best = access[0];
-    if (!best || best.arrSec > target || best.depSec <= p.depSec) return p;
-    const legs = [...best.legs, ...p.legs.slice(k)];
-    const buses = legs.filter(l => l.kind === 'bus').length;
-    return {
-      ...p, legs, depSec: best.depSec,
-      walkMeters: legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0),
-      transfers: Math.max(0, buses - 1),
-    };
-  }
-
   async function choosePlan(chosen: Plan) {
     if (!gtfs || !fromPlace || !toPlace) return;
     const from = fromPlace, to = toPlace;
@@ -416,41 +421,17 @@
     const ctl = new AbortController();
     activeCtl = ctl;
     running = true;
+    transferWarn = null;
     try {
-      const shMap = await loadShapes();
-      if (ctl.signal.aborted) return;
-      // Kopija: seznam predlogov ostane pri ocenah (»Vsi predlogi«), izbrana pot dobi pešpoti.
-      const shown: Plan = { ...chosen, legs: chosen.legs.map(l => ({ ...l })) };
-      const walkPromises = shown.legs.map(l => l.kind === 'walk'
-        ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }, ctl.signal)
-        : Promise.resolve(null));
-      const walks = await Promise.all(walkPromises);
-      if (ctl.signal.aborted) return;
-      const geoms = shown.legs.map((leg, i) => {
-        if (leg.kind === 'walk') {
-          const wr = walks[i]!;
-          // Zračna črta ob izpadu ORS je krajša od ocene načrtovalnika z obvozom — ta ostane.
-          if (!wr.estimated) { leg.meters = wr.meters; leg.sec = wr.sec; }
-          return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
-        }
-        const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
-        const coords: [number, number][] = shape
-          ? cropShape(shape, leg.from, leg.to).map(([lat, lon]) => [lon, lat])
-          : leg.path && leg.path.length > 1
-            ? leg.path.map(([lat, lon]) => [lon, lat] as [number, number])
-            : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
-        return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
-      });
-      shown.walkMeters = shown.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      // Peš odseki imajo zdaj čas iz ORS ali oceno načrtovalnika z obvozom, nikoli zračne črte,
-      // zato se odhod (Kreni ob) in prihod vedno poravnata z njimi. Prej le, kadar so bile vse
-      // pešpoti iz ORS, ker je ocena v nogi takrat hranila zračno črto (05.10.2026).
-      syncArrivalWithWalks(shown);
-      // Opozorilo o ocenjenih pešpoteh velja za to pot: ob mešanem izidu bi ga sicer poznejši
-      // uspešen klic ORS ugasnil, star neuspeh pa prižgal pri poti brez ocen.
-      shown.walkEstimated = walks.some(w => !!w?.estimated);
-      walkRoutingDegraded.set(shown.walkEstimated);
-      onShowPlan(shown, geoms, from, to);
+      const m = await materializePlan(chosen, ctl.signal);
+      if (!m || ctl.signal.aborted) return;
+      // Z dejansko pešpotjo prestop ni več izvedljiv: pot se ne odpre tiho, uporabnik
+      // izbere drugo ali jo vseeno pogleda (F4).
+      if (m.issues.length > 0) {
+        transferWarn = { plan: m.shown, geoms: m.geoms, from, to, issues: m.issues };
+        return;
+      }
+      onShowPlan(m.shown, m.geoms, from, to);
       onClose();
     } catch (e: any) {
       if (e?.name === 'AbortError' || ctl.signal.aborted) return;
@@ -458,6 +439,14 @@
     } finally {
       if (activeCtl === ctl) { activeCtl = null; running = false; }
     }
+  }
+
+  function showWarnedPlan() {
+    if (!transferWarn) return;
+    const w = transferWarn;
+    transferWarn = null;
+    onShowPlan(w.plan, w.geoms, w.from, w.to);
+    onClose();
   }
 
   function fmtDur(sec: number): string {
@@ -471,11 +460,75 @@
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
   function busLegs(p: Plan) { return p.legs.filter(l => l.kind === 'bus') as any[]; }
+  // Odhod in prihod na kartici z oznako dneva: časi od polnoči dneva iskanja, jutrišnji + 24 h (F6).
+  function depLabel(sec: number): string {
+    return sec >= DAY_SEC ? tr('odhod jutri {time}', { time: fmtTime(sec) }) : tr('odhod {time}', { time: fmtTime(sec) });
+  }
+  function arrLabel(sec: number): string {
+    return sec >= DAY_SEC ? tr('prihod jutri {time}', { time: fmtTime(sec) }) : tr('prihod {time}', { time: fmtTime(sec) });
+  }
+  const hasExt = (p: Plan) => p.legs.some(l => l.kind === 'bus' && l.route.id >= EXT);
+  const hasCity = (p: Plan) => p.legs.some(l => l.kind === 'bus' && l.route.id < EXT);
+
+  // Predlogi izhodišča in cilja kot combobox (WCAG 2.1.1): puščici, Enter, Escape, klik (F9).
+  type Opt = { id: string; label: string; hint?: string; tag?: string; icon: 'me' | 'fav' | 'stop' | 'addr'; header?: string; pick: () => void };
+  function buildOpts(which: 'from' | 'to', withMe: boolean, favs: Stop[], stops: Stop[], addrs: Place[]): Opt[] {
+    const out: Opt[] = [];
+    const pickStop = which === 'from' ? pickFrom : pickTo;
+    const pickAddr = which === 'from' ? pickFromAddr : pickToAddr;
+    if (withMe) out.push({ id: `pl-${which}-me`, label: tr('Moja lokacija'), icon: 'me', pick: useMyLocationAsFrom });
+    favs.forEach((s, i) => out.push({ id: `pl-${which}-f${i}`, label: s.name, icon: 'fav', header: i === 0 ? tr('Priljubljena') : undefined, pick: () => pickStop(s) }));
+    stops.forEach((s, i) => out.push({ id: `pl-${which}-s${i}`, label: s.name, hint: twinHint(stops, s) || undefined, tag: tr('postajališče'), icon: 'stop', pick: () => pickStop(s) }));
+    addrs.forEach((p, i) => out.push({ id: `pl-${which}-a${i}`, label: p.name, tag: kindLabel(p.kind), icon: 'addr', pick: () => pickAddr(p) }));
+    return out;
+  }
+  $: fromOpts = buildOpts('from', hasGeo, showFromFavs ? favList : [], fromResults, fromAddrResults);
+  $: toOpts = buildOpts('to', false, showToFavs ? favList : [], toResults, toAddrResults);
+  $: fromListOpen = fromFocus && !fromPlace && fromOpts.length > 0;
+  $: toListOpen = toFocus && !toPlace && toOpts.length > 0;
+  let fromActive = -1;
+  let toActive = -1;
+  $: if (fromOpts) fromActive = -1;
+  $: if (toOpts) toActive = -1;
+  let fromListEl: HTMLElement | undefined;
+  let toListEl: HTMLElement | undefined;
+
+  function comboKey(which: 'from' | 'to', e: KeyboardEvent) {
+    const opts = which === 'from' ? fromOpts : toOpts;
+    const isOpen = which === 'from' ? fromListOpen : toListOpen;
+    let a = which === 'from' ? fromActive : toActive;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!opts.length) return;
+      e.preventDefault();
+      if (which === 'from') fromFocus = true; else toFocus = true;
+      a = e.key === 'ArrowDown' ? (a + 1) % opts.length : (a <= 0 ? opts.length - 1 : a - 1);
+      if (which === 'from') fromActive = a; else toActive = a;
+      const id = opts[a].id;
+      requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'nearest' }));
+    } else if (e.key === 'Enter') {
+      if (isOpen && a >= 0 && a < opts.length) { e.preventDefault(); opts[a].pick(); }
+      else if (!running && !missingFrom && !missingTo) { e.preventDefault(); run(); }
+    } else if (e.key === 'Escape' && isOpen) {
+      // Zapre samo seznam, ne načrtovalnika.
+      e.preventDefault();
+      e.stopPropagation();
+      if (which === 'from') { fromFocus = false; fromActive = -1; } else { toFocus = false; toActive = -1; }
+    }
+  }
+  // Seznam se ob izgubi fokusa skrije, razen če fokus ostane v njem.
+  function comboBlur(which: 'from' | 'to', e: FocusEvent) {
+    const list = which === 'from' ? fromListEl : toListEl;
+    if (list && e.relatedTarget instanceof Node && list.contains(e.relatedTarget)) return;
+    setTimeout(() => { if (which === 'from') fromFocus = false; else toFocus = false; }, 150);
+  }
+  function optKey(o: Opt, e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); o.pick(); }
+  }
 
   function reset() {
     abortActive();
     fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = []; fromIsMe = false;
-    candidatesTomorrow = false; arriveLateTime = null;
+    candidatesTomorrow = false; arriveLateTime = null; statusMsg = ''; transferWarn = null; resultSig = '';
     timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
     lastConsumedDest = null;
   }
@@ -517,50 +570,37 @@
             <!-- Place se razveljavi ob dejanski spremembi besedila (input), NE ob fokusu —
                  tap v polje za pregled vnosa ne sme tiho zavreči izbranih koordinat. -->
             <input bind:value={fromQuery}
+              role="combobox" aria-autocomplete="list" aria-label={$t('Izhodišče')}
+              aria-expanded={fromListOpen} aria-controls="pl-from-list"
+              aria-activedescendant={fromListOpen && fromActive >= 0 && fromOpts[fromActive] ? fromOpts[fromActive].id : undefined}
               on:focus={() => { fromFocus = true; }}
-              on:input={() => { if (fromPlace) fromPlace = null; fromIsMe = false; }}
-              on:blur={() => setTimeout(() => fromFocus = false, 150)}
+              on:input={() => { if (fromPlace) fromPlace = null; fromIsMe = false; fromFocus = true; }}
+              on:keydown={(e) => comboKey('from', e)}
+              on:blur={(e) => comboBlur('from', e)}
               class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
               placeholder={$t('Od — postajališče, naslov ali moja lokacija')} />
           </div>
-          {#if fromFocus && !fromPlace && (hasGeo || fromResults.length > 0 || fromAddrResults.length > 0 || showFromFavs)}
+          {#if fromListOpen}
             <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
                  z overflow-y:auto in se je odrezal na robu lista (od 6 zadetkov vidnih 2,5). -->
-            <ul class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
-              {#if hasGeo}
-                <li>
-                  <button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={useMyLocationAsFrom}>
-                    <Navigation size={16} color="var(--accent)" />
-                    <span class="font-medium">{$t('Moja lokacija')}</span>
-                  </button>
-                </li>
-              {/if}
-              {#if showFromFavs}
-                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena')}</li>
-                {#each favList as s}
-                  <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFrom(s)}>
-                    <Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
-                    <span>{s.name}</span>
-                  </button></li>
-                {/each}
-              {/if}
-              {#each fromResults as s}
-                {@const hint = twinHint(fromResults, s)}
-                <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFrom(s)}>
-                  <MapPin size={14} color="var(--accent)" />
-                  <span class="min-w-0">
-                    <span class="block">{s.name}</span>
-                    {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+            <ul id="pl-from-list" role="listbox" aria-label={$t('Predlogi za izhodišče')} bind:this={fromListEl}
+                class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
+              {#each fromOpts as o, i (o.id)}
+                {#if o.header}<li role="presentation" class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{o.header}</li>{/if}
+                <li id={o.id} role="option" aria-selected={i === fromActive} tabindex="-1"
+                    class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base cursor-pointer"
+                    class:pl-opt-active={i === fromActive}
+                    on:mousedown={(e) => e.preventDefault()} on:click={o.pick} on:keydown={(e) => optKey(o, e)}>
+                  {#if o.icon === 'me'}<Navigation size={16} color="var(--accent)" />
+                  {:else if o.icon === 'fav'}<Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
+                  {:else if o.icon === 'stop'}<MapPin size={14} color="var(--accent)" />
+                  {:else}<MapPin size={14} color="var(--text-muted)" />{/if}
+                  <span class="min-w-0" class:font-medium={o.icon === 'me'}>
+                    <span class="block truncate">{o.label}</span>
+                    {#if o.hint}<span class="block t-footnote text-muted truncate">{o.hint}</span>{/if}
                   </span>
-                  <span class="ml-auto t-footnote text-muted">{$t('postajališče')}</span>
-                </button></li>
-              {/each}
-              {#each fromAddrResults as p}
-                <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickFromAddr(p)}>
-                  <MapPin size={14} color="var(--text-muted)" />
-                  <span class="truncate">{p.name}</span>
-                  <span class="ml-auto t-footnote text-muted">{$t('naslov')}</span>
-                </button></li>
+                  {#if o.tag}<span class="ml-auto t-footnote text-muted shrink-0">{o.tag}</span>{/if}
+                </li>
               {/each}
             </ul>
           {/if}
@@ -578,42 +618,34 @@
           <div class="relative surface-2 rounded-xl border border-base">
             <Flag size={18} color="var(--status-disrupt)" class="absolute left-3 top-1/2 -translate-y-1/2" />
             <input bind:value={toQuery}
+              role="combobox" aria-autocomplete="list" aria-label={$t('Cilj')}
+              aria-expanded={toListOpen} aria-controls="pl-to-list"
+              aria-activedescendant={toListOpen && toActive >= 0 && toOpts[toActive] ? toOpts[toActive].id : undefined}
               on:focus={() => { toFocus = true; }}
-              on:input={() => { if (toPlace) toPlace = null; }}
-              on:blur={() => setTimeout(() => toFocus = false, 150)}
+              on:input={() => { if (toPlace) toPlace = null; toFocus = true; }}
+              on:keydown={(e) => comboKey('to', e)}
+              on:blur={(e) => comboBlur('to', e)}
               class="w-full h-12 bg-transparent rounded-[inherit] pl-10 pr-3 t-body"
               placeholder={$t('Do — postajališče ali naslov')} />
           </div>
-          {#if toFocus && !toPlace && (toResults.length > 0 || toAddrResults.length > 0 || showToFavs)}
-            <!-- V toku dokumenta, NE absolutno: spustni seznam je bil znotraj vsebnika
-                 z overflow-y:auto in se je odrezal na robu lista (od 6 zadetkov vidnih 2,5). -->
-            <ul class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
-              {#if showToFavs}
-                <li class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{$t('Priljubljena')}</li>
-                {#each favList as s}
-                  <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickTo(s)}>
-                    <Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
-                    <span>{s.name}</span>
-                  </button></li>
-                {/each}
-              {/if}
-              {#each toResults as s}
-                {@const hint = twinHint(toResults, s)}
-                <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickTo(s)}>
-                  <Flag size={14} color="var(--status-disrupt)" />
+          {#if toListOpen}
+            <ul id="pl-to-list" role="listbox" aria-label={$t('Predlogi za cilj')} bind:this={toListEl}
+                class="mt-1 surface rounded-xl border border-base shadow-elev max-h-72 overflow-y-auto">
+              {#each toOpts as o, i (o.id)}
+                {#if o.header}<li role="presentation" class="px-3 pt-2 pb-1 t-footnote text-muted uppercase tracking-wide">{o.header}</li>{/if}
+                <li id={o.id} role="option" aria-selected={i === toActive} tabindex="-1"
+                    class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base cursor-pointer"
+                    class:pl-opt-active={i === toActive}
+                    on:mousedown={(e) => e.preventDefault()} on:click={o.pick} on:keydown={(e) => optKey(o, e)}>
+                  {#if o.icon === 'fav'}<Star size={14} fill="var(--status-delay)" color="var(--status-delay)" />
+                  {:else if o.icon === 'stop'}<Flag size={14} color="var(--status-disrupt)" />
+                  {:else}<Flag size={14} color="var(--text-muted)" />{/if}
                   <span class="min-w-0">
-                    <span class="block">{s.name}</span>
-                    {#if hint}<span class="block t-footnote text-muted truncate">{hint}</span>{/if}
+                    <span class="block truncate">{o.label}</span>
+                    {#if o.hint}<span class="block t-footnote text-muted truncate">{o.hint}</span>{/if}
                   </span>
-                  <span class="ml-auto t-footnote text-muted">{$t('postajališče')}</span>
-                </button></li>
-              {/each}
-              {#each toAddrResults as p}
-                <li><button class="pressable w-full text-left px-3 py-3 t-body flex items-center gap-2 border-b border-base" on:mousedown|preventDefault={() => pickToAddr(p)}>
-                  <Flag size={14} color="var(--text-muted)" />
-                  <span class="truncate">{p.name}</span>
-                  <span class="ml-auto t-footnote text-muted">{$t('naslov')}</span>
-                </button></li>
+                  {#if o.tag}<span class="ml-auto t-footnote text-muted shrink-0">{o.tag}</span>{/if}
+                </li>
               {/each}
             </ul>
           {/if}
@@ -699,11 +731,14 @@
 
         <button class="pressable w-full h-12 rounded-xl bg-accent text-white t-headline disabled:opacity-60 flex items-center justify-center gap-2"
           disabled={(!fromPlace && !fromQuery.trim()) || (!toPlace && !toQuery.trim()) || running}
+          aria-busy={running}
           on:click={run}>
           {#if running}
-            <div class="w-2 h-2 rounded-full bg-white animate-bounce"></div>
-            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.15s"></div>
-            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.3s"></div>
+            <!-- Dostopno ime ostane med iskanjem (F23), pike so samo vizualne. -->
+            <span class="sr-only">{$t('Iščem pot')}</span>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce" aria-hidden="true"></div>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.15s" aria-hidden="true"></div>
+            <div class="w-2 h-2 rounded-full bg-white animate-bounce" style="animation-delay: 0.3s" aria-hidden="true"></div>
           {:else}
             {$t('Poišči pot')}
           {/if}
@@ -714,8 +749,24 @@
           </div>
         {/if}
 
+        <div class="sr-only" role="status">{statusMsg}</div>
         {#if error}
-          <div class="t-footnote px-1" style="color: var(--status-disrupt)">{error}</div>
+          <div class="t-footnote px-1" role="alert" style="color: var(--status-disrupt)">{error}</div>
+        {/if}
+        {#if transferWarn}
+          <div class="surface-2 rounded-xl border p-3 space-y-2" role="alert" style="border-color: var(--status-delay)">
+            {#each transferWarn.issues as is}
+              <div class="t-footnote">
+                {$t('Prestop {stop}: hoja traja {need} min, do odhoda je le {have} min. Ta prestop verjetno ne uspe.', { stop: is.stop, need: is.needMin, have: is.haveMin })}
+              </div>
+            {/each}
+            <div class="flex gap-2">
+              <button type="button" class="pressable flex-1 min-h-[44px] px-3 rounded-lg border border-base surface t-footnote font-semibold"
+                      on:click={() => transferWarn = null}>{$t('Izberi drugo pot')}</button>
+              <button type="button" class="pressable flex-1 min-h-[44px] px-3 rounded-lg border border-base surface t-footnote"
+                      on:click={showWarnedPlan}>{$t('Vseeno pokaži')}</button>
+            </div>
+          </div>
         {/if}
         {#if prevozHref && !running && (error || candidates.length > 0)}
           <a href={prevozHref} target="_blank" rel="noopener noreferrer"
@@ -753,8 +804,9 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-baseline gap-2">
                         <div class="t-title3 font-semibold">{fmtDur(p.arrSec - p.depSec)}</div>
-                        <div class="t-footnote text-muted">{$t('prihod {time}', { time: fmtTime(p.arrSec) })}</div>
                       </div>
+                      <!-- Odhod in prihod z dnevom (»prihod jutri 01:04«), da se krajša vožnja loči od zgodnejšega prihoda (F6). -->
+                      <div class="t-footnote font-medium tabular-nums">{depLabel(p.depSec)} · {arrLabel(p.arrSec)}</div>
                       <div class="t-footnote text-muted mb-1.5">
                         <!-- Prej »peš · 851 m peš« pri poti samo peš. -->
                         {#if p.transfers === 0 && busLegs(p).length === 0}{$t('samo peš, {m} m', { m: Math.round(p.walkMeters) })}
@@ -780,12 +832,18 @@
                 </li>
               {/each}
             </ul>
-            {#if candidates.some(c => busLegs(c).length > 0)}
-              <button type="button" class="pressable w-full mt-2 min-h-[44px] px-3 rounded-xl flex items-center gap-2 t-footnote text-muted"
+            <!-- Vir: načrt je po voznem redu, brez živih zamud (F12). -->
+            <div class="t-footnote text-muted px-1 mt-2">{$t('Po voznem redu, zamude niso upoštevane.')}</div>
+            {#if candidates.some(c => hasCity(c) || hasExt(c))}
+              <!-- Cenik je samo mestni (Marprom); vlak in medkrajevni avtobus nista vključena (F18). -->
+              <button type="button" class="pressable w-full mt-1 min-h-[44px] px-3 rounded-xl flex items-center gap-2 t-footnote text-muted"
                       on:click={onOpenFares}>
                 <Ticket size={16} />
-                <span class="text-left">{$t('Cene in vozovnice')}</span>
+                <span class="text-left">{$t('Cenik mestnega prometa Marprom')}</span>
               </button>
+              {#if candidates.some(hasExt)}
+                <div class="t-footnote text-muted px-1">{$t('Cena vlaka in medkrajevnega avtobusa ni vključena.')}</div>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -794,3 +852,8 @@
     <button class="flex-1" on:click={handleClose} aria-label={$t('Zapri')}></button>
   </div>
 {/if}
+
+<style>
+  /* Izbrani predlog s puščicami (combobox): viden obris, ker fokus ostane v polju. */
+  .pl-opt-active { outline: 2px solid var(--accent); outline-offset: -2px; }
+</style>

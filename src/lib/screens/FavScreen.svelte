@@ -1,17 +1,20 @@
 <script lang="ts">
   import { backdrop, sheet } from '../motion';
-  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle } from 'lucide-svelte';
+  import { Star, Trash2, Route as RouteIcon, ArrowRight, Plus, X, Pencil, AlarmClock, ChevronRight, AlertTriangle, CloudOff } from 'lucide-svelte';
   import type { GTFS, Stop, Route } from '../gtfs';
-  import { upcomingDepartures, rowTarget, departsFromStop } from '../gtfs';
+  import { rowTarget, departsFromStop } from '../gtfs';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
   import Screen from '../ui/Screen.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import LineBadge from '../ui/LineBadge.svelte';
   import DepartureTime from '../ui/DepartureTime.svelte';
   import ConfirmDialog from '../ui/ConfirmDialog.svelte';
-  import { nowMb } from '../clock';
   import ReadAloud from '../ui/ReadAloud.svelte';
-  import { departuresSpeech, gtfsRow, emptyStopSpeech } from '../readAloud';
+  import { departuresSpeech, emptyStopSpeech } from '../readAloud';
+  import { fetchLiveForStops, liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, type DepartureRow } from '../departures';
+  import type { StopArrival } from '../realtime';
+  import { online } from '../online';
+  import LiveDot from '../ui/LiveDot.svelte';
   import StopTimetableModal from './StopTimetableModal.svelte';
   import { favStops } from '../favorites';
   import { favLines, type FavLine } from '../favLines';
@@ -41,19 +44,54 @@
 
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
-  onMount(() => { timer = setInterval(() => tick++, 30_000); });
+  onMount(() => { timer = setInterval(() => { tick++; refreshLive(); }, 30_000); });
   onDestroy(() => { if (timer) clearInterval(timer); });
 
   $: favList = gtfs ? gtfs.stops.filter(s => $favStops.has(s.id)) : [];
-  // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnost od tick jasna.
-  function makeBoards(g: GTFS | null, list: Stop[], _tick: number) {
-    return g ? list.map(s => ({ stop: s, deps: upcomingDepartures(g, s.id, nowMb(), 2) })) : [];
-  }
-  $: boards = makeBoards(gtfs, favList, tick);
 
-  // Poteg navzdol osveži odštevalnike (prej je bil na voljo samo na Domu, čeprav
-  // so odhodi tu enako časovno občutljivi).
-  async function refresh() { tick++; }
+  // Živi odhodi po isti poti kot na Domu (departures.ts, F20): prej so Priljubljene
+  // kazale samo vozni red, Dom pa zamude. Ob izpadu ali brez povezave vozni red z
+  // jasnim napisom.
+  let liveByStop: Record<number, StopArrival[]> = {};
+  let liveAt: Record<number, number> = {};
+  let liveDown = false;
+  let liveSeq = 0;
+  let lastKey = '';
+  async function refreshLive() {
+    if (!gtfs || document.hidden) return;
+    const ids = favList.map(s => s.id);
+    if (ids.length === 0) { liveDown = false; return; }
+    const seq = ++liveSeq;
+    const res = await fetchLiveForStops(gtfs, ids);
+    const next = { ...liveByStop };
+    for (const [id, arr] of res.got) { next[id] = arr; liveAt[id] = res.at; }
+    liveByStop = next;
+    if (seq === liveSeq) liveDown = res.allFailed;
+  }
+  $: favKey = favList.map(s => s.id).join(',');
+  $: if (gtfs && favKey && favKey !== lastKey) { lastKey = favKey; refreshLive(); }
+  $: liveOff = liveDown || !$online;
+  let wasOnline = true;
+  $: if ($online !== wasOnline) { wasOnline = $online; if ($online) refreshLive(); }
+
+  $: stopNames = gtfs ? new Map(gtfs.stops.map(s => [s.id, s.name])) : new Map<number, string>();
+  $: routeIds = routeIdIndex(gtfs);
+  const MAX_ROWS = 2;
+  function rowsFor(g: GTFS, stopId: number, off: boolean): DepartureRow[] {
+    const live = liveByStop[stopId];
+    const fresh = Date.now() - (liveAt[stopId] ?? 0) < LIVE_FRESH_MS;
+    if (!off && live && live.length > 0 && fresh) return liveDepartureRows(live, routeIds, MAX_ROWS);
+    return scheduleDepartureRows(g, stopId, MAX_ROWS, stopNames);
+  }
+  // Eksplicitni parametri namesto comma-operator trika — TS-cisto, odvisnost od tick jasna.
+  function makeBoards(g: GTFS | null, list: Stop[], _tick: number, _live: typeof liveByStop, off: boolean) {
+    return g ? list.map(s => ({ stop: s, rows: rowsFor(g, s.id, off) })) : [];
+  }
+  $: boards = makeBoards(gtfs, favList, tick, liveByStop, liveOff);
+  $: favLive = boards.some(b => b.rows.some(r => r.live));
+
+  // Poteg navzdol osveži odštevalnike in žive odhode.
+  async function refresh() { tick++; await refreshLive(); }
 
   let clearConfirmOpen = false;
   function clearAll() {
@@ -319,15 +357,24 @@
       <div class="flex items-center justify-between">
         <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postajališče', 'postajališči', 'postajališča', 'postajališč'], ['stop', 'stops'])}</div>
         <div class="flex items-center gap-2">
+          <LiveDot live={favLive} label={favLive ? $t('V živo') : $t('Po voznem redu')} />
           <ReadAloud text={() => departuresSpeech(boards.map(b => ({
-            name: b.stop.name, rows: b.deps.map(gtfsRow),
-            empty: gtfs && b.deps.length === 0 ? emptyStopSpeech(gtfs, b.stop.id) : undefined,
+            name: b.stop.name, rows: b.rows,
+            empty: gtfs && b.rows.length === 0 ? emptyStopSpeech(gtfs, b.stop.id) : undefined,
           })))} />
           <button class="pressable t-footnote text-muted flex items-center gap-1 min-h-[44px] px-1" on:click={() => clearConfirmOpen = true}>
             <Trash2 size={14} /> {$t('Počisti')}
           </button>
         </div>
       </div>
+      {#if gtfs && liveOff}
+        <div class="surface-2 rounded-2xl p-3 flex items-start gap-2 t-footnote" role="status">
+          <span class="shrink-0 mt-0.5"><CloudOff size={18} color="var(--status-delay)" /></span>
+          <span>{!$online
+            ? $t('Brez povezave. Prikazujemo vozni red, zamud ne poznamo.')
+            : $t('Podatki v živo trenutno niso na voljo. Prikazujemo vozni red, zamud ne poznamo.')}</span>
+        </div>
+      {/if}
       {#each boards as b (b.stop.id)}
         {@const key = `s:${b.stop.id}`}
         {@const dx = off(key)}
@@ -352,28 +399,28 @@
               <Star size={16} fill="var(--status-delay)" color="var(--status-delay)" />
               <div class="t-title3 font-semibold flex-1 truncate">{b.stop.name}</div>
             </button>
-            {#if b.deps.length === 0}
+            {#if b.rows.length === 0}
               <div class="px-4 pb-3 t-footnote text-muted">
                 {gtfs && !departsFromStop(gtfs, b.stop.id) ? $t('Končno postajališče: od tu avtobusi ne odpeljejo.') : $t('Danes ni več odhodov')}
               </div>
             {:else}
               <ul>
-                {#each b.deps as d}
-                  {@const cilj = rowTarget(gtfs, d.route.short, d.trip.headsign)}
+                {#each b.rows as d}
+                  {@const cilj = rowTarget(gtfs, d.routeShort, d.headsign, d.destination)}
                   <li class="border-t border-base">
                     <button class="pressable w-full text-left px-4 {$compactLists ? 'py-1.5' : 'py-2.5'} flex items-center gap-3"
                             on:click|capture={guardClick}
                             on:click={() => { if (!pendingDelete.has(key)) onStopSelect(b.stop); }}>
-                      <LineBadge short={d.route.short} routeId={d.route.id} size={$compactLists ? 'sm' : 'md'} />
+                      <LineBadge short={d.routeShort} routeId={d.routeId} size={$compactLists ? 'sm' : 'md'} />
                       <div class="flex-1 min-w-0">
                         <div class="{$compactLists ? 't-subhead' : 't-callout'} truncate">{cilj.dest}</div>
                         {#if cilj.via && !$compactLists}
-                          <div class="t-footnote text-muted truncate">{$t('prek {via}', { via: cilj.via })}</div>
+                          <div class="t-footnote text-muted line-clamp-2">{$t('Vmes: {via}', { via: cilj.via })}</div>
                         {/if}
                       </div>
                       <div class="flex flex-col items-end gap-0.5 shrink-0">
                         <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
-                        <DepartureStatus live={false} />
+                        <DepartureStatus live={!!d.live} delayKnown={!!d.delayKnown} delayMin={d.delayMin} />
                       </div>
                     </button>
                   </li>
@@ -445,7 +492,7 @@
                        dir, ki uporabniku ne pove ničesar; headsign nosi vso informacijo. -->
                   <div class="flex-1 min-w-0">
                     <div class="t-body font-medium truncate">→ {cc.dest}</div>
-                    {#if cc.via}<div class="t-footnote text-muted truncate">{$t('prek {via}', { via: cc.via })}</div>{/if}
+                    {#if cc.via}<div class="t-footnote text-muted line-clamp-2">{$t('Vmes: {via}', { via: cc.via })}</div>{/if}
                   </div>
                   {#if on}
                     <div class="w-5 h-5 rounded-full bg-accent grid place-items-center shrink-0">

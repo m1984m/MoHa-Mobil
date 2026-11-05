@@ -72,12 +72,29 @@ async function fetchWithTimeout(u: string, ms: number): Promise<Response> {
   }
 }
 
+// Metapodatki našega Workerja: starost predpomnjenega odgovora (s) in oznaka
+// (HIT/MISS/STALE). Brskalnik ju pokaže le, če ju Worker izpostavi
+// (Access-Control-Expose-Headers); sicer sta null in velja »podatek je svež«.
+export type ProxyMeta = { receivedAt: number; ageSec: number | null; cache: string | null };
+
+function readMeta(r: Response): ProxyMeta {
+  const raw = r.headers.get('X-Proxy-Age');
+  const age = raw != null && /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) : null;
+  // Nesmiselno velika starost (> 10 min) se ne upošteva: Worker zasilno ne streže dlje kot 130 s.
+  return { receivedAt: Date.now(), ageSec: age != null && age <= 600 ? age : null, cache: r.headers.get('X-Proxy-Cache') };
+}
+
 async function fetchJSON(p: string): Promise<any> {
+  return (await fetchJSONMeta(p)).json;
+}
+
+async function fetchJSONMeta(p: string): Promise<{ json: any; meta: ProxyMeta }> {
   // Custom proxy — no fallback. User ima svoj endpoint in nadzor.
   if (PROXY) {
     const r = await fetchWithTimeout(customProxyUrl(p), 8_000);
     if (!r.ok) throw new Error('OBA ' + r.status);
-    return r.json();
+    const meta = readMeta(r);
+    return { json: await r.json(), meta };
   }
 
   // Public proxy: sticky trenutni, ob napaki rotiraj na naslednjega. En cikel (vsi
@@ -89,7 +106,7 @@ async function fetchJSON(p: string): Promise<any> {
       const r = await fetchWithTimeout(publicProxyUrl(idx, p), 4_000);
       if (!r.ok) { lastErr = new Error('OBA ' + r.status); throw lastErr; }
       if (idx !== currentProxyIdx) currentProxyIdx = idx;
-      return await r.json();
+      return { json: await r.json(), meta: { receivedAt: Date.now(), ageSec: null, cache: null } };
     } catch (e) {
       lastErr = e;
       const nextIdx = (idx + 1) % PUBLIC_PROXIES.length;
@@ -181,6 +198,12 @@ export type StopArrival = {
   // razlike med voznim redom in ETA, kar je pri prihodu brez vozila brez pomena.
   delayKnown: boolean;
   delayMin: number;    // pozitivno = zamuda, negativno = prehitevanje; 0 = na voznem redu
+  // Pričakovani čas prihoda kot absolutni trenutek (epoch ms): prejem − starost
+  // odgovora + ETA. Odjemalec odšteva od njega (etaNowMin v departures.ts), ne od
+  // »zdaj + ETA« ob vsakem izrisu (F7). Brez polja (vrstica iz voznega reda) velja etaMin.
+  expectedAt?: number;
+  // Worker je postregel zasilno kopijo (Marprom ni odgovoril).
+  stale?: boolean;
 };
 
 function parseHHMMtoMin(hm: string): number | null {
@@ -190,7 +213,13 @@ function parseHHMMtoMin(hm: string): number | null {
 }
 
 export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<StopArrival[]> {
-  const j = await fetchJSON(`/GetArrivalsForStopPoint?stopPointId=${stopPointId}`);
+  const { json: j, meta } = await fetchJSONMeta(`/GetArrivalsForStopPoint?stopPointId=${stopPointId}`);
+  // Worker je ETAMin že zmanjšal za celotne minute starosti (popraviEta); tu se ta
+  // popravek razveljavi in uporabi točna starost v sekundah, da ni dvojnega odštevanja.
+  const ageSec = meta.ageSec ?? 0;
+  const workerShiftMin = Math.round(ageSec / 60) >= 1 ? Math.round(ageSec / 60) : 0;
+  const originAt = meta.receivedAt - ageSec * 1000;
+  const stale = meta.cache === 'STALE';
   const now = nowMb();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   // Razlika do ure »HH:MM« v minutah, normalizirana na [−720, 720] — polnočni rob:
@@ -208,11 +237,15 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
     // Brez ETAMin se ETA izračuna iz voznega reda (+ znana zamuda); prej je bil 0, kar
     // je na zaslonu pomenilo »zdaj«. Brez obojega vrstica nima časa in se izpusti.
     let etaMin: number;
-    if (typeof a.ETAMin === 'number') etaMin = a.ETAMin;
-    else {
+    let expectedAt: number;
+    if (typeof a.ETAMin === 'number') {
+      etaMin = a.ETAMin;
+      expectedAt = originAt + (a.ETAMin + workerShiftMin) * 60_000;
+    } else {
       const until = minutesUntil(a.ArrivalTime ?? '');
       if (until == null) continue;
       etaMin = until + (typeof a.DelayMin === 'number' ? a.DelayMin : 0);
+      expectedAt = meta.receivedAt + etaMin * 60_000;
     }
     // DelayMin iz API-ja je source of truth — ne prepiši vrednosti 0 ("točen").
     // Fallback kliče samo, če API ne vrne DelayMin (undefined/null), ne pa ko je 0.
@@ -236,6 +269,8 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       predicted: !!String(a.BusCode ?? '').trim(),
       delayKnown,
       delayMin,
+      expectedAt,
+      stale,
     });
   }
   // Tabla (ETAMin) je pri busu tik pred postajo sistematično ~45 s prepozna, ETA vozila
@@ -249,7 +284,10 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       const vehicles = await getVehiclesCached();
       for (const a of near) {
         const v = vehicles.find(v => v.busCode === a.busCode && v.nextStopPointId === stopPointId);
-        if (v && v.etaMin != null && v.etaMin >= 0 && v.etaMin <= 15) a.etaMin = v.etaMin;
+        if (v && v.etaMin != null && v.etaMin >= 0 && v.etaMin <= 15) {
+          a.etaMin = v.etaMin;
+          a.expectedAt = (vehCache?.at ?? Date.now()) + v.etaMin * 60_000;
+        }
       }
     } catch {
       // vozil ni uspelo dobiti — tabla ostane nespremenjena

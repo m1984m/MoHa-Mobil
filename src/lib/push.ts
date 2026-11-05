@@ -1,8 +1,9 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
+import { tick } from 'svelte';
 import type { GTFS } from './gtfs';
-import { computeOccurrences } from './alarms';
+import { computeOccurrences, pruneFiredOnce } from './alarms';
 import type { Alarm, Occurrence } from './alarms';
-import { tr } from './i18n';
+import { tr, lang } from './i18n';
 
 // Potisna obvestila za alarme. Odjemalec samo naroči napravo in strežniku pove,
 // KDAJ naj zazvoni in KAJ naj piše (glej alarms.computeOccurrences); vse ostalo
@@ -192,8 +193,8 @@ export async function enablePush(occ: Occurrence[] = []): Promise<boolean> {
     }
     patch({ subscribed: true, endpoint: sub.endpoint, error: null });
 
-    await syncAlarms(occ);
-    return true;
+    // true samo, če je strežnik razpored res sprejel (F13: »Shranjeno« naj to odraža).
+    return await syncAlarms(occ);
   } catch (e: any) {
     patch({ error: tr('Obvestil ni bilo mogoče vklopiti: {msg}', { msg: e?.message ?? tr('neznana napaka') }) });
     return false;
@@ -236,7 +237,9 @@ const BODY_RESERVE = 2048;   // naročnina + ovoj JSON okoli seznama
 // v telo ušel vnos, ki je medtem zapadel, in Worker bi zavrnil VSE.
 const FIRE_GUARD_MS = 30_000;
 
-export type SyncItem = { id: string; fireAt: number; title: string; body: string; tag: string; url: string };
+// `lang`: jezik besedila; storitveni delavec z njim prevede svoje nadomestno besedilo
+// (npr. »Zamujeno opozorilo«), ki ga sicer ne zna (F29).
+export type SyncItem = { id: string; fireAt: number; title: string; body: string; tag: string; url: string; lang: string };
 
 function cut(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max);
@@ -255,6 +258,7 @@ export function prepareOccurrences(occ: Occurrence[], now: number = Date.now()):
   const floor = now + FIRE_GUARD_MS;
   const ceil = now + MAX_AHEAD_MS;
   const kept: SyncItem[] = [];
+  const jezik = get(lang);
   for (const o of occ) {
     if (!isFinite(o.fireAt) || o.fireAt <= floor || o.fireAt > ceil) continue;
     const tag = cut(o.tag, MAX_ID);
@@ -265,6 +269,7 @@ export function prepareOccurrences(occ: Occurrence[], now: number = Date.now()):
       body: cut(o.body, MAX_TEXT),
       tag,
       url: '/',
+      lang: jezik,
     });
   }
   kept.sort((a, b) => a.fireAt - b.fireAt);
@@ -279,9 +284,11 @@ export function prepareOccurrences(occ: Occurrence[], now: number = Date.now()):
 
 /**
  * Pošlje strežniku celoten razpored zvonjenja. Brez naročnine tiho ne naredi ničesar —
- * to je normalno stanje pred prvim vklopom obvestil.
+ * to je normalno stanje pred prvim vklopom obvestil. Prazen razpored strežnik razume
+ * kot izbris zapisa naročnine (F25): brez opomnikov na strežniku ne ostane nič.
+ * Vrne true, kadar je strežnik razpored sprejel.
  */
-export async function syncAlarms(occ: Occurrence[]): Promise<void> {
+export async function syncAlarms(occ: Occurrence[]): Promise<boolean> {
   let sub = await getSubscription();
   // Ob zagonu teče ensureSubscribed s svojim omrežnim klicem (0,2–2 s). Debounce
   // scheduleSync je krajši, zato bi brez tega čakanja prišli sem, ko naročnine še ni,
@@ -290,9 +297,9 @@ export async function syncAlarms(occ: Occurrence[]): Promise<void> {
     await readyPromise;
     sub = await getSubscription();
   }
-  if (!sub) return;
+  if (!sub) return false;
   const subscription = subPayload(sub);
-  if (!subscription) return;
+  if (!subscription) return false;
   lastSubscription = subscription;
 
   // Filtriramo tik pred oddajo, ne ob izračunu — med izračunom in tem trenutkom je
@@ -306,7 +313,7 @@ export async function syncAlarms(occ: Occurrence[]): Promise<void> {
   });
   if (res === null) {
     patch({ error: tr('Alarmov ni bilo mogoče uskladiti s strežnikom. Poskusimo znova ob naslednjem zagonu.') });
-    return;
+    return false;
   }
   const until = items.length > 0 ? items[items.length - 1].fireAt : null;
   patch({
@@ -317,6 +324,7 @@ export async function syncAlarms(occ: Occurrence[]): Promise<void> {
     until: typeof res.until === 'number' ? res.until : until,
     error: null,
   });
+  return true;
 }
 
 /** Osveži stanje s strežnika (koliko zvonjenj čaka v vrsti in do kdaj). */
@@ -328,9 +336,12 @@ export async function refreshStatus(): Promise<void> {
   }
   const res = await req(`/status?endpoint=${encodeURIComponent(sub.endpoint)}`);
   if (res === null) return;
+  // Strežnik brez zapisa pomeni samo, da ni zvonjenj v vrsti: zapis se ob praznem
+  // razporedu izbriše (F25) in ga naslednja uskladitev ustvari znova. Naprava je
+  // naročena, dokler ima brskalnik naročnino.
   patch({
     endpoint: sub.endpoint,
-    subscribed: res.subscribed !== false,
+    subscribed: true,
     count: typeof res.count === 'number' ? res.count : 0,
     until: typeof res.until === 'number' ? res.until : null,
   });
@@ -433,8 +444,26 @@ export function scheduleSync(gtfs: GTFS | null, list: Alarm[], delayMs = 1000): 
     syncTimer = null;
     const p = pendingSync;
     pendingSync = null;
-    if (p) void syncAlarms(computeOccurrences(p.gtfs, p.list));
+    if (!p) return;
+    // Enkratni opomniki, ki so že zazvonili, odpadejo (F13); sprememba seznama sproži
+    // novo uskladitev prek App, ta pa nima več kaj odstraniti.
+    pruneFiredOnce();
+    void syncAlarms(computeOccurrences(p.gtfs, p.list));
   }, delayMs);
+}
+
+/**
+ * Uskladi takoj in počaka na odgovor strežnika (čarovnik: »Shranjeno« šele, ko je
+ * strežnik razpored sprejel — F13). Prej odloženo uskladitev nadomesti.
+ */
+export async function syncNow(gtfs: GTFS | null, list: Alarm[]): Promise<boolean> {
+  if (!gtfs) return false;
+  // Sprememba seznama je App že sprožila scheduleSync (ob naslednjem izrisu) — počakamo
+  // nanj in ga prekličemo, da ne gre na strežnik še ena enaka zahteva.
+  await tick();
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  pendingSync = null;
+  return syncAlarms(computeOccurrences(gtfs, list));
 }
 
 /**

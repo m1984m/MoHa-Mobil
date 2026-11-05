@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { allDeparturesForStop, feedCoversDate, rowTarget } from './gtfs';
 import type { GTFS } from './gtfs';
 import { toMb, mbWallToEpoch } from './clock';
@@ -27,11 +27,25 @@ export type Alarm = {
   leadMin: number;         // koliko minut pred odhodom naj zazvoni
   enabled: boolean;
   createdAt: number;
+  // Enkratni opomnik (»Samo ta odhod« z zvonca, F13): zazvoni enkrat ob `fireAt` za
+  // odhod ob `depAt` (pričakovani čas: vozni red + znana zamuda), nato se sam odstrani.
+  // Čas zvonjenja je določen ob shranitvi in se ne preračunava — sicer bi ga vsaka
+  // uskladitev znova pomaknila v prihodnost. `days` ima vklopljen le dan odhoda,
+  // `fromMin`/`toMin` minuto odhoda po voznem redu (za stare prikaze seznama).
+  once?: { depAt: number; fireAt: number } | null;
 };
 
 export type Occurrence = { alarmId: string; fireAt: number; depAt: number; title: string; body: string; tag: string };
 
 export type AlarmDraft = Omit<Alarm, 'id' | 'createdAt'>;
+
+// Zvonec ob odhodu (MapScreen → SimpleAlarmWizard). depSec = odhod po voznem redu
+// (sekunde od polnoči Maribora); expectedAt = pričakovani odhod v ms (živi podatki:
+// vozni red + zamuda), delayMin = znana zamuda za prikaz (F13).
+export type RemindPrefill = {
+  stopId: number; routeId: number; dir: number; depSec: number;
+  expectedAt?: number | null; delayMin?: number | null;
+};
 
 // Ključi prevodov — prevedejo se ob izpisu (tr / $t), ne tu, da sledijo jeziku.
 export const DAY_SHORT = ['pon', 'tor', 'sre', 'čet', 'pet', 'sob', 'ned'];
@@ -67,7 +81,17 @@ function sanitize(x: any): Alarm | null {
     leadMin: clampInt(x.leadMin, 0, MAX_LEAD_MIN, DEFAULT_LEAD_MIN),
     enabled: x.enabled !== false,
     createdAt: typeof x.createdAt === 'number' ? x.createdAt : Date.now(),
+    once: x.once && isFinite(Number(x.once.depAt)) && isFinite(Number(x.once.fireAt))
+      ? { depAt: Number(x.once.depAt), fireAt: Number(x.once.fireAt) }
+      : null,
   };
+}
+
+// Enkratni opomnik je opravljen, ko je zvonjenje mimo (z rezervo za zamudo crona,
+// glej LATE_GRACE_MS v worker/src/due.js) in je avtobus odpeljal.
+const ONCE_DONE_MS = 3 * 60_000;
+function onceDone(a: Alarm, now: number): boolean {
+  return !!a.once && now > Math.max(a.once.fireAt + ONCE_DONE_MS, a.once.depAt);
 }
 
 function load(): Alarm[] {
@@ -76,7 +100,8 @@ function load(): Alarm[] {
     if (!s) return [];
     const arr = JSON.parse(s);
     if (!Array.isArray(arr)) return [];
-    return arr.map(sanitize).filter((a): a is Alarm => a !== null);
+    const now = Date.now();
+    return arr.map(sanitize).filter((a): a is Alarm => a !== null && !onceDone(a, now));
   } catch { return []; }
 }
 
@@ -110,6 +135,47 @@ export function removeAlarm(id: string): void {
   alarms.update(list => list.filter(a => a.id !== id));
 }
 
+/** Odstrani enkratne opomnike, ki so že zazvonili (F13). Store spremeni samo, če je kaj odpadlo. */
+export function pruneFiredOnce(now: number = Date.now()): void {
+  const list = get(alarms);
+  if (list.some(a => onceDone(a, now))) alarms.set(list.filter(a => !onceDone(a, now)));
+}
+
+/**
+ * Kdaj naj zazvoni enkratni opomnik za odhod ob `depAt` (pričakovani čas). Želeni
+ * odmik `leadMin` se skrajša, kadar bi bil trenutek že mimo: zazvoni takoj (čez
+ * ONCE_MIN_AHEAD_MS, da ga strežnik še sprejme). `null` = odhod je preblizu, prepozno.
+ */
+export const ONCE_MIN_AHEAD_MS = 45_000;
+export const ONCE_TOO_LATE_MS = 90_000;
+export function onceFireAt(depAt: number, leadMin: number, now: number = Date.now()): { fireAt: number; leadMin: number } | null {
+  if (depAt - now < ONCE_TOO_LATE_MS) return null;
+  const want = depAt - leadMin * 60_000;
+  const fireAt = Math.max(want, now + ONCE_MIN_AHEAD_MS);
+  return { fireAt, leadMin: Math.max(0, Math.round((depAt - fireAt) / 60_000)) };
+}
+
+const DAY_FULL = ['ponedeljek', 'torek', 'sreda', 'četrtek', 'petek', 'sobota', 'nedelja'];
+
+/** »danes ob 07:35«, »jutri ob 07:35«, »torek ob 07:35«; čez teden dni z datumom. */
+export function ringDayLabel(at: number, now: number = Date.now()): string {
+  const d = toMb(at);
+  const n = toMb(now);
+  const time = fmtClock(d.getHours() * 3600 + d.getMinutes() * 60);
+  const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    - new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime()) / 86_400_000);
+  if (days === 0) return tr('danes ob {time}', { time });
+  if (days === 1) return tr('jutri ob {time}', { time });
+  if (days > 1 && days < 7) return tr('{day} ob {time}', { day: tr(DAY_FULL[(d.getDay() + 6) % 7]), time });
+  const date = new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+  return tr('{day} ob {time}', { day: date, time });
+}
+
+/** Opis, kdaj opomnik zvoni: »samo enkrat, danes ob 07:35« ali dnevi. */
+export function whenLabel(a: Alarm): string {
+  return a.once ? tr('samo enkrat, {when}', { when: ringDayLabel(a.once.fireAt) }) : daysLabel(a.days);
+}
+
 export function toggleAlarm(id: string): void {
   alarms.update(list => list.map(a => (a.id === id ? { ...a, enabled: !a.enabled } : a)));
 }
@@ -125,6 +191,7 @@ export function daysLabel(days: boolean[]): string {
 
 // Enovrstični povzetek za seznam in za aria-label.
 export function alarmLabel(a: Alarm): string {
+  if (a.once) return `${a.routeShort} · ${a.stopName} · ${whenLabel(a)}`;
   return `${a.routeShort} · ${a.stopName} · ${daysLabel(a.days)} ${fmtClock(a.fromMin * 60)}–${fmtClock(a.toMin * 60)} · ${tr('{n} min prej', { n: a.leadMin })}`;
 }
 
@@ -138,9 +205,9 @@ export function nextRingLabel(o: Occurrence | null): string {
 
 // Besedilo obvestila sestavi telefon v jeziku, izbranem ob izračunu, in ga pošlje
 // strežniku — ta ga le dostavi. Ob menjavi jezika se ob naslednji uskladitvi prepiše.
-function occurrenceTitle(a: Alarm): string {
-  if (a.leadMin <= 0) return tr('Kreni — {line} odhaja zdaj', { line: a.routeShort });
-  return tr('Kreni — {line} čez {time}', { line: a.routeShort, time: fmtDuration(a.leadMin) });
+function occurrenceTitle(a: Alarm, leadMin: number = a.leadMin): string {
+  if (leadMin <= 0) return tr('Kreni — {line} odhaja zdaj', { line: a.routeShort });
+  return tr('Kreni — {line} čez {time}', { line: a.routeShort, time: fmtDuration(leadMin) });
 }
 
 function occurrenceBody(a: Alarm, depSec: number, headsign: string): string {
@@ -174,10 +241,29 @@ export function computeOccurrences(
   max = 400,
 ): Occurrence[] {
   const out: Occurrence[] = [];
-  const active = list.filter(a => a.enabled && a.days.some(Boolean) && a.fromMin <= a.toMin);
-  if (active.length === 0) return out;
-
   const fromMs = from.getTime();
+  // Enkratni opomniki: čas zvonjenja je že določen, vozni red ni potreben.
+  for (const a of list) {
+    if (!a.enabled || !a.once || a.once.fireAt <= fromMs) continue;
+    if (a.once.fireAt > fromMs + horizonDays * 86_400_000) continue;
+    const d = toMb(a.once.depAt);
+    const depSec = d.getHours() * 3600 + d.getMinutes() * 60;
+    out.push({
+      alarmId: a.id,
+      fireAt: a.once.fireAt,
+      depAt: a.once.depAt,
+      title: occurrenceTitle(a, Math.max(0, Math.round((a.once.depAt - a.once.fireAt) / 60_000))),
+      // headsign je pri opomniku z zvonca že ime cilja (StopLine.dest).
+      body: occurrenceBody(a, depSec, a.headsign),
+      tag: `${a.id}:${a.once.depAt}`,
+    });
+  }
+  const active = list.filter(a => a.enabled && !a.once && a.days.some(Boolean) && a.fromMin <= a.toMin);
+  if (active.length === 0) {
+    out.sort((x, y) => x.fireAt - y.fireAt);
+    return out.slice(0, max);
+  }
+
   // Koledar teče po uri Maribora (`from` je pravi trenutek): telefon v drugem pasu je
   // prej računal dneve in ure po svojem pasu, opomniki so prišli 1–6 h pozno (pregled
   // 12.10.2026).
@@ -228,6 +314,20 @@ export function computeOccurrences(
   return out.slice(0, max);
 }
 
+/**
+ * Prvo zvonjenje ponavljajočega opomnika (še ne shranjenega) in ali je današnje že
+ * zamujeno (F13: avtobus čez 5 min z opozorilom 10 min prej danes ne zazvoni).
+ */
+export function firstRing(gtfs: GTFS, draft: AlarmDraft, now: number = Date.now()): { fireAt: number | null; todayMissed: boolean } {
+  const tmp: Alarm = { ...draft, id: '_', createdAt: now, enabled: true, once: null };
+  const n = toMb(now);
+  const midnight = mbWallToEpoch(n.getFullYear(), n.getMonth(), n.getDate(), 0, 0, 0);
+  const fromToday = computeOccurrences(gtfs, [tmp], new Date(midnight), 8, 3);
+  const today = fromToday.find(o => toMb(o.fireAt).getDate() === n.getDate());
+  const next = computeOccurrences(gtfs, [tmp], new Date(now), 60, 1)[0] ?? null;
+  return { fireAt: next ? next.fireAt : null, todayMissed: !!today && today.fireAt <= now };
+}
+
 // Do kdaj so alarmi pokriti (zadnje predvideno zvonjenje). null = ni ponovitev.
 export function coverageEnd(occ: Occurrence[]): number | null {
   let last: number | null = null;
@@ -246,7 +346,7 @@ const SOON_MS = 14 * 24 * 3600 * 1000;
  */
 export function alarmsCoverageWarning(gtfs: GTFS | null, list: Alarm[], now: Date = new Date()): AlarmWarning | null {
   if (!gtfs) return null;
-  if (!list.some(a => a.enabled && a.days.some(Boolean))) return null;
+  if (!list.some(a => a.enabled && !a.once && a.days.some(Boolean))) return null;
   if (!feedCoversDate(gtfs, toMb(now))) {
     return { kind: 'feed-expired', text: tr('Vozni red za danes ne velja več, zato opomniki ne bodo zazvonili. Posodobi podatke v aplikaciji.') };
   }

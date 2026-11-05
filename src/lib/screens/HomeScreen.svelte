@@ -8,7 +8,7 @@
   } from '../gtfs';
   import { online } from '../online';
   import { hasTwin } from '../simpleStops';
-  import { liveDepartures, boardDirection, liveDepSec } from '../departures';
+  import { boardDirection, liveDepSec, etaNowMin, fetchLiveForStops, LIVE_FRESH_MS } from '../departures';
   import { nowMb, nowSecMb } from '../clock';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
@@ -18,7 +18,7 @@
   import StopBoard, { type BoardRow } from '../ui/StopBoard.svelte';
   import { favStops } from '../favorites';
   import { homeShowNearby, homeShowFavs, nearbyRadiusM, seniorMode } from '../settings';
-  import { fetchArrivalsForStopPoint, type StopArrival } from '../realtime';
+  import type { StopArrival } from '../realtime';
   import { fmtMonthYearGenitive } from '../time';
   import { track } from '../analytics';
   import { t, tr } from '../i18n';
@@ -130,19 +130,13 @@
     const ids = Array.from(new Set([...nearStops.map(s => s.id), ...favStopList.map(s => s.id)]));
     if (ids.length === 0) { liveDown = false; return; }
     const seq = ++liveSeq;
-    const results = await Promise.allSettled(
-      ids.map(async id => [id, await fetchArrivalsForStopPoint(id)] as const)
-    );
+    // Skupna pot s Priljubljenimi (departures.ts): brez voženj, ki se tu končajo
+    // (prazen seznam → vozni red).
+    const res = await fetchLiveForStops(gtfs, ids);
     const next: Record<number, StopArrival[]> = { ...liveByStop };
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        // Brez voženj, ki se tu končajo (prazen seznam → vozni red).
-        next[r.value[0]] = gtfs ? liveDepartures(gtfs, r.value[0], r.value[1]) : r.value[1];
-        liveAt[r.value[0]] = Date.now();
-      }
-    }
+    for (const [id, arr] of res.got) { next[id] = arr; liveAt[id] = res.at; }
     liveByStop = next;
-    if (seq === liveSeq) liveDown = results.every(r => r.status === 'rejected');
+    if (seq === liveSeq) liveDown = res.allFailed;
   }
 
   // Ob izpadu ali brez povezave vrstice takoj preklopijo na vozni red — sicer bi do
@@ -170,13 +164,15 @@
       // lineFallback: živ prihod nosi opis smeri iz OBA, ki se z opisom iz
       // voznega reda ne ujame vedno (glej matchesCenter).
       if (centerFilter && !matchesCenter(e, centerFilter, a.lineCode, a.headsign, { lineFallback: true })) continue;
+      // Odštevanje od absolutnega pričakovanega časa (F7), ne od ETA ob prejemu.
+      const eta = etaNowMin(a);
       out.push({
         routeId: routeIdByShort.get(a.lineCode.toLowerCase()) ?? a.lineId,
         routeShort: a.lineCode,
         headsign: a.headsign,
-        minutesFromNow: a.etaMin,
+        minutesFromNow: eta,
         // Pričakovani čas (zdaj + ETA), ne čas po voznem redu — glej liveDepSec.
-        depSec: liveDepSec(a.etaMin, nowSec),
+        depSec: liveDepSec(eta, nowSec),
         delayMin: a.delayMin,
         delayKnown: a.delayKnown,
         // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
@@ -210,7 +206,7 @@
     const live = liveByStop[stopId];
     // Zivi podatki veljajo 2 min od zadnjega uspesnega fetcha; starejsi
     // padejo nazaj na GTFS (etaMin iz starega fetcha je ze zlagan).
-    const fresh = Date.now() - (liveAt[stopId] ?? 0) < 120_000;
+    const fresh = Date.now() - (liveAt[stopId] ?? 0) < LIVE_FRESH_MS;
     if (!liveOff && live && live.length > 0 && fresh) {
       const rows = liveRows(stopId, live);
       // OBA vrne le bližnje prihode; če filter med njimi ne najde nič, ima vozni

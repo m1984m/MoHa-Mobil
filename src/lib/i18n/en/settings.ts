@@ -98,14 +98,14 @@ export default {
   'Preklopi anonimno štetje uporabe': 'Toggle anonymous usage count',
   // 0.26.0 — kam gredo podatki
   'Kam gredo podatki': 'Where your data goes',
-  'Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot in ime točke na karti gre natančna lega storitvama openrouteservice (prek strežnika aplikacije) in OpenStreetMap.':
-    'Location: nearby stops are worked out on your phone. Weather (Open-Meteo) gets your position rounded to about 1 km. For walking routes and naming a point on the map, the exact position goes to openrouteservice (via the app server) and OpenStreetMap.',
+  'Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot gre natančna lega prek strežnika aplikacije in vmesnih posrednikov storitvi openrouteservice, za ime točke na karti storitvi OpenStreetMap.':
+    'Location: nearby stops are worked out on your phone. Weather (Open-Meteo) gets your position rounded to about 1 km. For walking routes, the exact position goes via the app server and relay proxies to openrouteservice; for naming a point on the map, to OpenStreetMap.',
   'Priljubljene, kraji in nastavitve so shranjeni samo na tej napravi.':
     'Saved stops, places and settings are stored only on this device.',
-  'Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler opomnik obstaja.':
-    'Reminders: alert times and the notification subscription are kept on the app server (Cloudflare) for as long as the reminder exists.',
-  'Glasno branje: besedilo, ki ga Petra prebere, gre storitvi Microsoft Azure, brez lokacije.':
-    'Read aloud: the text Petra reads goes to Microsoft Azure, without your location.',
+  'Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler ne izbrišeš zadnjega opomnika ali izklopiš obvestil.':
+    'Reminders: alert times and the notification subscription are kept on the app server (Cloudflare) until you delete your last reminder or turn off notifications.',
+  'Glasno branje: besedilo, ki ga Petra prebere, gre prek strežnika aplikacije Microsoftovi storitvi za govor (Azure, ob izpadu Microsoft Edge). Besedilo lahko vsebuje ime cilja ali naslov.':
+    'Read aloud: the text Petra reads goes via the app server to Microsoft speech services (Azure, or Microsoft Edge as a fallback). The text can include a destination name or address.',
   'Štetje uporabe (stikalo zgoraj): brez piškotkov, lokacije in podatka o napravi. Šteje zagone, zaslone in nastavitve.':
     'Usage count (switch above): no cookies, location or device data. It counts app starts, screens and settings.',
   'Odhodi v živo: aplikacija za postajališča, ki jih gledaš, vpraša strežnik aplikacije (Cloudflare), ta pa Marprom. Strežnik šteje, katera postajališča se gledajo, brez podatka o napravi; tega stikalo ne izklopi.':
@@ -282,4 +282,8 @@ export default {
   'Rdeč okvir na Domu, ko avtobus pripelje v 3 minutah': 'Red frame on Home when a bus arrives within 3 minutes',
   'Na karti dotik avtobusa pokaže njegovo linijo in vse avtobuse na njej': 'On the map, tapping a bus shows its line and all buses on it',
   'Postajališče namesto postaja, ikona za iPhone in glas Petra brez ključa Azure': 'Stop wording, iPhone icon and Petra’s voice without an Azure key',
+  'Zvonec: opomnik za ta odhod upošteva zamudo in pove, kdaj prvič zazvoni': 'Bell: a reminder for this departure accounts for delay and tells you when it first rings',
+  'Načrtovalnik: ura odhoda in »jutri«, delujoč način Bus + vlak, zvečer tudi jutrišnje povezave': 'Planner: departure time and “tomorrow”, working Bus + train mode, tomorrow’s connections in the evening',
+  'Pravilen čas čakanja pri prestopu, »vlak« v navodilih, Priljubljene v živo': 'Correct transfer waiting time, “train” in directions, live Favourites',
+  'Boljša dostopnost (tipkovnica, bralnik zaslona, ležeči položaj) in natančnejša zasebnost': 'Better accessibility (keyboard, screen reader, landscape) and more precise privacy information',
 };

@@ -10,7 +10,7 @@
 // prekrivajo z Marpromovimi. Medkrajevna služba je ena sama (EXT_SERVICE), ki velja vedno:
 // katere vožnje vozijo, je odločeno že ob združevanju za izbrani dan.
 import type { GTFS, Route, Stop, Trip } from './gtfs';
-import { setExtRouteColor } from './gtfs';
+import { setExtRouteColor, todayServiceIds } from './gtfs';
 import { dist } from './gtfs';
 
 export const EXT = 1_000_000;
@@ -43,14 +43,43 @@ export const isExtRoute = (routeId: number) => routeId >= EXT;
 let cached: Raw | null = null;
 let loading: Promise<Raw | null> | null = null;
 
-export function loadIjppSi(): Promise<Raw | null> {
-  if (cached) return Promise.resolve(cached);
-  if (loading) return loading;
-  loading = fetch(import.meta.env.BASE_URL + 'gtfs/ijpp-si.json')
-    .then(r => { if (!r.ok) throw new Error('ijpp-si.json ' + r.status); return r.json(); })
+// Različica v naslovu kot pri Marpromovih podatkih (gtfs.ts): service worker datoteke z `?v=`
+// streže iz predpomnilnika samo za isto različico, brez nje pa je star medkrajevni vozni red
+// ostal do konca seje (evalvacija 05.11.2026, F14). ijpp-si.json se objavi skupaj s paketom
+// aplikacije, zato je različica paket (različica + SHA gradnje).
+const IJPP_VER: string = [
+  typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
+  typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : '',
+  typeof __GTFS_VER__ === 'string' ? __GTFS_VER__ : '',
+].filter(Boolean).join('-');
+const ijppUrl = (bust?: string) => {
+  const base = import.meta.env.BASE_URL + 'gtfs/ijpp-si.json';
+  const v = bust ?? IJPP_VER;
+  return v ? `${base}?v=${encodeURIComponent(v)}` : base;
+};
+
+function fetchIjpp(url: string, init?: RequestInit): Promise<Raw> {
+  return fetch(url, init)
+    .then(r => { if (!r.ok) throw new Error('ijpp-si.json ' + r.status); return r.json(); });
+}
+
+/**
+ * Medkrajevni vozni red. Z `forDate` se preveri, ali pokriva ta dan; če ne, se enkrat prenese
+ * svež (mimo predpomnilnika brskalnika in service workerja), preden načrtovalnik odneha.
+ */
+export function loadIjppSi(forDate?: Date): Promise<Raw | null> {
+  const base: Promise<Raw | null> = cached ? Promise.resolve(cached) : (loading ??= fetchIjpp(ijppUrl())
     .then((j: Raw) => { cached = j; return j; })
-    .catch(() => { loading = null; return null; });
-  return loading;
+    .catch(() => { loading = null; return null; }));
+  if (!forDate) return base;
+  return base.then(async j => {
+    if (j && ijppCoversDate(j, forDate)) return j;
+    try {
+      const fresh = await fetchIjpp(ijppUrl(`${IJPP_VER || 'r'}-${Date.now()}`), { cache: 'reload' });
+      if (!j || fresh.meta.built !== j.meta.built) { cached = fresh; loading = Promise.resolve(fresh); }
+      return fresh;
+    } catch { return j; }
+  });
 }
 
 // »SŽ - Potniški promet, d.o.o.« → »SŽ«, »Arriva d.o.o.« → »Arriva«.
@@ -76,9 +105,14 @@ export function outsideMaribor(p: { lat: number; lon: number }): boolean {
 
 const mergedCache = new Map<string, GTFS>();
 
+// Službe Marproma za jutrišnje kopije voženj: vedno veljavna, kot EXT_SERVICE.
+const MB_NEXT_TRIP = 3_000_000;
+
 /**
- * Marpromov GTFS + medkrajevne vožnje, ki vozijo na dan `when` (in vožnje prejšnjega dne
- * po polnoči, premaknjene za −24 h). Rezultat je predpomnjen po dnevu.
+ * Marpromov GTFS + medkrajevne vožnje, ki vozijo na dan `when`, vožnje prejšnjega dne po
+ * polnoči (−24 h) in vožnje naslednjega dne (+24 h), skupaj z Marpromovimi vožnjami
+ * naslednjega dne. Brez naslednjega dne večerno iskanje ni našlo poti, ki potrebuje prvo
+ * jutranjo vožnjo (evalvacija 05.11.2026, F5). Rezultat je predpomnjen po dnevu.
  */
 export function mergedGtfs(gtfs: GTFS, j: Raw, when: Date): GTFS {
   const key = `${ymd(when)}|${j.meta.built}|${gtfs.trips.length}`;
@@ -110,8 +144,9 @@ export function mergedGtfs(gtfs: GTFS, j: Raw, when: Date): GTFS {
     const row = j.trips[ti];
     const [ri, di, hi, pi, t0] = row;
     const bits = j.days[di];
-    // Vožnja tega dne, ali vožnja prejšnjega dne, ki po polnoči še vozi.
-    for (const [d, shift] of [[today, 0], [today - 1, -1440]] as const) {
+    // Vožnja tega dne, vožnja prejšnjega dne, ki po polnoči še vozi, in vožnja naslednjega dne.
+    // Id: EXT + ti * 3 + (0 danes, 1 včeraj, 2 jutri).
+    for (const [d, shift, slot] of [[today, 0, 0], [today - 1, -1440, 1], [today + 1, 1440, 2]] as const) {
       if (d < 0 || d >= bits.length || bits[d] !== '1') continue;
       const pat = j.pats[pi];
       const st: [number, number, number][] = [];
@@ -121,13 +156,26 @@ export function mergedGtfs(gtfs: GTFS, j: Raw, when: Date): GTFS {
         const sec = t * 60;
         st.push([EXT + pat[k], sec, sec]);
       }
-      if (shift && st[st.length - 1][1] < 0) continue;
+      if (shift < 0 && st[st.length - 1][1] < 0) continue;
       trips.push({
-        id: EXT + ti * 2 + (shift ? 1 : 0),
+        id: EXT + ti * 3 + slot,
         route: EXT + ri, service: EXT_SERVICE, headsign: j.heads[hi],
         short: routes[gtfs.routes.length + ri].short, dir: 0, shape: null, stops: st,
       });
     }
+  }
+
+  // Marpromove vožnje naslednjega dne (+24 h) za dostop do jutranjega vlaka ali avtobusa in
+  // za mestni del po prihodu. Služba je vedno veljavna, izbor je narejen tu.
+  const next = new Date(when.getFullYear(), when.getMonth(), when.getDate() + 1, 12);
+  const nextActive = todayServiceIds(gtfs, next);
+  for (let i = 0; i < gtfs.trips.length; i++) {
+    const t = gtfs.trips[i];
+    if (!nextActive.has(t.service)) continue;
+    trips.push({
+      ...t, id: MB_NEXT_TRIP + i, service: EXT_SERVICE,
+      stops: t.stops.map(([s, a, d]) => [s, a + 86400, d + 86400] as [number, number, number]),
+    });
   }
 
   const merged: GTFS = {
@@ -147,6 +195,25 @@ export function tripFilter(mode: Mode): ((t: Trip) => boolean) | undefined {
   return t => t.route < EXT || routeInfo.get(t.route)?.rail !== true;
 }
 
+// Vrsta prevoza vožnje za stanje iskanja (planner.ts, opts.tripBits): vlak 1, medkrajevni
+// avtobus 2, Marprom 0 (mestni avtobus ne šteje kot »bus« v »Bus + vlak«).
+export const BIT_RAIL = 1, BIT_BUS = 2;
+export function tripBits(t: Trip): number {
+  if (t.route < EXT) return 0;
+  return routeInfo.get(t.route)?.rail ? BIT_RAIL : BIT_BUS;
+}
+
+/**
+ * Možnosti načrtovalnika za način: filter voženj in pri »Bus + vlak« zahteva po obeh vrstah
+ * že med iskanjem, ne šele po izboru treh poti (evalvacija 05.11.2026, F2).
+ */
+export function modeOpts(mode: Mode): { tripOk?: (t: Trip) => boolean; tripBits?: (t: Trip) => number; needBits?: number; planOk?: (p: { legs: { kind: string; route?: Route }[] }) => boolean } {
+  if (mode === 'busRail') {
+    return { tripBits, needBits: BIT_RAIL | BIT_BUS, planOk: p => planMatchesMode(p.legs, mode) };
+  }
+  return { tripOk: tripFilter(mode) };
+}
+
 /** »Avtobus + vlak«: pot mora imeti vsaj en vlak in vsaj en medkrajevni avtobus. */
 export function planMatchesMode(legs: { kind: string; route?: Route }[], mode: Mode): boolean {
   const ext = legs.filter(l => l.kind === 'bus' && l.route && l.route.id >= EXT);
@@ -156,18 +223,41 @@ export function planMatchesMode(legs: { kind: string; route?: Route }[], mode: M
   return true;
 }
 
+// Postajališča IJPP, na katerih ustavi vlak (indeksi v j.stops).
+const railStopsCache = new WeakMap<Raw, Set<number>>();
+function railStops(j: Raw): Set<number> {
+  let s = railStopsCache.get(j);
+  if (s) return s;
+  s = new Set<number>();
+  for (const row of j.trips) {
+    if (j.routes[row[0]]?.[2] !== 2) continue;
+    for (const k of j.pats[row[3]] ?? []) s.add(k);
+  }
+  railStopsCache.set(j, s);
+  return s;
+}
+
+/** Vrsta zadetka za predloge: železniška ali avtobusna postaja oziroma postajališče. */
+export type IjppStopKind = 'rail' | 'busStation' | 'stop';
+
 /** Postajališča IJPP za iskanje cilja po imenu (»Koper AP«, »Ljubljana«). */
-export function searchIjppStops(j: Raw, q: string, k = 6): { name: string; lat: number; lon: number }[] {
+export function searchIjppStops(j: Raw, q: string, k = 6): { name: string; lat: number; lon: number; kind: IjppStopKind }[] {
   const n = q.trim().toLowerCase();
   if (n.length < 2) return [];
-  const seen = new Set<string>();
-  const out: { name: string; lat: number; lon: number; score: number }[] = [];
-  for (const [name, lat, lon] of j.stops) {
+  const rail = railStops(j);
+  // Isto ime ima lahko avtobusno postajališče in železniška postaja (»Koper«): ostane ena
+  // vrstica, železniška postaja ima prednost.
+  const byName = new Map<string, { name: string; lat: number; lon: number; kind: IjppStopKind; score: number }>();
+  for (let si = 0; si < j.stops.length; si++) {
+    const [name, lat, lon] = j.stops[si];
     const l = name.toLowerCase();
     const i = l.indexOf(n);
-    if (i < 0 || seen.has(l)) continue;
-    seen.add(l);
-    out.push({ name, lat, lon, score: (i === 0 ? 0 : 1) * 1000 + name.length });
+    if (i < 0) continue;
+    const kind: IjppStopKind = rail.has(si) ? 'rail'
+      : /\bAP\b|avtobusna postaja/i.test(name) ? 'busStation' : 'stop';
+    const prev = byName.get(l);
+    if (prev && (prev.kind === 'rail' || kind !== 'rail')) continue;
+    byName.set(l, { name, lat, lon, kind, score: (i === 0 ? 0 : 1) * 1000 + name.length });
   }
-  return out.sort((a, b) => a.score - b.score).slice(0, k);
+  return [...byName.values()].sort((a, b) => a.score - b.score).slice(0, k).map(({ score, ...x }) => x);
 }

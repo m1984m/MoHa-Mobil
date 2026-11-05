@@ -49,4 +49,10 @@ export default {
   'Brez padavin.': 'No precipitation.',
   'Veter do {n} na uro.': 'Wind up to {n} per hour.',
   'Sončni vzhod ob {a}, zahod ob {b}.': 'Sunrise at {a}, sunset at {b}.',
+
+  // Vir podatka in vlak (evalvacija 5.11.2026, F12/F17)
+  'V živo.': 'Live.',
+  'Po voznem redu.': 'Timetable.',
+  'Po voznem redu, zamude niso upoštevane.': 'Based on the timetable, delays not included.',
+  'Ob {time} na postaji {stop} vstopi na vlak {line}, smer {dest}.': 'At {time}, at station {stop}, board train {line} to {dest}.',
 };

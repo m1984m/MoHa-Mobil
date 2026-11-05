@@ -12,7 +12,7 @@
   import type { FavLine } from '../favLines';
   import {
     alarms, addAlarm, updateAlarm, removeAlarm, toggleAlarm,
-    computeOccurrences, alarmsCoverageWarning, nextRingLabel, daysLabel,
+    computeOccurrences, alarmsCoverageWarning, nextRingLabel, daysLabel, whenLabel, pruneFiredOnce,
     DAY_SHORT, DEFAULT_LEAD_MIN, MAX_LEAD_MIN,
   } from '../alarms';
   import type { Alarm, Occurrence } from '../alarms';
@@ -40,6 +40,8 @@
 
   const DATE_FMT = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', year: 'numeric' });
 
+  // Enkratni opomniki, ki so že zazvonili, ob odprtju odpadejo (F13).
+  $: if (open) pruneFiredOnce();
   // Ponovitve so vir podatka "naslednjič zazvoni …" in telo prve sinhronizacije.
   $: occ = open && gtfs ? computeOccurrences(gtfs, $alarms) : [];
   $: warning = open ? alarmsCoverageWarning(gtfs, $alarms) : null;
@@ -131,7 +133,7 @@
       stopId: eFav.stopId, routeId: eFav.routeId, dir: eFav.dir,
       stopName: eFav.stopName, routeShort: eFav.routeShort, headsign: eFav.headsign,
       days: [...eDays],
-      fromMin: eFromMin, toMin: eToMin, leadMin: eLead,
+      fromMin: eFromMin, toMin: eToMin, leadMin: eLead, once: null,
     };
     if (editId) updateAlarm(editId, base);
     else addAlarm({ ...base, enabled: true });
@@ -347,26 +349,36 @@
                     </button>
                   </div>
                   <div class="px-4 pb-2 flex flex-wrap items-center gap-x-2 gap-y-1 t-footnote text-muted">
-                    <span>{daysLabel(a.days)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span class="tabular-nums">{fmtClock(a.fromMin * 60)}–{fmtClock(a.toMin * 60)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{$t('{n} min prej', { n: a.leadMin })}</span>
+                    {#if a.once}
+                      <!-- Enkratni opomnik z zvonca (F13): zazvoni enkrat, nato se odstrani. -->
+                      <span>{$t('Samo ta odhod')}</span>
+                    {:else}
+                      <span>{daysLabel(a.days)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span class="tabular-nums">{fmtClock(a.fromMin * 60)}–{fmtClock(a.toMin * 60)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{$t('{n} min prej', { n: a.leadMin })}</span>
+                    {/if}
                   </div>
                   <div class="px-4 pb-3 t-footnote" style="color: {a.enabled && nxt ? 'var(--accent)' : 'var(--text-muted)'}">
                     {#if !a.enabled}
                       {$t('Izklopljen')}
+                    {:else if a.once}
+                      {nxt ? whenLabel(a) : $t('ni predvidenega zvonjenja')}
                     {:else}
                       {$t('Naslednjič {when}', { when: nextRingLabel(nxt) })}
                     {/if}
                   </div>
                   <div class="flex border-t border-base">
+                    <!-- Enkratni opomnik nima okna in dni: urejevalnik okna zanj ni smiseln. -->
+                    {#if !a.once}
                     <button class="pressable flex-1 min-h-[44px] flex items-center justify-center gap-2 t-footnote font-medium"
                             on:click={() => openEdit(a)}
                             aria-label={$t('Uredi opomnik {line} {stop}', { line: a.routeShort, stop: a.stopName })}>
                       <Pencil size={14} /> {$t('Uredi')}
                     </button>
-                    <button class="pressable flex-1 min-h-[44px] flex items-center justify-center gap-2 t-footnote font-medium border-l border-base"
+                    {/if}
+                    <button class="pressable flex-1 min-h-[44px] flex items-center justify-center gap-2 t-footnote font-medium {a.once ? '' : 'border-l border-base'}"
                             style="color: var(--status-disrupt)"
                             on:click={() => del(a)}
                             aria-label={$t('Izbriši opomnik {line} {stop}', { line: a.routeShort, stop: a.stopName })}>

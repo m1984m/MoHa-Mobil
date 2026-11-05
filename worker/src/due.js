@@ -104,3 +104,32 @@ export async function processDue(doc, now, send, budget = null) {
 
   return { occurrences: keep, changed, sent, failed, dropped, expired, dead };
 }
+
+/**
+ * F8: cron je zapis prebral, poslal obvestila in bi ga zapisal nazaj. Če ga je
+ * telefon vmes prepisal (nova sinhronizacija: dodan ali izklopljen opomnik), mora
+ * obveljati SVEŽ zapis; iz obdelave prenesemo le, kar se je zgodilo s starimi
+ * zvonjenji: poslana/zamujena/odpadla odstranimo, števec poskusov posodobimo.
+ *
+ * @param {object} doc     zapis, kot ga je cron prebral
+ * @param {Array}  after   seznam zvonjenj po obdelavi (processDue)
+ * @param {object|null} fresh  zapis, kot je v KV tik pred zapisom
+ * @returns {{write: boolean, doc?: object}}  `write: false` = zapisa ni več ali se ni nič spremenilo
+ */
+export function zdruziPoObdelavi(doc, after, fresh) {
+  if (!fresh || !fresh.endpoint || !fresh.keys) return { write: false };   // izbrisan vmes
+  const isti = fresh.endpoint === doc.endpoint
+    && (Number(fresh.updatedAt) || 0) === (Number(doc.updatedAt) || 0);
+  if (isti) return { write: true, doc: { ...doc, occurrences: after } };
+
+  const pred = new Set((Array.isArray(doc.occurrences) ? doc.occurrences : []).map(o => o && o.id));
+  const poKljucu = new Map(after.map(o => [o.id, o]));
+  const occurrences = [];
+  for (const o of (Array.isArray(fresh.occurrences) ? fresh.occurrences : [])) {
+    if (!o) continue;
+    if (pred.has(o.id) && !poKljucu.has(o.id)) continue;   // ta zagon ga je poslal ali zavrgel
+    const obdelan = poKljucu.get(o.id);
+    occurrences.push(obdelan && obdelan.tries ? { ...o, tries: obdelan.tries } : o);
+  }
+  return { write: true, doc: { ...fresh, occurrences } };
+}

@@ -11,8 +11,8 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import IjppDepartures from '../ui/IjppDepartures.svelte';
-  import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech } from '../readAloud';
-  import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, LIVE_FRESH_MS } from '../departures';
+  import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech, isTomorrow } from '../readAloud';
+  import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, etaNowMin, LIVE_FRESH_MS } from '../departures';
   import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, todayServiceIds, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { nowMb, nowSecMb } from '../clock';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
@@ -46,7 +46,7 @@
   export let onLongPressDest: (lat: number, lon: number) => void;
   export let onPlanToStop: (s: Stop) => void;
   // Zvonec pri odhodu: čarovnik za opomnik s tem postajališčem, avtobusom in uro (N8).
-  export let onRemind: (p: { stopId: number; routeId: number; dir: number; depSec: number }) => void = () => {};
+  export let onRemind: (p: import('../alarms').RemindPrefill) => void = () => {};
   export let hasAlternatives: boolean = false;
   // Preprost pogled: brez iskanja, MBajk, bucike in gumba Načrtuj; namesto njih velik
   // gumb Nazaj in gumba +/−, ker povečava z dvema prstoma starejšim pogosto ne uspe.
@@ -514,8 +514,10 @@
   $: nextDayDep = (gtfs && selectedStop && departures.length === 0 && liveArrivals.length === 0)
     ? nextServiceDeparture(gtfs, selectedStop.id)
     : null;
+  // Minute do prihoda od absolutnega pričakovanega časa (F7); tick30 poganja odštevanje.
+  function etaRow(a: StopArrival, _t: number): number { return etaNowMin(a); }
   $: nextWait = liveArrivals.length > 0
-    ? liveArrivals[0].etaMin
+    ? etaRow(liveArrivals[0], tick30)
     : (departures[0]?.minutesFromNow ?? null);
   $: walkToStopMin = (hasGeo && selectedStop) ? walkMinutes(origin, selectedStop) : null;
   $: leaveInMin = (walkToStopMin != null && nextWait != null) ? nextWait - walkToStopMin : null;
@@ -539,6 +541,24 @@
       driveKm: Math.round(driveKm * 10) / 10,
     };
   })() : { transfers: 0, walkM: 0, walkMin: 0, rideMin: 0, busCount: 0, kcal: 0, co2SavedKg: 0, driveKm: 0 };
+
+  // Odhod in prihod z oznako »jutri« (F6) ter prvi vstop na zložen kartici (F21).
+  // tick30: po polnoči »jutri« postane danes.
+  function planTimes(p: Plan | null, _t: number) {
+    if (!p) return null;
+    const first = p.legs.find(l => l.kind === 'bus');
+    const depT = isTomorrow(p.depSec, p.baseDay);
+    const arrT = isTomorrow(p.arrSec, p.baseDay);
+    return {
+      dep: fmtTime(p.depSec) + (depT ? ' ' + tr('jutri') : ''),
+      // Pri odhodu jutri je tudi prihod jutri; oznaka enkrat zadošča.
+      arr: fmtTime(p.arrSec) + (arrT && !depT ? ' ' + tr('jutri') : ''),
+      depT, arrT,
+      firstStop: first && first.kind === 'bus' ? first.from.name : null,
+      firstLine: first && first.kind === 'bus' ? first.route.short : null,
+    };
+  }
+  $: planT = planTimes(activePlan?.plan ?? null, tick30);
 
   function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371000;
@@ -717,7 +737,10 @@
     const title = tr('Pot: {from} → {to}', { from: f.name, to: t.name });
     const lines: string[] = [];
     lines.push(`${f.name} → ${t.name}`);
-    lines.push(tr('Odhod {dep} · prihod {arr} ({dur})', { dep: fmtTime(activePlan!.plan.depSec), arr: fmtTime(activePlan!.plan.arrSec), dur: fmtDur(activePlan!.plan.arrSec - activePlan!.plan.depSec) }));
+    const pt = planTimes(activePlan!.plan, tick30);
+    lines.push(tr('Odhod {dep} · prihod {arr} ({dur})', { dep: pt!.dep, arr: pt!.arr, dur: fmtDur(activePlan!.plan.arrSec - activePlan!.plan.depSec) }));
+    if (pt!.firstStop) lines.push(tr('Izhodišče: {stop}', { stop: pt!.firstStop }));
+    lines.push(tr('Po voznem redu, zamude niso upoštevane.'));
     const busShorts = activePlan!.plan.legs.filter(l => l.kind === 'bus').map((l: any) => l.route.short);
     if (busShorts.length > 0) lines.push(tr('Linije: {lines}', { lines: busShorts.join(' → ') }));
     if (planSummary.transfers > 0) lines.push(tr('Prestopi: {n}', { n: planSummary.transfers }));
@@ -832,15 +855,24 @@
           </div>
         {/if}
         <div class="flex items-stretch shrink-0">
+            <span id="mm-plan-akcija" class="sr-only">{planExpanded ? $t('Skrij podrobnosti') : $t('Pokaži podrobnosti')}</span>
           <div class="pressable flex-1 min-w-0 text-left px-4 pb-3 {hasAlternatives ? 'pt-1.5' : 'pt-3'} cursor-pointer"
                on:click={() => planExpanded = !planExpanded}
                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') planExpanded = !planExpanded; }}
                role="button" tabindex="0"
-               aria-label={$t('Pokaži podrobnosti')}>
+               aria-expanded={planExpanded}
+               aria-describedby="mm-plan-akcija">
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
                 <div class="t-footnote text-muted truncate">{activePlan.from.name} → {activePlan.to.name}</div>
-                <div class="t-title3 font-semibold">{$t('{dur} · prihod {time}', { dur: fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec), time: fmtTime(activePlan.plan.arrSec) })}</div>
+                <div class="t-title3 font-semibold">{$t('{dur} · prihod {time}', { dur: fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec), time: planT?.arr ?? fmtTime(activePlan.plan.arrSec) })}</div>
+                <!-- Prvo dejanje takoj, brez razširitve (F21): kdaj in kje se pot začne. -->
+                {#if planT}
+                  <div class="t-callout font-medium mt-0.5">
+                    {#if planT.firstStop}{$t('Odhod {time} · vstop: {stop}', { time: planT.dep, stop: planT.firstStop })}{#if planT.firstLine} · {$t('linija {line}', { line: planT.firstLine })}{/if}
+                    {:else}{$t('Odhod {time} · peš do cilja', { time: planT.dep })}{/if}
+                  </div>
+                {/if}
                 <div class="t-footnote text-muted mt-0.5">
                   <!-- Pot samo peš: »brez prestopanja« tam ne pove nič (enako kot v načrtovalniku). -->
                   {#if planSummary.busCount === 0}{$t('samo peš, {m} m', { m: Math.round(planSummary.walkM) })}
@@ -896,9 +928,9 @@
               <div class="rounded-2xl p-4 mb-4"
                    style="background: linear-gradient(135deg, var(--surface-2), var(--surface-3));">
                 <div class="flex items-baseline gap-2">
-                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.depSec)}</div>
+                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.depSec)}{#if planT?.depT}<span class="t-callout font-semibold"> {$t('jutri')}</span>{/if}</div>
                   <div class="t-callout text-muted">→</div>
-                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.arrSec)}</div>
+                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.arrSec)}{#if planT?.arrT && !planT?.depT}<span class="t-callout font-semibold"> {$t('jutri')}</span>{/if}</div>
                   <div class="ml-auto t-callout font-semibold" style="color: var(--accent)">{fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec)}</div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3">
@@ -917,6 +949,16 @@
                 </div>
               </div>
 
+              <!-- Koraki pred kalorijami in CO₂: navodila so tisto, kar potnik išče (F21). -->
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="t-footnote text-muted uppercase tracking-wide">{$t('Pot po korakih')}</div>
+                <ReadAloud resetKey={activePlan} text={() => activePlan ? planSpeech(activePlan.plan.legs, activePlan.to.name, activePlan.plan.baseDay ?? null) : ''} />
+              </div>
+              <div class="surface rounded-2xl border border-base shadow-card px-3 py-3 mb-2">
+                <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} baseDay={activePlan.plan.baseDay ?? null} />
+              </div>
+              <div class="t-footnote text-muted px-1 mb-4">{$t('Po voznem redu, zamude niso upoštevane.')}</div>
+
               <div class="grid grid-cols-2 gap-3 mb-4">
                 <div class="rounded-2xl p-3 flex items-center gap-3"
                      style="background: linear-gradient(135deg, rgba(255,149,0,0.12), rgba(255,149,0,0.04));">
@@ -924,7 +966,7 @@
                     <Flame size={18} />
                   </div>
                   <div class="min-w-0">
-                    <div class="t-footnote text-muted">{$t('Porabil(a) si')}</div>
+                    <div class="t-footnote text-muted">{$t('Ocenjena poraba pri hoji')}</div>
                     <div class="t-title3 font-bold">{planSummary.kcal} kcal</div>
                   </div>
                 </div>
@@ -934,8 +976,8 @@
                     <Leaf size={18} />
                   </div>
                   <div class="min-w-0">
-                    <div class="t-footnote text-muted">{$t('Prihranek CO₂')}</div>
-                    <div class="t-title3 font-bold">{planSummary.co2SavedKg.toLocaleString(locale())} kg</div>
+                    <div class="t-footnote text-muted">{$t('Z avtom bi izpustil(a)')}</div>
+                    <div class="t-title3 font-bold">~{planSummary.co2SavedKg.toLocaleString(locale())} kg CO₂</div>
                   </div>
                 </div>
               </div>
@@ -956,13 +998,6 @@
                 <span class="t-callout font-medium">{$t('Deli pot')}</span>
               </button>
 
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <div class="t-footnote text-muted uppercase tracking-wide">{$t('Pot po korakih')}</div>
-                <ReadAloud resetKey={activePlan} text={() => activePlan ? planSpeech(activePlan.plan.legs, activePlan.to.name) : ''} />
-              </div>
-              <div class="surface rounded-2xl border border-base shadow-card px-3 py-3">
-                <PlanSteps legs={activePlan.plan.legs} ciljIme={activePlan.to.name} baseDay={activePlan.plan.baseDay ?? null} />
-              </div>
             </div>
           </div>
         {/if}
@@ -1032,7 +1067,7 @@
             <span class="w-9 h-9 rounded-lg grid place-items-center shrink-0" style="background: var(--accent); color: #ffffff"><Bus size={18} /></span>
             <span class="flex-1 min-w-0">
               <span class="block t-footnote text-muted">{$t('Najbližje postajališče · {m} m', { m: Math.round(bikeNearStop.d / 10) * 10 })}</span>
-              <span class="block t-callout font-medium truncate">{bikeNearStop.name}</span>
+              <span class="block t-callout font-medium line-clamp-2">{bikeNearStop.name}</span>
             </span>
             <span class="t-callout font-semibold shrink-0" style="color: var(--accent)">{$t('Odhodi')}</span>
           </button>
@@ -1227,7 +1262,7 @@
             <span class="w-9 h-9 rounded-lg grid place-items-center shrink-0" style="background: #7C3AED; color: #ffffff"><Bike size={18} /></span>
             <span class="min-w-0 flex-1">
               <span class="block t-footnote text-muted">{$t('MBajk v bližini · {m} m', { m: Math.round(nearBike.m / 10) * 10 })}</span>
-              <span class="block t-callout font-medium truncate">{nearBike.name}</span>
+              <span class="block t-callout font-medium line-clamp-2">{nearBike.name}</span>
             </span>
             <span class="t-callout font-semibold shrink-0">{nearBike.bikes} <Bike size={14} class="inline -mt-0.5" /></span>
           </button>
@@ -1272,6 +1307,7 @@
           <!-- »V živo« samo z vozilom: seznam ima lahko tudi odhod iz voznega reda (liveDepartures). -->
           <LiveDot live={liveArrivals.some(a => a.predicted)} label={liveArrivals.some(a => a.predicted) ? $t('V živo') : $t('Po voznem redu')} />
         </div>
+        <span id="mm-na-karti" class="sr-only">{$t('Pokaži avtobus na karti')}</span>
         {#if liveArrivals.length > 0}
           <ul class="surface rounded-2xl border border-base overflow-hidden shadow-card">
             {#each liveArrivals.slice(0, 5) as a, i}
@@ -1283,11 +1319,13 @@
                 </button>
                 <button class="pressable flex-1 {$compactLists ? 'py-1.5' : 'py-3'} pr-4 pl-1 flex items-center gap-3 text-left min-w-0"
                         on:click={() => tapArrivalBus(a.busCode)}
-                        aria-label={$t('Pokaži avtobus na karti')}>
+                        aria-describedby="mm-na-karti">
+                  <!-- Dostopno ime = vidna vsebina (linija, cilj, čas, zamuda); dejanje je opis (F10). -->
+                  <span class="sr-only">{$t('Linija {line}', { line: a.lineCode })}</span>
                   <div class="flex-1 min-w-0">
                     <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium {simple ? '' : 'truncate'}">{cilj.dest}</div>
                     {#if cilj.via && !$compactLists}
-                      <div class="t-footnote text-muted {simple ? '' : 'truncate'}">{$t('prek {via}', { via: cilj.via })}</div>
+                      <div class="t-footnote text-muted line-clamp-2">{$t('Vmes: {via}', { via: cilj.via })}</div>
                     {/if}
                     <!-- Ura je že v stolpcu časa (DepartureTime pri prikazu »ura« / »oboje»). -->
                     {#if a.busCode}
@@ -1297,7 +1335,7 @@
                   <!-- Isti zapis časa in ista oznaka stanja kot na Domu: prej je tu pisalo
                        »77 min«, drugod »1 h 17«, oznaki pa sta bili 10 px. -->
                   <div class="flex flex-col items-end gap-0.5 shrink-0">
-                    <DepartureTime minutesFromNow={a.etaMin} depSec={liveDepSec(a.etaMin)} size={$compactLists ? 'sm' : 'md'} />
+                    <DepartureTime minutesFromNow={etaRow(a, tick30)} depSec={liveDepSec(etaRow(a, tick30))} size={$compactLists ? 'sm' : 'md'} />
                     <DepartureStatus live={a.predicted} delayKnown={a.delayKnown} delayMin={a.delayMin} />
                   </div>
                 </button>
@@ -1307,7 +1345,8 @@
                 {#if gtfsRoute && selectedStop && !simple}
                   {@const st = selectedStop}
                   <button class="mm-bell pressable w-11 shrink-0 grid place-items-center -ml-2" style="color: var(--text-muted)"
-                          on:click={() => onRemind({ stopId: st.id, routeId: gtfsRoute.id, dir: dirForArrival(a, gtfsRoute.id, st.id), depSec: hmToSec(a.arrivalTime) })}
+                          on:click={() => onRemind({ stopId: st.id, routeId: gtfsRoute.id, dir: dirForArrival(a, gtfsRoute.id, st.id), depSec: hmToSec(a.arrivalTime),
+                                                     expectedAt: Date.now() + a.etaMin * 60_000, delayMin: a.delayKnown ? a.delayMin : null })}
                           aria-label={$t('Opomni me za {line} ob {time}', { line: a.lineCode, time: a.arrivalTime })}>
                     <AlarmClockPlus size={20} />
                   </button>
@@ -1349,7 +1388,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="{$compactLists ? 't-subhead' : 't-callout'} font-medium {simple ? '' : 'truncate'}">{cilj.dest}</div>
                   {#if cilj.via && !$compactLists}
-                    <div class="t-footnote text-muted {simple ? '' : 'truncate'}">{$t('prek {via}', { via: cilj.via })}</div>
+                    <div class="t-footnote text-muted line-clamp-2">{$t('Vmes: {via}', { via: cilj.via })}</div>
                   {/if}
                 </div>
                 <div class="flex flex-col items-end gap-0.5 shrink-0">
@@ -1359,7 +1398,8 @@
                 {#if selectedStop && !simple}
                   {@const st = selectedStop}
                   <button class="mm-bell pressable min-w-[44px] min-h-[44px] -mr-3 -ml-1 grid place-items-center shrink-0" style="color: var(--text-muted)"
-                          on:click={() => onRemind({ stopId: st.id, routeId: d.route.id, dir: d.trip.dir, depSec: d.depSec })}
+                          on:click={() => onRemind({ stopId: st.id, routeId: d.route.id, dir: d.trip.dir, depSec: d.depSec,
+                                                     expectedAt: Date.now() + d.minutesFromNow * 60_000 })}
                           aria-label={$t('Opomni me za {line} ob {time}', { line: d.route.short, time: fmtTime(d.depSec) })}>
                     <AlarmClockPlus size={20} />
                   </button>
@@ -1534,7 +1574,7 @@
                     <MapPin size={18} color="var(--accent)" />
                     <div class="flex-1 min-w-0">
                       <div class="t-body font-medium truncate">{s.name}</div>
-                      {#if hint}<div class="t-footnote text-muted truncate">{hint}</div>
+                      {#if hint}<div class="t-footnote text-muted line-clamp-2">{hint}</div>
                       {:else if s.code}<div class="t-footnote text-muted">{s.code}</div>{/if}
                     </div>
                   </button>

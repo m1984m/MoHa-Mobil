@@ -10,7 +10,7 @@
   import { defaultTab, liveLocationWatch } from './lib/settings';
   import { simpleView, simpleActive, simpleFullApp, largeUI, type SimplePlace } from './lib/simple';
   import { initAnalytics, track } from './lib/analytics';
-  import { alarms } from './lib/alarms';
+  import { alarms, type RemindPrefill } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack, type BackRelease } from './lib/backstack';
   import { lang, t, tr } from './lib/i18n';
@@ -102,7 +102,7 @@
   let alarmsOpen = false;
   // Čarovnik za opomnik v celotni aplikaciji (evalvacija N8): z zvonca pri odhodu je
   // predizpolnjen, iz praznih Opomnikov začne pri postajališču.
-  let remind: { prefill: { stopId: number; routeId: number; dir: number; depSec: number } | null } | null = null;
+  let remind: { prefill: RemindPrefill | null } | null = null;
   // Od kod so bili opomniki odprti — napis gumba nazaj pove, kam se vrneš.
   let alarmsFrom: 'settings' | 'fav' = 'settings';
   // Skriti zaslon s statistiko (deset dotikov na ime v Nastavitvah). Naloži se
@@ -120,7 +120,7 @@
   }
   // Predizpolnjen cilj za PlannerModal — bodisi iz long-pressa na karti (brez imena, reverse-geocode
    // naknadno), bodisi iz gumba "pot do tega postajališča" (z imenom).
-  let pendingDest: { lat: number; lon: number; name?: string } | null = null;
+  let pendingDest: { lat: number; lon: number; name?: string; from?: { lat: number; lon: number; name: string } } | null = null;
   let plannerCandidates: Plan[] = [];
   $: hasPlanAlternatives = plannerCandidates.length > 1;
   // Indikator med večsekundnim izračunom shranjene poti / deep linka —
@@ -402,43 +402,21 @@
     if (!gtfs) return false;
     routeRunning = true;
     try {
-      const { planAll, syncArrivalWithWalks } = await import('./lib/planner');
-      const { loadShapes, cropShape, routeColor } = await import('./lib/gtfs');
-      const { walkRoute, walkMapForStops, walkRoutingDegraded } = await import('./lib/routing');
-      const { nowMb } = await import('./lib/clock');
-      const now = nowMb();   // ura v Mariboru, tudi na telefonu v drugem pasu
-      const depSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      const [accessMap, egressMap] = await Promise.all([
-        walkMapForStops(from, gtfs.stops),
-        walkMapForStops(to, gtfs.stops),
-      ]);
-      const plans = planAll(gtfs, from, to, depSec, now, accessMap, egressMap);
-      if (plans.length === 0) return false;
-      const chosen = plans[0];
-      const shMap = await loadShapes();
-      const walks = await Promise.all(chosen.legs.map(l => l.kind === 'walk' ? walkRoute({ lat: l.fromLat, lon: l.fromLon }, { lat: l.toLat, lon: l.toLon }) : Promise.resolve(null)));
-      const geoms = chosen.legs.map((leg, i) => {
-        if (leg.kind === 'walk') {
-          const wr = walks[i]!;
-          // Zračna črta ob izpadu ORS je krajša od ocene načrtovalnika z obvozom — ta ostane.
-          if (!wr.estimated) { leg.meters = wr.meters; leg.sec = wr.sec; }
-          return { kind: 'walk' as const, coords: wr.coords, color: '#6B7280' };
-        }
-        const shape = leg.shapeId != null ? shMap.get(leg.shapeId) : null;
-        const coords: [number, number][] = shape
-          ? cropShape(shape, leg.from, leg.to).map(([lat, lon]) => [lon, lat])
-          : [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]];
-        return { kind: 'bus' as const, coords, color: routeColor(leg.route.id) };
-      });
-      chosen.walkMeters = chosen.legs.reduce((a, l) => a + (l.kind === 'walk' ? l.meters : 0), 0);
-      // Odseki hoje imajo od 12.10.2026 vedno čas, s katerim je načrtovalnik računal (obvoz ali
-      // ORS), zato uskladitev drži tudi ob delnem izpadu ORS: »Odhod« = »Kreni ob«. Opozorilo
-      // o oceni hoje velja za to pot, ne za zadnji klic ORS kjerkoli v aplikaciji.
-      syncArrivalWithWalks(chosen);
-      chosen.walkEstimated = walks.some(w => !!w?.estimated);
-      chosen.baseDay = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-      walkRoutingDegraded.set(chosen.walkEstimated);
-      onDone(chosen, geoms, from, to);
+      // Isto jedro kot načrtovalnik (planTrip.ts), tudi medkrajevno z vlaki in avtobusi IJPP.
+      // Prej samo mestni planAll, zato shranjena pot ali povezava do Kopra ni delovala (F11).
+      const { planTrip, materializePlan } = await import('./lib/planTrip');
+      const res = await planTrip({ gtfs, from, to });
+      if (!res.ok || res.plans.length === 0) return false;
+      // Prvi predlog, katerega prestopi z dejanskimi pešpotmi (ORS) še držijo (F4); če nobeden, prvi.
+      let first: Awaited<ReturnType<typeof materializePlan>> = null;
+      for (const p of res.plans) {
+        const m = await materializePlan(p);
+        if (!m) continue;
+        if (!first) first = m;
+        if (m.issues.length === 0) { first = m; break; }
+      }
+      if (!first) return false;
+      onDone(first.shown, first.geoms, from, to);
       return true;
     } catch {
       return false;
@@ -454,9 +432,9 @@
     if (!from || !to || !gtfs) return;
     const ok = await buildAndShowPlan(from, to);
     if (!ok) {
-      // Deep link brez rešitve: odpri planer s prednastavljenim ciljem,
+      // Deep link brez rešitve: odpri planer z izhodiščem in ciljem povezave,
       // da uporabnik vidi kontekst in razlog — prej je link tiho odpovedal.
-      pendingDest = { lat: to.lat, lon: to.lon, name: to.name };
+      pendingDest = { lat: to.lat, lon: to.lon, name: to.name, from };
       plannerOpen = true;
     }
     history.replaceState(null, '', location.pathname);
@@ -558,9 +536,9 @@
     if (!gtfs || routeRunning) return;
     const ok = await buildAndShowPlan(r.from, r.to);
     if (!ok) {
-      // Ni rešitve (npr. konec obratovanja): odpri planer s ciljem,
-      // da uporabnik vidi razlog — prej tap ni naredil ničesar.
-      pendingDest = { lat: r.to.lat, lon: r.to.lon, name: r.to.name };
+      // Ni rešitve (npr. konec obratovanja): odpri planer z izhodiščem in ciljem
+      // shranjene poti, da uporabnik vidi razlog — prej je izhodišče izgubil (F11).
+      pendingDest = { lat: r.to.lat, lon: r.to.lon, name: r.to.name, from: { ...r.from } };
       plannerOpen = true;
     }
   }

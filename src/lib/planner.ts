@@ -101,6 +101,8 @@ type Label = {
   leave: number;       // kdaj potnik krene od izhodišča (znano ob prvem avtobusu)
   walk: number;        // sekunde hoje do te postaje
   round: number;
+  // Vrste prevoza na poti do sem (opts.tripBits, npr. vlak = 1, medkrajevni avtobus = 2).
+  bits: number;
   prev: Prev;
 };
 type PrevOrigin = { kind: 'origin'; sec: number; meters: number };
@@ -117,6 +119,12 @@ function improves(time: number, score: number, round: number, cur: Label | undef
 }
 
 type Egress = { id: number; sec: number; meters: number };
+// Ključ oznake: postaja in vrste prevoza na poti do nje. RAPTOR hrani na postajo eno oznako
+// na krog, zato je pri »Bus + vlak« hitrejša pot samo z vlakom izrinila mešano pot, filter
+// po izračunu pa je nato vrnil nič (evalvacija 05.11.2026, F2). Z vrstami v ključu ima vsaka
+// kombinacija svojo oznako. Brez opts.tripBits imajo vse oznake bits = 0.
+const BITS = 4;
+const lkey = (stop: number, bits: number) => stop * BITS + bits;
 type Candidate = { arr: number; label: Label; egress: Egress };
 
 // Cache teže izračunanih indeksov — se invalidira avtomatsko, ko se GTFS objekt zamenja.
@@ -171,6 +179,14 @@ export function precomputePlannerIndexes(gtfs: GTFS): PlannerIndexes {
   return result;
 }
 
+export type PlanOpts = {
+  maxAccessM?: number; raw?: boolean; maxRounds?: number; tripOk?: (t: Trip) => boolean;
+  // Vrsta prevoza vožnje kot bit (0–3); pot do cilja mora imeti vse bite iz needBits.
+  tripBits?: (t: Trip) => number; needBits?: number;
+  // Pogoj za celo pot, preverjen PRED Paretovim izborom, odstranjevanjem dvojnikov in omejitvijo.
+  planOk?: (p: Plan) => boolean;
+};
+
 // Returns up to 3 plans: [fewest-transfers-fastest, fastest, middle-ground]
 // `opts.maxAccessM` omeji hojo do prve in od zadnje postaje; `opts.raw` vrne poti z
 // avtobusom brez filtra hoje (za iskanje možnosti »manj hoje«).
@@ -182,7 +198,7 @@ export function planAll(
   when: Date = nowMb(),
   accessMap?: WalkMap,
   egressMap?: WalkMap,
-  opts: { maxAccessM?: number; raw?: boolean; maxRounds?: number; tripOk?: (t: Trip) => boolean } = {},
+  opts: PlanOpts = {},
 ): Plan[] {
   const WALK_MPS = getWalkMps();
   const maxAccessM = opts.maxAccessM ?? MAX_ACCESS_M;
@@ -201,7 +217,7 @@ export function planAll(
     const hit = accessMap?.get(s.id);
     const sec = hit ? hit.sec : (m * URBAN_DETOUR) / WALK_MPS;
     const meters = hit ? hit.meters : m * URBAN_DETOUR;
-    origin0.set(s.id, { time: depSec + sec, stop: s.id, route: -1, leave: depSec, walk: sec, round: 0, prev: { kind: 'origin', sec, meters } });
+    origin0.set(lkey(s.id, 0), { time: depSec + sec, stop: s.id, route: -1, leave: depSec, walk: sec, round: 0, bits: 0, prev: { kind: 'origin', sec, meters } });
   }
   if (origin0.size === 0) return [];
   labelsByRound.push(origin0);
@@ -224,13 +240,13 @@ export function planAll(
     // Postaje, kamor je ta krog pripeljal avtobus — od tod gredo prehodi peš.
     const busLabels = new Map<number, Label>();
 
-    for (const sid of marked) {
+    for (const key of marked) {
       // Vstop iz oznake PREJŠNJEGA kroga: oznaka tega kroga je lahko že prihod z drugim
       // avtobusom, prestop nanj pa bi obšel kazen za prestop.
-      const cur = prevRoundLabels.get(sid);
+      const cur = prevRoundLabels.get(key);
       if (!cur) continue;
       const minBoardTime = cur.prev.kind === 'origin' ? cur.time : cur.time + TRANSFER_PENALTY_SEC;
-      const boards = tripsByBoardStop.get(sid);
+      const boards = tripsByBoardStop.get(cur.stop);
       if (!boards) continue;
       for (const { trip, idx } of boards) {
         if (!active.has(trip.service)) continue;
@@ -242,17 +258,19 @@ export function planAll(
         if (boardDep < minBoardTime) continue;
         const leave = cur.prev.kind === 'origin' ? boardDep - cur.prev.sec : cur.leave;
         const score = leave - cur.walk;
+        const bits = opts.tripBits ? cur.bits | opts.tripBits(trip) : 0;
         for (let j = idx + 1; j < trip.stops.length; j++) {
           const alightId = trip.stops[j][0];
           const alightArr = trip.stops[j][1];
-          if (!improves(alightArr, score, round, roundLabels.get(alightId))) continue;
+          const ak = lkey(alightId, bits);
+          if (!improves(alightArr, score, round, roundLabels.get(ak))) continue;
           // Na končni postaji vožnje se na isto linijo sme naprej: krožna G3 na Taboru,
           // P10 in P15 na Avtobusni postaji. Tam ostati na avtobusu po voznem redu ne gre,
           // prepoved pa je vzela tudi edine poti (8 od 300 iskanj pozneje, eno brez poti).
           const route = j === trip.stops.length - 1 ? -1 : trip.route;
-          const lbl: Label = { time: alightArr, stop: alightId, route, leave, walk: cur.walk, round, prev: { kind: 'bus', from: cur, trip, boardIdx: idx, alightIdx: j } };
-          roundLabels.set(alightId, lbl);
-          busLabels.set(alightId, lbl);
+          const lbl: Label = { time: alightArr, stop: alightId, route, leave, walk: cur.walk, round, bits, prev: { kind: 'bus', from: cur, trip, boardIdx: idx, alightIdx: j } };
+          roundLabels.set(ak, lbl);
+          busLabels.set(ak, lbl);
         }
       }
     }
@@ -260,14 +278,15 @@ export function planAll(
     // Prehod peš z istim obvozom kot hoja do prve postaje: brez njega je »ena postaja z
     // avtobusom + 301 m peš« premagala hojo naravnost do postaje druge linije (427 m).
     const nextMarked = new Set<number>(busLabels.keys());
-    for (const [sid, bl] of busLabels) {
-      for (const { id: nid, m } of nearByStop.get(sid) || []) {
+    for (const bl of busLabels.values()) {
+      for (const { id: nid, m } of nearByStop.get(bl.stop) || []) {
         const sec = (m * URBAN_DETOUR) / WALK_MPS;
         const t = bl.time + sec;
         const walk = bl.walk + sec;
-        if (!improves(t, bl.leave - walk, round, roundLabels.get(nid))) continue;
-        roundLabels.set(nid, { time: t, stop: nid, route: bl.route, leave: bl.leave, walk, round, prev: { kind: 'walk', from: bl, sec, meters: m * URBAN_DETOUR } });
-        nextMarked.add(nid);
+        const nk = lkey(nid, bl.bits);
+        if (!improves(t, bl.leave - walk, round, roundLabels.get(nk))) continue;
+        roundLabels.set(nk, { time: t, stop: nid, route: bl.route, leave: bl.leave, walk, round, bits: bl.bits, prev: { kind: 'walk', from: bl, sec, meters: m * URBAN_DETOUR } });
+        nextMarked.add(nk);
       }
     }
 
@@ -278,19 +297,28 @@ export function planAll(
   }
 
   // For each round (= max #buses used), find best egress
+  // Ustrezne vrste prevoza ob prihodu (vse zahtevane), brez opts.tripBits samo 0.
+  const need = opts.tripBits ? (opts.needBits ?? 0) : 0;
+  const okBits: number[] = [];
+  for (let b = 0; b < BITS; b++) if ((b & need) === need && (opts.tripBits || b === 0)) okBits.push(b);
   const candidates: Candidate[] = [];
   for (let round = 1; round < labelsByRound.length; round++) {
     const L = labelsByRound[round];
-    let best: Candidate | null = null;
+    const list: Candidate[] = [];
     for (const e of egress) {
-      const lbl = L.get(e.id);
-      if (!lbl || lbl.prev.kind === 'origin') continue;
-      const arrAtDest = lbl.time + e.sec;
-      if (!best || arrAtDest < best.arr
-        || (arrAtDest === best.arr && lbl.leave - lbl.walk - e.sec > best.label.leave - best.label.walk - best.egress.sec)) {
-        best = { arr: arrAtDest, label: lbl, egress: e };
+      for (const b of okBits) {
+        const lbl = L.get(lkey(e.id, b));
+        if (!lbl || lbl.prev.kind === 'origin') continue;
+        list.push({ arr: lbl.time + e.sec, label: lbl, egress: e });
       }
     }
+    // Najzgodnejši prihod, ob enakem tisti, ki krene pozneje oziroma ima manj hoje.
+    list.sort((x, y) => x.arr - y.arr
+      || (y.label.leave - y.label.walk - y.egress.sec) - (x.label.leave - x.label.walk - x.egress.sec));
+    // Pogoj za celo pot (planOk) se preveri tu, pred Paretovim izborom in omejitvijo na 3.
+    const best = opts.planOk
+      ? list.slice(0, 40).find(c => opts.planOk!(reconstruct(c, stopById, routeById, from, to)))
+      : list[0];
     if (best) candidates.push(best);
   }
 
@@ -302,7 +330,8 @@ export function planAll(
   let plans: Plan[] = [];
 
   // Always include walk baseline if it's reasonable (<2 km ali <30 min)
-  const walkPlan: Plan | null = walkDirectM < 2000 || walkDirectSec < 30 * 60
+  // Ob zahtevani vrsti prevoza (need, planOk) hoja ni rešitev.
+  const walkPlan: Plan | null = (walkDirectM < 2000 || walkDirectSec < 30 * 60) && !need && !opts.planOk
     ? {
         legs: [{
           kind: 'walk',
@@ -353,7 +382,7 @@ export function planAll(
       const ok = (p: Plan) => walkSec(p) <= walkDirectSec * 0.67 && p.arrSec <= walkDirectArr + 15 * 60;
       const best = (list: Plan[]) => list.filter(ok).sort((a, b) => a.arrSec - b.arrSec)[0] ?? null;
       lessWalk = best(all)
-        ?? best(planAll(gtfs, from, to, depSec, when, accessMap, egressMap, { maxAccessM: 400, raw: true }));
+        ?? best(planAll(gtfs, from, to, depSec, when, accessMap, egressMap, { ...opts, maxAccessM: 400, raw: true }));
     }
   }
 
@@ -500,14 +529,25 @@ export function planArriveBy(
   when: Date = nowMb(),
   accessMap?: WalkMap,
   egressMap?: WalkMap,
-  opts: { maxRounds?: number; tripOk?: (t: Trip) => boolean; spanSec?: number } = {},
+  opts: PlanOpts & { spanSec?: number } = {},
 ): Plan[] {
   // Medkrajevne poti trajajo tudi več ur (Maribor–Koper), zato je razpon nastavljiv.
   const STEP_SEC = 20 * 60, SPAN_SEC = opts.spanSec ?? 180 * 60, GRACE_SEC = 60;
   const byTrips = new Map<string, Plan>();
-  for (let back = STEP_SEC; back <= SPAN_SEC; back += STEP_SEC) {
+  const planOpts: PlanOpts = { maxRounds: opts.maxRounds, tripOk: opts.tripOk, tripBits: opts.tripBits, needBits: opts.needBits, planOk: opts.planOk };
+  let startBack = STEP_SEC;
+  if (opts.spanSec && opts.spanSec > 180 * 60) {
+    // Dolge (medkrajevne) poti: najprej eno iskanje z začetka razpona. Če niti to ne pride do
+    // izbrane ure, je ne more nobeno poznejše; sicer se nazaj začne pri ~¾ najkrajšega
+    // trajanja, ne 20 min pred ciljem (prej do 24 iskanj po vsej Sloveniji, več sekund).
+    const probe = planAll(gtfs, from, to, Math.max(targetSec - SPAN_SEC, earliestSec), when, accessMap, egressMap, planOpts);
+    if (!probe.some(p => p.arrSec <= targetSec)) return [];
+    const minDur = Math.min(...probe.map(p => p.arrSec - p.depSec));
+    startBack = Math.max(STEP_SEC, Math.floor((minDur * 0.75) / STEP_SEC) * STEP_SEC);
+  }
+  for (let back = startBack; back <= SPAN_SEC; back += STEP_SEC) {
     const ds = Math.max(targetSec - back, earliestSec);
-    for (const p of planAll(gtfs, from, to, ds, when, accessMap, egressMap, { maxRounds: opts.maxRounds, tripOk: opts.tripOk })) {
+    for (const p of planAll(gtfs, from, to, ds, when, accessMap, egressMap, planOpts)) {
       if (p.arrSec > targetSec) continue;
       const buses = p.legs.filter((l): l is BusLeg => l.kind === 'bus');
       // Samo peš ni vezano na vozni red: krene se tako, da pride ob izbranem času.

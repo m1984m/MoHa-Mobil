@@ -645,10 +645,10 @@
            trdil, da lokacija ostane na telefonu, seznama zunanjih storitev pa ni bilo. -->
       <h2 class="t-footnote text-muted uppercase tracking-wide mt-6 mb-2 px-1">{$t('Kam gredo podatki')}</h2>
       <div class="surface rounded-2xl border border-base shadow-card px-4 py-3 space-y-2.5 t-footnote">
-        <p>{$t('Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot in ime točke na karti gre natančna lega storitvama openrouteservice (prek strežnika aplikacije) in OpenStreetMap.')}</p>
+        <p>{$t('Lokacija: bližnja postajališča se izračunajo na telefonu. Vreme (Open-Meteo) dobi lego, zaokroženo na približno 1 km. Za pešpot gre natančna lega prek strežnika aplikacije in vmesnih posrednikov storitvi openrouteservice, za ime točke na karti storitvi OpenStreetMap.')}</p>
         <p>{$t('Priljubljene, kraji in nastavitve so shranjeni samo na tej napravi.')}</p>
-        <p>{$t('Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler opomnik obstaja.')}</p>
-        <p>{$t('Glasno branje: besedilo, ki ga Petra prebere, gre storitvi Microsoft Azure, brez lokacije.')}</p>
+        <p>{$t('Opomniki: časi zvonjenja in naročnina za obvestila so na strežniku aplikacije (Cloudflare), dokler ne izbrišeš zadnjega opomnika ali izklopiš obvestil.')}</p>
+        <p>{$t('Glasno branje: besedilo, ki ga Petra prebere, gre prek strežnika aplikacije Microsoftovi storitvi za govor (Azure, ob izpadu Microsoft Edge). Besedilo lahko vsebuje ime cilja ali naslov.')}</p>
         <p>{$t('Štetje uporabe (stikalo zgoraj): brez piškotkov, lokacije in podatka o napravi. Šteje zagone, zaslone in nastavitve.')}</p>
         <p>{$t('Odhodi v živo: aplikacija za postajališča, ki jih gledaš, vpraša strežnik aplikacije (Cloudflare), ta pa Marprom. Strežnik šteje, katera postajališča se gledajo, brez podatka o napravi; tega stikalo ne izklopi.')}</p>
         <p>{$t('Karte: tvoj brskalnik ploščice prenese neposredno od CARTO ali Esri.')}</p>

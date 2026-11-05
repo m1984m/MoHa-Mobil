@@ -79,10 +79,10 @@
        role="presentation">
     <div in:sheet out:sheet={{ out: true }} class="w-full sm:max-w-md surface rounded-t-3xl sm:rounded-3xl shadow-float flex flex-col"
          style="max-height: calc(100dvh - env(safe-area-inset-top) - 1rem); padding-bottom: env(safe-area-inset-bottom);"
-         role="dialog" aria-modal="true" aria-label={$t('Cene in vozovnice')} tabindex="-1"
+         role="dialog" aria-modal="true" aria-label={$t('Cenik mestnega prometa Marprom')} tabindex="-1"
          use:focusTrap>
       <div class="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
-        <div class="t-title2">{$t('Cene in vozovnice')}</div>
+        <div class="t-title2">{$t('Cenik mestnega prometa Marprom')}</div>
         <div class="flex items-center gap-2">
           <ReadAloud text={readText} />
           <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center"

@@ -184,12 +184,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // OSRM hodilne poti — stale-while-revalidate (koristno offline za predhodno zahtevane poti)
-  if (url.hostname === 'router.project-osrm.org') {
-    event.respondWith(staleWhileRevalidate(req, APP_CACHE));
-    return;
-  }
-
   // Hashirani build asseti (/assets/index-[hash].js) so immutable — cache-first.
   // SWR jih je ob vsakem zagonu po nepotrebnem re-prenašal (~430 KB gzip).
   if (url.origin === self.location.origin && url.pathname.includes('/assets/')) {
@@ -229,16 +223,31 @@ function urlB64ToUint8Array(base64) {
 // ne da odpraviti, zato ublažimo tu.
 const STALE_MS = 2 * 60 * 1000;
 
+// Nadomestna besedila storitvenega delavca po jeziku aplikacije (polje `lang` v
+// potisnem sporočilu). Ostala besedila obvestila prevede že aplikacija.
+const SW_TEXT = {
+  sl: {
+    title: 'Čas za odhod', body: 'Avtobus kmalu odpelje s tvoje postaje.',
+    lateTitle: 'Zamujeno opozorilo', lateBody: 'Opozorilo je prišlo prepozno.',
+  },
+  en: {
+    title: 'Time to leave', body: 'Your bus leaves your stop soon.',
+    lateTitle: 'Late reminder', lateBody: 'This reminder arrived too late.',
+  },
+};
+
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
   if (!data || typeof data !== 'object') data = {};
   const tag = data.tag || 'mm-alarm';
   const url = data.url || './';
+  // Jezik pošlje aplikacija z zvonjenjem (F29); brez njega (starejši zapis) slovensko.
+  const txt = SW_TEXT[data.lang] || SW_TEXT.sl;
   // Zasilno besedilo: obvestilo brez vsebine je za uporabnika brez pomena,
   // brskalnik pa ob userVisibleOnly naročnini tako ali tako zahteva prikaz.
-  let title = data.title || 'Čas za odhod';
-  let body = data.body || 'Avtobus kmalu odpelje s tvoje postaje.';
+  let title = data.title || txt.title;
+  let body = data.body || txt.body;
   let vibrate = [200, 100, 200];
 
   // Brez fireAt (staro obvestilo v vrsti potisne storitve) se obnašamo kot doslej.
@@ -250,8 +259,8 @@ self.addEventListener('push', (event) => {
     // opozorilo zamujeno, telo pa ohrani podatek o odhodu. Oznake linije ni kot
     // ločenega polja (Worker prepušča le id/fireAt/title/body/tag/url), izluščiti
     // je iz naslova pa ne gre zanesljivo — zato raje izvirno telo kot ugibanje.
-    title = 'Zamujeno opozorilo';
-    body = data.body || 'Opozorilo je prišlo prepozno.';
+    title = txt.lateTitle;
+    body = data.body || txt.lateBody;
     vibrate = [];
   }
 

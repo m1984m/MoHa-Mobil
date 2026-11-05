@@ -41,4 +41,5 @@ export default {
   'Brezplačno se vozijo tudi invalidi s prebivališčem v Mariboru (z odločbo MOM).': 'Disabled residents of Maribor also travel free (with a City of Maribor decision).',
   'Cenik velja od {datum}. Cene se lahko spremenijo — velja': 'Fares valid from {datum}. Prices may change — the',
   'uradni cenik Marproma': 'official Marprom fare list applies',
+  'Cenik mestnega prometa Marprom': 'Marprom city bus fares',
 };

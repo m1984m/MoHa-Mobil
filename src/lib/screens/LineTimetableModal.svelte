@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { backdrop, sheet, swap } from '../motion';
   import { X, ArrowRightLeft, MapPin, ChevronDown, Check, Star, ExternalLink } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -120,7 +121,28 @@
   $: selectedIsFav = selectedStopId != null && $favStops.has(selectedStopId);
 
   // Danes: seznam se odpre pri naslednjem odhodu, pretekli so umirjeni (evalvacija N11).
-  $: nowSec = open && day === detectToday() ? nowSecMb() : null;
+
+  // Ura za oznako naslednjega odhoda: brez nje je dalj časa odprt vozni red kot
+  // naslednjega kazal že odpeljani odhod (F27). Teče le, ko je okno odprto, in se
+  // osveži takoj, ko se aplikacija vrne v ospredje.
+  let tick = 0;
+  let tickTimer: ReturnType<typeof setInterval> | null = null;
+  const onVisible = () => { if (document.visibilityState === 'visible') tick++; };
+  $: if (open && !tickTimer) {
+    tickTimer = setInterval(() => tick++, 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+  } else if (!open && tickTimer) {
+    clearInterval(tickTimer); tickTimer = null;
+    document.removeEventListener('visibilitychange', onVisible);
+  }
+  onDestroy(() => {
+    if (tickTimer) clearInterval(tickTimer);
+    document.removeEventListener('visibilitychange', onVisible);
+  });
+  function currentNowSec(o: boolean, d: DayKind, _tick: number): number | null {
+    return o && d === detectToday() ? nowSecMb() : null;
+  }
+  $: nowSec = currentNowSec(open, day, tick);
   $: nextStopIdx = nowSec == null ? -1 : stopSchedule.findIndex(x => x.sec >= nowSec!);
   $: nextTripIdx = nowSec == null ? -1 : trips.findIndex(tr0 => (tr0.stops[0]?.[2] ?? 0) >= nowSec!);
 
@@ -174,8 +196,9 @@
           <div class="t-footnote text-muted">{$t('Smer')}</div>
           <div class="t-body font-semibold truncate">{smer.dest || '—'}</div>
           {#if izhodisce || smer.via}
-            <div class="t-footnote text-muted truncate">
-              {#if izhodisce}{$t('od {kraj}', { kraj: izhodisce })}{/if}{#if izhodisce && smer.via} · {/if}{#if smer.via}{$t('prek {via}', { via: smer.via })}{/if}
+            <div class="t-footnote text-muted line-clamp-2">
+              <!-- Oblika z dvopičjem: lastnega imena za predlogom ne znamo sklanjati (F30). -->
+              {#if izhodisce}{$t('Izhodišče: {kraj}', { kraj: izhodisce })}{/if}{#if izhodisce && smer.via} · {/if}{#if smer.via}{$t('Vmes: {via}', { via: smer.via })}{/if}
             </div>
           {/if}
         </div>

@@ -27,11 +27,7 @@ const app = mount(App, {
   target: document.getElementById('app')!,
 })
 
-// Poskus zaklepa orientacije na pokončno (deluje v PWA/fullscreen; ostali brskalniki tiho odpovejo).
-try {
-  const so: any = (screen as any).orientation;
-  if (so && typeof so.lock === 'function') so.lock('portrait').catch(() => {});
-} catch {}
+// Orientacija ni zaklenjena (WCAG 1.3.4, evalvacija F24): ležeči položaj je dovoljen.
 
 // PWA service worker registration (production only).
 // Ob zaznani novi različici pokažemo UpdateToast (bullet lista sprememb + Osveži zdaj).

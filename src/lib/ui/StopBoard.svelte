@@ -132,7 +132,7 @@
             <div class="flex-1 min-w-0">
               <div class="{rowText} {$largeUI ? 'font-semibold' : 'font-medium truncate'}">{split.dest}</div>
               {#if split.via && (!$compactLists || $largeUI)}
-                <div class="t-footnote text-muted truncate mt-0.5">{$t('prek {via}', { via: split.via })}</div>
+                <div class="t-footnote text-muted line-clamp-2 mt-0.5">{$t('Vmes: {via}', { via: split.via })}</div>
               {/if}
             </div>
             <div class="flex flex-col items-end gap-0.5 shrink-0">

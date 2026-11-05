@@ -1,6 +1,6 @@
 import { upcomingDepartures, tripDestination, endsAtStopId, rowTarget, type GTFS } from './gtfs';
 import { stopDests } from './simpleStops';
-import type { StopArrival } from './realtime';
+import { fetchArrivalsForStopPoint, type StopArrival } from './realtime';
 import { nowMb, nowSecMb } from './clock';
 
 // Vrstice odhodov za Preprost pogled (glavni zaslon in zaslon postajališča).
@@ -31,15 +31,23 @@ export function liveDepSec(etaMin: number, nowSec = nowSecMb()): number {
   return nowSec + Math.max(0, Math.round(etaMin)) * 60;
 }
 
+// Minute do prihoda, odštete od absolutnega pričakovanega časa (StopArrival.expectedAt).
+// Med dvema klicema tako odštevanje teče naprej, namesto da bi stari ETA obstal (F7).
+export function etaNowMin(a: { etaMin: number; expectedAt?: number }, nowMs = Date.now()): number {
+  if (a.expectedAt == null || !Number.isFinite(a.expectedAt)) return a.etaMin;
+  return Math.max(0, Math.round((a.expectedAt - nowMs) / 60_000));
+}
+
 export function liveDepartureRows(arr: StopArrival[], routeIdByShort: Map<string, number>, max: number): DepartureRow[] {
   const nowSec = nowSecMb();
   return arr.slice(0, max).map(a => {
+    const eta = etaNowMin(a);
     return {
       routeId: routeIdByShort.get(a.lineCode.toLowerCase()) ?? a.lineId,
       routeShort: a.lineCode,
       headsign: a.headsign,
-      minutesFromNow: a.etaMin,
-      depSec: liveDepSec(a.etaMin, nowSec),
+      minutesFromNow: eta,
+      depSec: liveDepSec(eta, nowSec),
       delayMin: a.delayMin,
       delayKnown: a.delayKnown,
       // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
@@ -100,4 +108,16 @@ export function boardDirection(gtfs: GTFS, stopId: number, rows: DepartureRow[])
   }
   if (dests.length === 0) dests.push(...stopDests(gtfs, stopId));
   return dests.slice(0, 2).join(', ') + (dests.length > 2 ? ' …' : '');
+}
+
+// Živi prihodi za več postajališč hkrati (Dom in Priljubljene uporabljata isto pot, F20).
+// `got` ima samo uspešne poizvedbe, že brez voženj, ki se tam končajo; `allFailed` pomeni
+// izpad (strežnik ali Marprom), takrat zaslon jasno pokaže vozni red.
+export async function fetchLiveForStops(gtfs: GTFS, ids: number[]): Promise<{ got: Map<number, StopArrival[]>; at: number; allFailed: boolean }> {
+  const results = await Promise.allSettled(ids.map(async id => [id, await fetchArrivalsForStopPoint(id)] as const));
+  const got = new Map<number, StopArrival[]>();
+  for (const r of results) {
+    if (r.status === 'fulfilled') got.set(r.value[0], liveDepartures(gtfs, r.value[0], r.value[1]));
+  }
+  return { got, at: Date.now(), allFailed: ids.length > 0 && results.every(r => r.status === 'rejected') };
 }

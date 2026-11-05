@@ -5,6 +5,36 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.29.0 — 2026-11-06
+
+Popravki po zunanji evalvaciji (Codex, 5. 11. 2026, ocena 6,52/10, 30 najdb, vse preverjene:
+`evalvacija_2026-11-05/VALIDACIJA.md`).
+
+**Zvonec in opomniki**
+- Z zvonca privzeto »Samo ta odhod«: zazvoni pred pričakovanim odhodom (z zamudo), pri bližnjem odhodu prej,
+  tik pred odhodom pove, da je prepozno. Prej se je opomnik za odhod čez manj kot 10 min tiho preskočil.
+- »Prvič zazvoni: danes ob …«, pri ponavljanju opozorilo, da je danes že prepozno; »Shranjeno« šele po potrditvi strežnika.
+- Zvonec viden tudi pri Večjem besedilu in na ozkem zaslonu.
+- Worker: cron ne prepiše sočasne spremembe razporeda; ob zadnjem izbrisanem opomniku se zapis na strežniku izbriše;
+  zamujeno obvestilo v jeziku aplikacije.
+
+**Načrtovalnik**
+- Skupno jedro (`planTrip.ts`) za načrtovalnik, shranjene poti in povezave, zato tudi te računajo po Sloveniji.
+- Kartica: »odhod 22:28 · prihod jutri 06:33«; zvečer tudi jutrišnje vožnje, ob praznem »Zdaj« prve jutrišnje.
+- »Bus + vlak« deluje (način je del oznake v RAPTOR, filter pred Paretom); stari predlogi izginejo ob spremembi vnosa.
+- Preverba prestopov po natančni pešpoti; predlogi z vrsto (železniška/avtobusna postaja, kraj, naslov) in samo zadetki,
+  ki vsebujejo vpisane besede; prevoz.org z datumom in krajem iskanja; cenik jasno samo za Marprom.
+- Tipkovnica (combobox), oznanjanje rezultatov bralniku zaslona, »Po voznem redu, zamude niso upoštevane«.
+
+**Prikaz in govor**
+- Čas čakanja po peš prestopu (prej 485 min namesto 5), vmesna hoja z uro.
+- »Vlak« v navodilih in govoru; govor pove »v živo« ali »po voznem redu«.
+- Priljubljene z živimi odhodi; odštevanje od absolutnega pričakovanega časa (Worker izda `X-Proxy-Age`).
+- »Izhodišče:« in »Vmes:« namesto »od …« in »prek …«; dostopna imena vrstic odhodov; »Pot po korakih« pred kalorijami.
+- Ležeči položaj ni več blokiran; pešpoti ostanejo shranjene po ponovnem zagonu; natančnejše besedilo o zasebnosti.
+
+---
+
 ## 0.28.0 — 2026-11-04
 
 **Načrtovalnik po vsej Sloveniji**

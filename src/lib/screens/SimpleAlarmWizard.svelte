@@ -4,10 +4,10 @@
   import { get } from 'svelte/store';
   import { ArrowLeft, MapPin, Star, BellRing, TriangleAlert, Check, Volume2, Send } from 'lucide-svelte';
   import { nearestStops, dayKindOf, type GTFS, type Stop } from '../gtfs';
-  import { nowMb } from '../clock';
+  import { nowMb, toMb, mbWallToEpoch } from '../clock';
   import { favStops } from '../favorites';
-  import { alarms, addAlarm, updateAlarm, computeOccurrences, type Alarm } from '../alarms';
-  import { pushState, enablePush, showLocalTest } from '../push';
+  import { alarms, addAlarm, updateAlarm, computeOccurrences, onceFireAt, firstRing, ringDayLabel, type Alarm, type RemindPrefill } from '../alarms';
+  import { pushState, enablePush, showLocalTest, syncNow } from '../push';
   import { pushBack, type BackRelease } from '../backstack';
   import { focusTrap } from '../focusTrap';
   import { fmtClock } from '../time';
@@ -34,7 +34,9 @@
   // »Opomni me« pri odhodu (celotna aplikacija, evalvacija N8): postajališče, avtobus in ura
   // so znani, dnevi so današnja vrsta dneva (delavnik ali ta dan vikenda). Začne na
   // pregledu, če avtobus ob tej uri vozi vse te dni, sicer pri izbiri ure.
-  export let prefill: { stopId: number; routeId: number; dir: number; depSec: number } | null = null;
+  // F13: z zvonca je privzeto »Samo ta odhod« (enkratni opomnik pred PRIČAKOVANIM
+  // odhodom: vozni red + znana zamuda); ponavljanje ob dnevih je izrecna izbira.
+  export let prefill: RemindPrefill | null = null;
 
   type Step = 'stop' | 'line' | 'days' | 'time' | 'lead' | 'summary' | 'done';
   const ORDER: Step[] = ['stop', 'line', 'days', 'time', 'lead', 'summary'];
@@ -44,6 +46,36 @@
   let days: boolean[] = [false, false, false, false, false, false, false];
   let depSec: number | null = null;
   let lead = 10;
+  // Enkratni opomnik: pričakovani odhod (ms), odhod po voznem redu in zamuda za prikaz.
+  let once = false;
+  let onceDep: number | null = null;
+  let onceSched: number | null = null;
+  let onceDelay: number | null = null;
+  // Ura po voznem redu (depSec) iz zvonca kot pravi trenutek: danes, ali ±1 dan, če je
+  // tako bližje pričakovanemu odhodu (odhod čez polnoč).
+  function schedEpoch(sec: number, near: number): number {
+    const n = toMb(near);
+    let at = mbWallToEpoch(n.getFullYear(), n.getMonth(), n.getDate(), 0, 0, sec);
+    if (at - near > 12 * 3600_000) at -= 86_400_000;
+    else if (near - at > 12 * 3600_000) at += 86_400_000;
+    return at;
+  }
+  function expectedDep(p: RemindPrefill): number {
+    const near = p.expectedAt ?? Date.now();
+    const sched = schedEpoch(p.depSec, near);
+    onceSched = sched;
+    if (p.expectedAt == null) return sched;
+    // Ura iz voznega reda + zamuda je natančna na minuto; ETA »čez N min« je zaokrožena.
+    const cand = sched + (p.delayMin ?? 0) * 60_000;
+    return Math.abs(cand - p.expectedAt) <= 120_000 ? cand : p.expectedAt;
+  }
+  // Ura OBA (prihod) se od odhoda v GTFS lahko razlikuje za minuto ali dve ali za
+  // sekunde — predizpolnitev naj se ujame z najbližjo uro (validacija F13).
+  function nearestTime(list: number[], sec: number): number | null {
+    let best: number | null = null;
+    for (const x of list) if (Math.abs(x - sec) <= 120 && (best == null || Math.abs(x - sec) < Math.abs(best - sec))) best = x;
+    return best;
+  }
   if (edit && gtfs) {
     const e = edit;
     stop = gtfs.stops.find(s => s.id === e.stopId) ?? null;
@@ -51,6 +83,7 @@
     days = [...e.days];
     depSec = e.fromMin * 60;
     lead = e.leadMin;
+    if (e.once) { once = true; onceDep = e.once.depAt; }
     if (stop && line) step = 'summary';
   } else if (prefill && gtfs) {
     const p = prefill;
@@ -61,9 +94,13 @@
     const kind = dayKindOf(gtfs, nowMb());
     days = [0, 1, 2, 3, 4, 5, 6].map(i => (kind === 'weekday' ? i < 5 : kind === 'saturday' ? i === 5 : i === 6));
     if (stop && line) {
-      const ok = timeInfo(gtfs, stop, line, days).times.includes(p.depSec);
-      depSec = ok ? p.depSec : null;
-      step = ok ? 'summary' : 'time';
+      once = true;
+      onceDelay = p.delayMin ?? null;
+      onceDep = expectedDep(p);
+      // Za ponavljanje: ura iz voznega reda, ki vozi vse te dni (s toleranco).
+      depSec = nearestTime(timeInfo(gtfs, stop, line, days).times, p.depSec);
+      // Enkratni opomnik ure iz voznega reda ne potrebuje: vedno na pregled.
+      step = 'summary';
     } else if (stop) step = 'line';
   }
   let query = '';
@@ -96,7 +133,7 @@
     // Spremenjeni dnevi so ponastavili uro: »koliko prej« in pregled brez ure sta prazna,
     // »Shrani« pa ne naredi nič (pregled 12.10.2026). Nazaj zato vodi na izbiro ure,
     // od tam pa na dneve.
-    if (depSec == null && (target === 'lead' || target === 'summary')) {
+    if (!once && depSec == null && (target === 'lead' || target === 'summary')) {
       visited = [...visited.filter(s => s !== 'lead' && s !== 'summary' && s !== 'time' && s !== 'days'), 'days', 'time'];
       target = 'time';
     }
@@ -218,10 +255,67 @@
         })
       : '';
   }
-  $: summary = summaryOf(stop, line, depSec, days, lead);
+  // Ura teče: pri enkratnem opomniku se skrajšan odmik in »prepozno« sproti osvežita.
+  let now = Date.now();
+  const clockTimer = setInterval(() => { now = Date.now(); }, 15_000);
+  onDestroy(() => clearInterval(clockTimer));
+
+  function onceSummaryOf(st: Stop | null, l: StopLine | null, dep: number | null, n: number, at: number): string {
+    if (!st || !l || dep == null) return '';
+    const f = onceFireAt(dep, n, at);
+    if (!f) return '';
+    const d = toMb(dep);
+    const ura = fmtClock(d.getHours() * 3600 + d.getMinutes() * 60);
+    const out = [f.leadMin >= 1
+      ? tr('Opomnim te samo enkrat, {n} minut pred odhodom avtobusa {line}, smer {dest}, ob {ura} s postajališča {stop}.', {
+          n: f.leadMin, line: l.routeShort, ura, stop: st.name, dest: l.dest })
+      : tr('Opomnim te samo enkrat, takoj, ker avtobus {line}, smer {dest}, odpelje ob {ura} s postajališča {stop}.', {
+          line: l.routeShort, ura, stop: st.name, dest: l.dest })];
+    if (onceDelay && onceSched != null) {
+      const sd = toMb(onceSched);
+      out.push(tr('Upoštevana je zamuda {n} min (po voznem redu ob {ura}).', { n: onceDelay, ura: fmtClock(sd.getHours() * 3600 + sd.getMinutes() * 60) }));
+    }
+    if (f.leadMin < n) out.push(tr('Do odhoda ni več {n} minut, zato zazvoni prej.', { n }));
+    return out.join(' ');
+  }
+  $: summary = once ? onceSummaryOf(stop, line, onceDep, lead, now) : summaryOf(stop, line, depSec, days, lead);
+  $: tooLate = once && onceDep != null && onceFireAt(onceDep, lead, now) === null;
+  // »Prvič zazvoni: torek ob 07:35« / »Danes je že prepozno, prvič zazvoni …« (F13).
+  function firstRingText(at: number, ..._deps: unknown[]): string {
+    if (once) {
+      const f = onceDep != null ? onceFireAt(onceDep, lead, at) : null;
+      return f ? tr('Prvič zazvoni: {when}', { when: ringDayLabel(f.fireAt, at) }) : '';
+    }
+    if (!gtfs || !stop || !line || depSec == null) return '';
+    const fromMin = Math.floor(depSec / 60), toMin = Math.ceil(depSec / 60);
+    const r = firstRing(gtfs, {
+      stopId: stop.id, routeId: line.routeId, dir: line.dir, stopName: stop.name, routeShort: line.routeShort,
+      headsign: line.dest, days, fromMin, toMin, leadMin: lead, enabled: true,
+    }, at);
+    if (r.fireAt == null) return tr('V voznem redu ni odhoda, ob katerem bi opomnik zazvonil.');
+    return r.todayMissed
+      ? tr('Danes je že prepozno, prvič zazvoni {when}.', { when: ringDayLabel(r.fireAt, at) })
+      : tr('Prvič zazvoni: {when}', { when: ringDayLabel(r.fireAt, at) });
+  }
+  // Odvisnosti naštete izrecno: Svelte sicer ne ve, da funkcija bere te spremenljivke.
+  $: firstRingLine = firstRingText(now, once, onceDep, depSec, days, lead, stop, line, $t);
+
+  // Izbira z zvonca: samo ta odhod ali ponavljanje.
+  function pickOnce() { once = true; guide(step); }
+  function pickRepeat() {
+    once = false;
+    if (depSec == null) go(days.some(Boolean) ? 'time' : 'days');
+    else guide(step);
+  }
+
+  // Ali je strežnik razpored res sprejel (F13: »Shranjeno« mora odražati uskladitev).
+  let syncOk: boolean | null = null;
+  let savedFireAt: number | null = null;
 
   async function save() {
-    if (!gtfs || !stop || !line || depSec == null || saving) return;
+    if (!gtfs || !stop || !line || saving) return;
+    if (once) return saveOnce();
+    if (depSec == null) return;
     saving = true;
     // Okno, ki zajame točno ta odhod tudi, če bi imel sekunde (od = do pri celi minuti).
     const fromMin = Math.floor(depSec / 60), toMin = Math.ceil(depSec / 60);
@@ -233,7 +327,7 @@
       updateAlarm(edit.id, {
         stopId: stop.id, routeId: line.routeId, dir: line.dir,
         stopName: stop.name, routeShort: line.routeShort, headsign: line.dest,
-        days: [...days], fromMin, toMin, leadMin: lead, enabled: true,
+        days: [...days], fromMin, toMin, leadMin: lead, enabled: true, once: null,
       });
     } else if (dup) {
       if (!dup.enabled) updateAlarm(dup.id, { enabled: true });
@@ -244,16 +338,49 @@
         days: [...days], fromMin, toMin, leadMin: lead, enabled: true,
       });
     }
+    savedFireAt = firstRing(gtfs, {
+      stopId: stop.id, routeId: line.routeId, dir: line.dir, stopName: stop.name, routeShort: line.routeShort,
+      headsign: line.dest, days, fromMin, toMin, leadMin: lead, enabled: true,
+    }).fireAt;
+    await finishSave();
+  }
+
+  // »Samo ta odhod«: zazvoni enkrat pred pričakovanim odhodom, nato se odstrani.
+  async function saveOnce() {
+    if (!gtfs || !stop || !line || onceDep == null) return;
+    const f = onceFireAt(onceDep, lead);
+    if (!f) { now = Date.now(); return; }   // medtem prepozno: pregled to pokaže
+    saving = true;
+    const d = toMb(onceDep);
+    const min = d.getHours() * 60 + d.getMinutes();
+    const wd = (d.getDay() + 6) % 7;
+    const draft = {
+      stopId: stop.id, routeId: line.routeId, dir: line.dir,
+      stopName: stop.name, routeShort: line.routeShort, headsign: line.dest,
+      days: [0, 1, 2, 3, 4, 5, 6].map(i => i === wd), fromMin: min, toMin: min, leadMin: lead, enabled: true,
+      once: { depAt: onceDep, fireAt: f.fireAt },
+    };
+    const dup = get(alarms).find(a => a.once && a.once.depAt === onceDep && a.stopId === stop!.id && a.routeId === line!.routeId);
+    if (edit && get(alarms).some(a => a.id === edit!.id)) updateAlarm(edit.id, draft);
+    else if (dup) updateAlarm(dup.id, draft);
+    else addAlarm(draft);
+    savedFireAt = f.fireAt;
+    await finishSave();
+  }
+
+  async function finishSave() {
     // Dovoljenje za obvestila mora zahtevati dotik (iOS) — ta klic je še v njem.
     // Največ 20 s: tiho okno za dovoljenje v Chromu lahko ne odgovori nikoli, »Shranjujem…«
     // pa je med tem zaklenil Nazaj, Esc in sistemski nazaj (pregled 12.10.2026). Opomnik
     // je že shranjen; zaslon »Shranjeno« pove, če obvestila še niso vklopljena.
-    if (!get(pushState).subscribed) {
-      await Promise.race([
-        enablePush(computeOccurrences(gtfs, get(alarms))),
-        new Promise(r => setTimeout(r, 20_000)),
-      ]);
-    }
+    // Ob že vklopljenih obvestilih počakamo na odgovor strežnika (F13), ne na zamik 1 s.
+    const timeout = new Promise<boolean>(r => setTimeout(() => r(false), 20_000));
+    syncOk = await Promise.race([
+      get(pushState).subscribed
+        ? syncNow(gtfs, get(alarms))
+        : enablePush(computeOccurrences(gtfs!, get(alarms))),
+      timeout,
+    ]);
     saving = false;
     // Čarovnik je bil med čakanjem zaprt (Esc): Petra ne sme govoriti na drugem zaslonu.
     if (!alive) return;
@@ -261,6 +388,13 @@
   }
 
   $: stepNo = ORDER.indexOf(step) + 1;
+
+  let retrying = false;
+  async function retrySync() {
+    retrying = true;
+    syncOk = await syncNow(gtfs, get(alarms));
+    retrying = false;
+  }
 
   // Preizkus: lokalno obvestilo prek storitvenega delavca; dovoljenje se zahteva v tem dotiku.
   let testing = false;
@@ -307,16 +441,28 @@
     } else if (s === 'lead') {
       out.push(tr('Koliko prej naj te opomnim?'), tr('Izberi, koliko minut pred odhodom ti telefon pošlje obvestilo: 5, 10, 15, 20 ali 30 minut.'));
     } else if (s === 'summary') {
-      out.push(tr('Preveri opomnik.'), summaryOf(stop, line, depSec, days, lead), tr('Če je vse prav, pritisni Shrani opomnik.'));
+      out.push(tr('Preveri opomnik.'));
+      const at = Date.now();
+      if (once && onceDep != null && !onceFireAt(onceDep, lead, at)) out.push(tr('Avtobus že odhaja, za opomnik je prepozno.'));
+      else out.push(once ? onceSummaryOf(stop, line, onceDep, lead, at) : summaryOf(stop, line, depSec, days, lead), firstRingText(at),
+        tr('Če je vse prav, pritisni Shrani opomnik.'));
     } else if (s === 'done') {
-      const ps = get(pushState);
       out.push(tr('Opomnik je shranjen.'));
-      out.push(ps.subscribed && !ps.error
-        ? tr('Telefon ti bo poslal obvestilo {n} minut pred odhodom.', { n: lead })
-        : ps.error ?? tr('Obvestila še niso vklopljena, zato opomnik ne bo zazvonil.'));
+      out.push(doneText());
       out.push(tr('Pritisni Končano.'));
     }
     return out.filter(Boolean).join(' ');
+  }
+  // Besedilo zaslona »Shranjeno« (in Petre): uspeh samo, če je strežnik potrdil.
+  function doneText(): string {
+    const ps = get(pushState);
+    if (syncOk && ps.subscribed) {
+      return savedFireAt != null
+        ? tr('Telefon ti bo poslal obvestilo {when}.', { when: ringDayLabel(savedFireAt) })
+        : tr('Telefon ti bo poslal obvestilo {n} minut pred odhodom.', { n: lead });
+    }
+    if (!ps.subscribed) return ps.error ?? tr('Obvestila še niso vklopljena, zato opomnik ne bo zazvonil.');
+    return ps.error ?? tr('Opomnik je shranjen v telefonu, strežnik pa ga ni potrdil, zato morda ne bo zazvonil. Preveri povezavo in poskusi znova.');
   }
   function guide(s: Step) {
     if (get(petraGuide)) speak(guideText(s), GUIDE);
@@ -474,12 +620,37 @@
 
       {:else if step === 'summary'}
         <h1 class="t-title1" tabindex="-1">{$t('Preveri opomnik')}</h1>
-        <div class="surface-2 rounded-2xl p-5 t-title3 font-semibold leading-snug">{summary}</div>
-        <ReadAloud variant="big" wide text={() => summary} />
-        <button type="button" class="pressable mm-aw-next w-full" disabled={saving || !summary} on:click={save}>
+        {#if prefill && !edit && onceDep != null}
+          <!-- F13: z zvonca privzeto samo ta odhod; ponavljanje je izrecna izbira. -->
+          <div class="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2" role="group" aria-label={$t('Kako pogosto')}>
+            <button type="button" class="pressable mm-aw-day" class:mm-aw-on={once} aria-pressed={once} disabled={saving} on:click={pickOnce}>
+              {#if once}<Check size={22} strokeWidth={2.5} />{/if} {$t('Samo ta odhod')}
+            </button>
+            <button type="button" class="pressable mm-aw-day" class:mm-aw-on={!once} aria-pressed={!once} disabled={saving} on:click={pickRepeat}>
+              {#if !once}<Check size={22} strokeWidth={2.5} />{/if} {$t('Ponavljaj ob dnevih')}
+            </button>
+          </div>
+        {/if}
+        {#if tooLate}
+          <div class="surface-2 rounded-2xl p-5 t-body flex items-start gap-3" role="status" style="color: var(--status-delay)">
+            <TriangleAlert size={26} class="shrink-0" />
+            <span>{$t('Avtobus že odhaja, za opomnik je prepozno.')}</span>
+          </div>
+        {:else}
+          <div class="surface-2 rounded-2xl p-5 t-title3 font-semibold leading-snug">{summary}</div>
+          {#if firstRingLine}
+            <p class="t-headline" role="status">{firstRingLine}</p>
+          {/if}
+          <ReadAloud variant="big" wide text={() => `${summary} ${firstRingLine}`} />
+        {/if}
+        <button type="button" class="pressable mm-aw-next w-full" disabled={saving || !summary || tooLate} on:click={save}>
           <BellRing size={26} /> {saving ? $t('Shranjujem…') : $t('Shrani opomnik')}
         </button>
-        {#if prefill && visited.length === 1}
+        {#if once && prefill && !edit && onceDep != null}
+          <button type="button" class="pressable mm-aw-row w-full" disabled={saving} on:click={() => go('lead')}>
+            <span class="flex-1 text-left t-headline">{$t('Spremeni opozorilo')}</span>
+          </button>
+        {:else if prefill && !edit && !visited.includes('days')}
           <!-- Z zvonca je vse izbrano; dneve in čas opozorila se da še spremeniti
                (»Nazaj« s pregleda zapre, ker drugih korakov uporabnik ni videl). -->
           <button type="button" class="pressable mm-aw-row w-full" disabled={saving} on:click={() => go('days')}>
@@ -489,18 +660,25 @@
 
       {:else if step === 'done'}
         <h1 class="t-title1" tabindex="-1">{$t('Opomnik je shranjen')}</h1>
-        <!-- Naročnina brez napake: tudi sinhronizacija s strežnikom je uspela. -->
-        {#if $pushState.subscribed && !$pushState.error}
-          <div class="surface-2 rounded-2xl p-5 t-body flex items-start gap-3">
-            <BellRing size={26} color="var(--status-ontime)" />
-            <span>{$t('Telefon ti bo poslal obvestilo {n} minut pred odhodom.', { n: lead })}</span>
-          </div>
-        {:else}
-          <div class="surface-2 rounded-2xl p-5 t-body flex items-start gap-3" style="color: var(--status-delay)">
-            <TriangleAlert size={26} class="shrink-0" />
-            <span>{$pushState.error ?? $t('Obvestila še niso vklopljena, zato opomnik ne bo zazvonil.')}</span>
-          </div>
-        {/if}
+        <!-- Uspeh samo, če je strežnik razpored potrdil (syncOk), ne le lokalno shranil. -->
+        {#key [syncOk, $pushState.subscribed, $pushState.error, $t]}
+          {#if syncOk && $pushState.subscribed}
+            <div class="surface-2 rounded-2xl p-5 t-body flex items-start gap-3" role="status">
+              <BellRing size={26} color="var(--status-ontime)" />
+              <span>{doneText()}</span>
+            </div>
+          {:else}
+            <div class="surface-2 rounded-2xl p-5 t-body flex items-start gap-3" role="status" style="color: var(--status-delay)">
+              <TriangleAlert size={26} class="shrink-0" />
+              <span>{doneText()}</span>
+            </div>
+            {#if $pushState.subscribed}
+              <button type="button" class="pressable mm-aw-row w-full" disabled={retrying} on:click={retrySync}>
+                <span class="flex-1 text-left t-headline">{retrying ? $t('Shranjujem…') : $t('Poskusi znova')}</span>
+              </button>
+            {/if}
+          {/if}
+        {/key}
         <button type="button" class="pressable mm-aw-row w-full" disabled={testing} on:click={sendTest}>
           <Send size={26} color="var(--accent)" />
           <span class="flex-1 text-left t-headline">{$t('Pošlji preizkusno obvestilo')}</span>

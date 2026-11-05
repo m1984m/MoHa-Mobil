@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { backdrop, sheet, swap } from '../motion';
   import { X, Star } from 'lucide-svelte';
   import LineBadge from '../ui/LineBadge.svelte';
@@ -60,7 +61,28 @@
 
   // Danes: seznam se odpre pri uri naslednjega odhoda, ta je obrobljen, pretekli so brez
   // podlage in s pridušeno minuto (brez prosojnosti, ki bi pokvarila kontrast; N11).
-  $: nowSec = open && day === detectToday() ? nowSecMb() : null;
+
+  // Ura za oznako naslednjega odhoda: brez nje je dalj časa odprt vozni red kot
+  // naslednjega kazal že odpeljani odhod (F27). Teče le, ko je okno odprto, in se
+  // osveži takoj, ko se aplikacija vrne v ospredje.
+  let tick = 0;
+  let tickTimer: ReturnType<typeof setInterval> | null = null;
+  const onVisible = () => { if (document.visibilityState === 'visible') tick++; };
+  $: if (open && !tickTimer) {
+    tickTimer = setInterval(() => tick++, 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+  } else if (!open && tickTimer) {
+    clearInterval(tickTimer); tickTimer = null;
+    document.removeEventListener('visibilitychange', onVisible);
+  }
+  onDestroy(() => {
+    if (tickTimer) clearInterval(tickTimer);
+    document.removeEventListener('visibilitychange', onVisible);
+  });
+  function currentNowSec(o: boolean, d: DayKind, _tick: number): number | null {
+    return o && d === detectToday() ? nowSecMb() : null;
+  }
+  $: nowSec = currentNowSec(open, day, tick);
   $: nextDep = nowSec == null ? null : deps.find(d => d.depSec >= nowSec!) ?? null;
   $: nextHour = nextDep ? Math.floor(nextDep.depSec / 3600) % 24 : -1;
   function chipStyle(d: { depSec: number }): string {

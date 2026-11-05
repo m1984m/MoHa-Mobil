@@ -5,6 +5,7 @@ import { fmtClock, fmtDayOffset } from './time';
 import type { DepartureRow } from './departures';
 import type { PlanLeg, Plan } from './planner';
 import type { DayWeather } from './weather';
+import { ijppRouteInfo } from './ijppPlan';
 
 // Besedila za glasno branje (gumb ui/ReadAloud.svelte, glas speech.ts).
 //
@@ -55,8 +56,11 @@ function dest(line: string, headsign: string, destination?: string): string {
 
 // ── Odhodi s postajališča ───────────────────────────────────────────────────
 
-// "Linija G6, smer Kamnica, čez 4 minute. Zamuja 2 minuti."
-function rowSentence(r: DepartureRow): string {
+// "Linija G6, smer Kamnica, čez 4 minute. V živo. Zamuja 2 minuti."
+// Vir (v živo / po voznem redu) se pove pri vsaki vrstici, razen kadar je za vse
+// vrstice postajališča enak: takrat ga departuresSpeech pove enkrat (F12).
+const sourceSentence = (r: DepartureRow) => r.live ? tr('V živo.') : tr('Po voznem redu.');
+function rowSentence(r: DepartureRow, withSource = true): string {
   const d0 = dest(r.routeShort, r.headsign, r.destination);
   let s: string;
   if (r.minutesFromNow <= 0) s = tr('Linija {line}, smer {dest}, prihaja zdaj.', { line: r.routeShort, dest: d0 });
@@ -65,6 +69,7 @@ function rowSentence(r: DepartureRow): string {
   const d = r.delayMin ?? 0;
   if (r.delayKnown && d >= 1) s += ' ' + tr('Zamuja {n} {enota}.', { n: d, enota: minuteWord(d) });
   else if (r.delayKnown && d <= -1) s += ' ' + tr('Vozi {n} {enota} pred voznim redom.', { n: -d, enota: minuteWord(-d) });
+  if (withSource) s += ' ' + sourceSentence(r);
   return s;
 }
 
@@ -87,7 +92,11 @@ export type StopSpeech = { name: string; rows: DepartureRow[]; empty?: string };
 
 export function departuresSpeech(stops: StopSpeech[]): string {
   return stops.map(st => {
-    const body = st.rows.length ? st.rows.slice(0, MAX_READ).map(rowSentence).join(' ') : (st.empty ?? noMoreToday());
+    const rows = st.rows.slice(0, MAX_READ);
+    const same = rows.length > 0 && rows.every(r => !!r.live === !!rows[0].live);
+    const body = rows.length
+      ? (same ? sourceSentence(rows[0]) + ' ' : '') + rows.map(r => rowSentence(r, !same)).join(' ')
+      : (st.empty ?? noMoreToday());
     return tr('Postajališče {stop}.', { stop: st.name }) + ' ' + body;
   }).join(' ');
 }
@@ -125,7 +134,21 @@ export function vehicleSpeech(v: {
 
 // ── Pot ─────────────────────────────────────────────────────────────────────
 
-export function planSpeech(legs: PlanLeg[], cilj: string): string {
+// Koliko dni je minilo od dneva iskanja poti (Plan.baseDay, YYYYMMDD): 0 = isti dan.
+export function daysSincePlanDay(day: number | null | undefined, now: Date = nowMb()): number {
+  if (day == null) return 0;
+  const a = Date.UTC(Math.floor(day / 10000), Math.floor(day / 100) % 100 - 1, day % 100);
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+// Ali je čas poti (sekunde od polnoči dneva iskanja) na naslednji dan glede na danes.
+export function isTomorrow(sec: number, baseDay?: number | null, now: Date = nowMb()): boolean {
+  return sec - daysSincePlanDay(baseDay, now) * 86_400 >= 86_400;
+}
+
+const isRail = (routeId: number) => ijppRouteInfo(routeId)?.rail === true;
+
+export function planSpeech(legs: PlanLeg[], cilj: string, baseDay?: number | null): string {
   const walkSec = (from: number, to: number) =>
     legs.slice(from, to).reduce((a, l) => a + (l.kind === 'walk' ? l.sec : 0), 0);
   const out: string[] = [cilj ? tr('Pot do cilja {cilj}.', { cilj }) : tr('Pot do cilja.')];
@@ -141,9 +164,17 @@ export function planSpeech(legs: PlanLeg[], cilj: string): string {
   const arrive = (legs[last] as Extract<PlanLeg, { kind: 'bus' }>).arrSec + walkSec(last + 1, legs.length);
   // Kot PlanSteps: več kot 90 s po času odhoda je odhod mimo (pot na karti je lahko stara).
   const now = nowMb();
-  const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const days = daysSincePlanDay(baseDay, now);
+  const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + days * 86_400;
   if (leave < nowSec - 90) out.push(tr('Ta odhod je mimo.') + ' ' + tr('Poišči novega.'));
-  else out.push(tr('Kreni ob {time}, na cilju boš ob {arr}.', { time: fmtClock(leave), arr: fmtClock(arrive) }));
+  else {
+    const leaveT = isTomorrow(leave, baseDay, now), arrT = isTomorrow(arrive, baseDay, now);
+    const time = fmtClock(leave) + (leaveT ? ' ' + tr('jutri') : '');
+    const arr = fmtClock(arrive) + (arrT && !leaveT ? ' ' + tr('jutri') : '');
+    out.push(tr('Kreni ob {time}, na cilju boš ob {arr}.', { time, arr }));
+  }
+  // Načrtovalnik računa po voznem redu, brez živih zamud (F12).
+  out.push(tr('Po voznem redu, zamude niso upoštevane.'));
 
   // Ura, ob kateri se konča prejšnji korak — iz nje se vidi čakanje pred busom.
   let clock = leave;
@@ -159,9 +190,11 @@ export function planSpeech(legs: PlanLeg[], cilj: string): string {
     } else {
       const wait = l.depSec - clock;
       if (wait >= 60) out.push(tr('Počakaj {trajanje}.', { trajanje: duration(wait / 60) }));
-      out.push(tr('Ob {time} na postajališču {stop} vstopi na avtobus linije {line}, smer {dest}.', {
-        time: fmtClock(l.depSec), stop: l.from.name, line: l.route.short, dest: dest(l.route.short, l.headsign),
-      }));
+      // Vlak ni avtobus (F17); nadomestni avtobus SŽ je avtobus.
+      const board = { time: fmtClock(l.depSec), stop: l.from.name, line: l.route.short, dest: dest(l.route.short, l.headsign) };
+      out.push(isRail(l.route.id)
+        ? tr('Ob {time} na postaji {stop} vstopi na vlak {line}, smer {dest}.', board)
+        : tr('Ob {time} na postajališču {stop} vstopi na avtobus linije {line}, smer {dest}.', board));
       out.push(tr('Izstopi na postajališču {stop} ob {time}, po {n} {enota}.', {
         stop: l.to.name, time: fmtClock(l.arrSec), n: l.stopCount,
         enota: plural(l.stopCount, ['postajališču', 'postajališčih', 'postajališčih', 'postajališčih'], ['stop', 'stops']),

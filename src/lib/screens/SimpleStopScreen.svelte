@@ -136,7 +136,7 @@
                 <LineBadge short={r.routeShort} routeId={r.routeId} size="lg" />
                 <div class="flex-1 min-w-0">
                   <div class="t-headline">{split.dest}</div>
-                  {#if split.via}<div class="t-footnote text-muted truncate">{$t('prek {via}', { via: split.via })}</div>{/if}
+                  {#if split.via}<div class="t-footnote text-muted line-clamp-2">{$t('Vmes: {via}', { via: split.via })}</div>{/if}
                 </div>
                 <div class="flex flex-col items-end gap-1 shrink-0">
                   <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} />

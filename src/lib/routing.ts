@@ -43,11 +43,70 @@ const ESTIMATE_TTL_MS = 60_000;
 const cache = new Map<string, { wr: WalkRoute; until: number }>();
 const key = (a: LL, b: LL, mps: number) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}|${b.lat.toFixed(5)},${b.lon.toFixed(5)}|${mps.toFixed(3)}`;
 
+// Trajna shramba uspešnih pešpoti (F15): ORS gre prek POST, ki ga service worker ne
+// hrani, zato je bila po ponovnem zagonu že znana pot spet le zračna črta. Hrani se
+// razdalja in oblika (brez časa — ta se izračuna s trenutno hitrostjo hoje), največ
+// PERSIST_MAX poti; ob zadetku gre pot na konec, ob prepolnem odpade najstarejša.
+const PERSIST_KEY = 'mm.walkRoutes.v1';
+const PERSIST_MAX = 200;
+type Stored = { m: number; c: [number, number][] };
+let persisted: Map<string, Stored> | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function store(): Map<string, Stored> {
+  if (persisted) return persisted;
+  persisted = new Map();
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr)) {
+      for (const e of arr) {
+        if (Array.isArray(e) && typeof e[0] === 'string' && e[1] && typeof e[1].m === 'number' && Array.isArray(e[1].c)) persisted.set(e[0], e[1]);
+      }
+    }
+  } catch { /* zasebno okno ali pokvarjen zapis: začni prazno */ }
+  return persisted;
+}
+function saveSoon() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const m = store();
+    while (m.size > PERSIST_MAX) m.delete(m.keys().next().value as string);
+    try { localStorage.setItem(PERSIST_KEY, JSON.stringify([...m])); }
+    catch {
+      // Kvota: odreži starejšo polovico in poskusi še enkrat.
+      const keep = [...m].slice(Math.floor(m.size / 2));
+      persisted = new Map(keep);
+      try { localStorage.setItem(PERSIST_KEY, JSON.stringify(keep)); } catch { /* brez trajne shrambe */ }
+    }
+  }, 1_000);
+}
+function persistGet(k: string): Stored | undefined {
+  const m = store();
+  const v = m.get(k);
+  if (v) { m.delete(k); m.set(k, v); saveSoon(); }
+  return v;
+}
+function persistSet(k: string, v: Stored) {
+  const m = store();
+  m.delete(k);
+  m.set(k, v);
+  saveSoon();
+}
+const round5 = (x: number) => Math.round(x * 1e5) / 1e5;
+
 export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise<WalkRoute> {
   const WALK_MPS = getWalkMps();
   const k = key(from, to, WALK_MPS);
   const hit = cache.get(k);
   if (hit && hit.until > Date.now()) return hit.wr;
+  const pk = mKey(from, to);
+  const saved = persistGet(pk);
+  if (saved) {
+    const wr: WalkRoute = { coords: saved.c, meters: saved.m, sec: Math.round(saved.m / WALK_MPS) };
+    cache.set(k, { wr, until: Infinity });
+    return wr;
+  }
 
   const straight: WalkRoute = {
     coords: [[from.lon, from.lat], [to.lon, to.lat]],
@@ -94,6 +153,7 @@ export async function walkRoute(from: LL, to: LL, signal?: AbortSignal): Promise
       sec: Math.round(summary.distance / WALK_MPS),
     };
     cache.set(k, { wr, until: Infinity });
+    persistSet(pk, { m: wr.meters, c: coords.map(([x, y]) => [round5(x), round5(y)] as [number, number]) });
     walkRoutingDegraded.set(false);
     return wr;
   } catch (e: any) {
