@@ -5,7 +5,7 @@ import { fmtClock, fmtDayOffset } from './time';
 import type { DepartureRow } from './departures';
 import type { PlanLeg, Plan } from './planner';
 import type { DayWeather } from './weather';
-import { ijppRouteInfo } from './ijppPlan';
+import { ijppRouteInfo } from './ijppInfo';
 
 // Besedila za glasno branje (gumb ui/ReadAloud.svelte, glas speech.ts).
 //

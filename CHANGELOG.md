@@ -5,6 +5,20 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.0 — 2026-11-09
+
+Hitrejši prvi obisk (analiza `analiza_2026-11-09/ANALIZA_HITROSTI.md`). Profil Lighthouse mobile, lokalna
+primerjava z 0.29: odhodi vidni 4,88 → 2,25 s, LCP 5,06 → 2,20 s, prenos do odhodov 523 → 172 kB.
+
+- Karta, načrtovalnik in trase se prednaložijo šele po voznem redu; prej so mu na počasni zvezi jemali pasovno širino.
+- Zgoščen vozni red `trips2.json` (vzorci voženj, `src/lib/tripsPack.ts`): 208 → 18 kB stisnjeno. Poln `trips.json`
+  se še gradi za orodja in stare različice v predpomnilniku.
+- Angleški slovar ni več v začetnem paketu (`i18nEn.ts`): pri angleščini se naloži pred prvim izrisom, pri slovenščini
+  v ozadju. Tabela medkrajevnih linij v `ijppInfo.ts`, da načrtovalnik ne gre v začetni paket.
+- Service worker se registrira tudi, ko je dogodek `load` že mimo.
+
+---
+
 ## 0.29.0 — 2026-11-06
 
 Popravki po zunanji evalvaciji (Codex, 5. 11. 2026, ocena 6,52/10, 30 najdb, vse preverjene:

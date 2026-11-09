@@ -2,6 +2,7 @@ import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
 import { updateAvailable } from './lib/update'
+import { langReady } from './lib/i18n'
 
 // iOS PWA viewport bug: na prvem zagonu 100dvh včasih vrne staro/pre-safe-area višino,
 // zato se pojavi "prazna lisa" spodaj pod TabBar-om. Uporabniku pomaga šele rotacija
@@ -23,6 +24,10 @@ window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300)
 window.visualViewport?.addEventListener('resize', setAppHeight)
 window.addEventListener('pageshow', setAppHeight)
 
+// Angleški slovar ni v začetnem paketu; pri angleškem jeziku počakamo nanj (največ 3 s),
+// da se vmesnik ne izriše najprej v slovenščini. Pri slovenščini je to takoj.
+await Promise.race([langReady(), new Promise(r => setTimeout(r, 3000))])
+
 const app = mount(App, {
   target: document.getElementById('app')!,
 })
@@ -32,7 +37,10 @@ const app = mount(App, {
 // PWA service worker registration (production only).
 // Ob zaznani novi različici pokažemo UpdateToast (bullet lista sprememb + Osveži zdaj).
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', async () => {
+  // Zaradi čakanja na slovar zgoraj je dogodek `load` lahko že mimo (pri angleščini skoraj
+  // vedno) — poslušalec se potem ne bi sprožil nikoli in service worker se ne bi registriral
+  // (pregled kode 09.11.2026). Zato ob že naloženi strani registriramo takoj.
+  const registerSw = async () => {
     const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
     // Ali je stran že pod nadzorom SW. Ob prvem obisku clients.claim() sproži
     // controllerchange, ki je stran osvežil sredi vodiča (dotik se je izgubil, zagon se je
@@ -83,7 +91,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       // Po skipWaiting novi SW prevzame kontrolo — takrat poslušalec zgoraj osveži stran,
       // da se nov paket in predpomnilnik dejansko pokažeta.
     } catch {}
-  })
+  }
+  if (document.readyState === 'complete') void registerSw()
+  else window.addEventListener('load', registerSw, { once: true })
 }
 
 export default app

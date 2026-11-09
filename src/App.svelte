@@ -4,7 +4,7 @@
   import { Home, Map as MapIcon, Star, Settings as SettingsIcon, CalendarClock, ArrowLeft } from 'lucide-svelte';
   import { fade } from 'svelte/transition';
   import { initTheme, type Theme } from './lib/theme';
-  import { loadGTFS, type GTFS, type Stop } from './lib/gtfs';
+  import { loadGTFS, loadShapes, type GTFS, type Stop } from './lib/gtfs';
   import { getLocation, watchLocation, MARIBOR } from './lib/geo';
   import { fetchWeather, type Weather } from './lib/weather';
   import { defaultTab, liveLocationWatch } from './lib/settings';
@@ -13,7 +13,7 @@
   import { alarms, type RemindPrefill } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack, type BackRelease } from './lib/backstack';
-  import { lang, t, tr } from './lib/i18n';
+  import { lang, langKey, loadEn, t, tr } from './lib/i18n';
   import { onboardingDone, introSeen } from './lib/onboarding';
   import WelcomeModal from './lib/ui/WelcomeModal.svelte';
   import PetraCard from './lib/ui/PetraCard.svelte';
@@ -347,6 +347,13 @@
     document.documentElement.classList.toggle('mm-simple-back', $simpleView && $simpleFullApp);
   }
 
+  // Prednalaganje odloženih kosov, ko je glavna nit prosta — preklop na Karto/načrtovalnik
+  // je potem takojšen, začetni paket pa ostane majhen.
+  const idle = (cb: () => void) =>
+    'requestIdleCallback' in window
+      ? (window as any).requestIdleCallback(cb, { timeout: 5000 })
+      : setTimeout(cb, 1500);
+
   onMount(() => {
     theme = initTheme();
     // Za analitiko šteje tema, kot je videti ob zagonu, zato po initTheme.
@@ -355,6 +362,13 @@
     // prompt/timeout (do 8 s) blokiralo nalaganje voznih redov in deep link.
     (async () => {
       await tryLoadGtfs();
+      // Karta, načrtovalnik in trase se prednaložijo šele ZDAJ, ko je vozni red prenesen in
+      // so odhodi na poti na zaslon. Prej se je prednalaganje sprožilo ob prvem prostem
+      // trenutku, torej med čakanjem na vozni red, in mu je na počasni zvezi jemalo pasovno
+      // širino: odhodi po 5,0 s namesto po 3,3 s (analiza hitrosti 09.11.2026).
+      await tick();
+      // Angleški slovar: prednaložen je preklop jezika takojšen in deluje tudi brez povezave.
+      idle(() => { ensureMapScreen(); ensurePlanner(); loadShapes().catch(() => {}); void loadEn(); });
       if (gtfs) await tryDeepLinkPlan();
     })();
     (async () => {
@@ -364,13 +378,6 @@
       await refreshWeather();
       weatherTimer = setInterval(refreshWeather, 15 * 60 * 1000);
     })();
-    // Prefetch odloženih chunkov, ko je glavna nit prosta — preklop na Karto/planer
-    // je potem takojšen, začetni paket pa ostane majhen.
-    const idle = (cb: () => void) =>
-      'requestIdleCallback' in window
-        ? (window as any).requestIdleCallback(cb, { timeout: 5000 })
-        : setTimeout(cb, 2500);
-    idle(() => { ensureMapScreen(); ensurePlanner(); });
     // Naročnina na obvestila se lahko tiho zavrže (brskalnik zarotira endpoint) —
     // preveri jo ob vsakem zagonu. Razpored alarmov nato osveži reaktivni blok nižje.
     void ensureSubscribed();
@@ -490,7 +497,7 @@
   // Vsaka sprememba alarmov — in zagon, ko se GTFS naloži — osveži razpored zvonjenja
   // na strežniku. scheduleSync sam združi rafal sprememb v eno zahtevo.
   // $lang: besedilo obvestil se sestavi na telefonu, zato ga ob menjavi jezika pošlji znova.
-  $: $lang, scheduleSync(gtfs, $alarms);
+  $: $langKey, scheduleSync(gtfs, $alarms);
 
   async function refreshWeather() {
     weather = await fetchWeather(origin.lat, origin.lon);
@@ -554,7 +561,7 @@
   if (e.key === 'Escape' && $simpleActive && !simpleMapOpen && !plannerOpen && (simpleStop || simpleRoute || placeEdit)) history.back();
 }} />
 
-{#key $lang}
+{#key $langKey}
 <div class="fixed inset-0">
 
   {#if $simpleActive}

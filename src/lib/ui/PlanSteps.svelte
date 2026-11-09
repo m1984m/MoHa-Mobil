@@ -7,7 +7,7 @@
   import { rowTarget } from '../gtfs';
   import { toMb } from '../clock';
   import type { PlanLeg } from '../planner';
-  import { ijppRouteInfo } from '../ijppPlan';
+  import { ijppRouteInfo } from '../ijppInfo';
 
   // Pot po korakih kot časovnica, ne kot seznam vrstic.
   //

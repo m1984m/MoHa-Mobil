@@ -12,8 +12,11 @@
 import type { GTFS, Route, Stop, Trip } from './gtfs';
 import { setExtRouteColor, todayServiceIds } from './gtfs';
 import { dist } from './gtfs';
+import { EXT, ijppRouteInfo, setIjppRouteInfo } from './ijppInfo';
 
-export const EXT = 1_000_000;
+// EXT, ijppRouteInfo in isExtRoute živijo v ijppInfo.ts (majhen modul za začetni paket);
+// od tu so izvoženi naprej za kodo načrtovalnika.
+export { EXT, ijppRouteInfo, isExtRoute, type IjppRouteInfo } from './ijppInfo';
 const EXT_SERVICE = 999_999;
 // Območje Marproma: znotraj njega zadošča mestni načrtovalnik (hitrejši, brez prenosa).
 const MB_CENTER = { lat: 46.5576, lon: 15.6456 };
@@ -33,12 +36,6 @@ type Raw = {
 
 export type Mode = 'all' | 'bus' | 'rail' | 'busRail';
 
-export type IjppRouteInfo = { agency: string; rail: boolean; color: string };
-const routeInfo = new Map<number, IjppRouteInfo>();
-export function ijppRouteInfo(routeId: number): IjppRouteInfo | undefined {
-  return routeInfo.get(routeId);
-}
-export const isExtRoute = (routeId: number) => routeId >= EXT;
 
 let cached: Raw | null = null;
 let loading: Promise<Raw | null> | null = null;
@@ -134,7 +131,7 @@ export function mergedGtfs(gtfs: GTFS, j: Raw, when: Date): GTFS {
     const agShort = shortAgency(agName);
     const label = rail ? short : (agShort === 'SŽ' ? 'SŽ bus' : agShort);
     routes.push({ id: EXT + i, short: label, long: agShort, type });
-    routeInfo.set(EXT + i, { agency: shortAgency(agName), rail, color });
+    setIjppRouteInfo(EXT + i, { agency: shortAgency(agName), rail, color });
     setExtRouteColor(EXT + i, color);
   }
 
@@ -191,8 +188,8 @@ export function mergedGtfs(gtfs: GTFS, j: Raw, when: Date): GTFS {
 /** Filter voženj za izbran način. Marpromovi avtobusi so dovoljeni vedno (dostop do postaje). */
 export function tripFilter(mode: Mode): ((t: Trip) => boolean) | undefined {
   if (mode === 'all' || mode === 'busRail') return undefined;
-  if (mode === 'rail') return t => t.route < EXT || routeInfo.get(t.route)?.rail === true;
-  return t => t.route < EXT || routeInfo.get(t.route)?.rail !== true;
+  if (mode === 'rail') return t => t.route < EXT || ijppRouteInfo(t.route)?.rail === true;
+  return t => t.route < EXT || ijppRouteInfo(t.route)?.rail !== true;
 }
 
 // Vrsta prevoza vožnje za stanje iskanja (planner.ts, opts.tripBits): vlak 1, medkrajevni
@@ -200,7 +197,7 @@ export function tripFilter(mode: Mode): ((t: Trip) => boolean) | undefined {
 export const BIT_RAIL = 1, BIT_BUS = 2;
 export function tripBits(t: Trip): number {
   if (t.route < EXT) return 0;
-  return routeInfo.get(t.route)?.rail ? BIT_RAIL : BIT_BUS;
+  return ijppRouteInfo(t.route)?.rail ? BIT_RAIL : BIT_BUS;
 }
 
 /**
@@ -218,7 +215,7 @@ export function modeOpts(mode: Mode): { tripOk?: (t: Trip) => boolean; tripBits?
 export function planMatchesMode(legs: { kind: string; route?: Route }[], mode: Mode): boolean {
   const ext = legs.filter(l => l.kind === 'bus' && l.route && l.route.id >= EXT);
   if (mode === 'busRail') {
-    return ext.some(l => routeInfo.get(l.route!.id)?.rail) && ext.some(l => !routeInfo.get(l.route!.id)?.rail);
+    return ext.some(l => ijppRouteInfo(l.route!.id)?.rail) && ext.some(l => !ijppRouteInfo(l.route!.id)?.rail);
   }
   return true;
 }

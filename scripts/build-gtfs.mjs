@@ -1,9 +1,11 @@
 // GTFS static -> optimized JSON for client.
 // Input:  jpp_maribor/gtfs_raw/
-// Output: web/public/gtfs/{stops,routes,trips,service,shapes}.json
+// Output: web/public/gtfs/{stops,routes,trips,trips2,service,shapes}.json
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Node 24 bere .ts neposredno (tipi se izbrišejo); isti modul uporablja aplikacija.
+import { packTrips, unpackTrips } from '../src/lib/tripsPack.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAW = path.resolve(__dirname, '../../../jpp_maribor/gtfs_raw');
@@ -175,7 +177,17 @@ const tripsOut = trips.map(t => {
     stops: st.map(s => [s.stop, s.arr, s.dep]),
   };
 });
+// trips.json (poln zapis) ostaja za orodja (worker/scripts/build-trase.mjs, obhodi v mapah
+// evalvacij) in za stare različice aplikacije, ki še tečejo iz predpomnilnika. Aplikacija
+// bere trips2.json (zgoščen zapis, src/lib/tripsPack.ts).
 fs.writeFileSync(path.join(OUT, 'trips.json'), JSON.stringify(tripsOut));
+const packed = packTrips(tripsOut);
+// Varovalka: razširitev mora dati natanko iste vožnje, sicer gradnja pade.
+if (JSON.stringify(unpackTrips(JSON.parse(JSON.stringify(packed)))) !== JSON.stringify(tripsOut)) {
+  throw new Error('trips2.json: razširjen zapis se ne ujema s polnim');
+}
+fs.writeFileSync(path.join(OUT, 'trips2.json'), JSON.stringify(packed));
+console.log(`  trips2.json: ${packed.pats.length} vzorcev, ${packed.heads.length} ciljev`);
 
 // === shapes.json ===
 if (shapes.length) {

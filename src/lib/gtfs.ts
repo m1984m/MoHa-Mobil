@@ -1,5 +1,6 @@
 import { tr } from './i18n';
 import { nowMb } from './clock';
+import { unpackTrips, type PackedTrips } from './tripsPack';
 
 export type Stop = { id: number; name: string; lat: number; lon: number; code: string | null };
 export type Route = { id: number; short: string; long: string; type: number };
@@ -195,20 +196,19 @@ export function loadGTFS(): Promise<GTFS> {
   });
   loading = (async () => {
     try {
-      // Meta in shapes prefetchamo paralelno z GTFS fetch-i — uspeh ni pogoj za GTFS,
-      // a ko se vse naloži skupaj, sta meta in shapes že v cache-u za UI prikaz brez
-      // dodatnega round-tripa. Shapes (~800 KB) so največji kos in edini blocker za
-      // prvi render zemljevida — paralelni fetch odreže ~300–800 ms na 4G.
+      // Vožnje so v zgoščenem zapisu (trips2.json, tripsPack.ts): 18 kB namesto 208 kB.
+      // Tras (shapes.json, 88 kB) tu NE nalagamo: Dom jih ne potrebuje, na počasni zvezi pa
+      // so jemale pasovno širino voznemu redu (analiza hitrosti 09.11.2026). Naloži jih
+      // App.svelte po prvih odhodih oziroma Karta ob odprtju (loadShapes).
       const gtfsPromise = Promise.all([
         fetchJson('stops.json'),
         fetchJson('routes.json'),
-        fetchJson('trips.json'),
+        fetchJson('trips2.json'),
         fetchJson('service.json'),
       ]);
       loadMeta();
-      // Swallow napake — GTFS uspeh ne sme biti odvisen od shapes.
-      loadShapes().catch(() => {});
-      const [stops, routes, trips, service] = await gtfsPromise;
+      const [stops, routes, packed, service] = await gtfsPromise;
+      const trips = unpackTrips(packed as PackedTrips);
       cached = { stops, routes, trips, services: service.services, exceptions: service.exceptions };
       return cached;
     } catch (err) {

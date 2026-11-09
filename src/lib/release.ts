@@ -10,11 +10,10 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '6. 11. 2026';
+export const RELEASE_DATE = '9. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Zvonec: opomnik za ta odhod upošteva zamudo in pove, kdaj prvič zazvoni',
-  'Načrtovalnik: ura odhoda in »jutri«, delujoč način Bus + vlak, zvečer tudi jutrišnje povezave',
-  'Pravilen čas čakanja pri prestopu, »vlak« v navodilih, Priljubljene v živo',
-  'Boljša dostopnost (tipkovnica, bralnik zaslona, ležeči položaj) in natančnejša zasebnost',
+  'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa',
+  'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi',
+  'Karta in načrtovalnik se naložita v ozadju, ko so odhodi že na zaslonu',
 ];
