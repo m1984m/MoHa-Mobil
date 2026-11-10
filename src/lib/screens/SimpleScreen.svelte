@@ -13,7 +13,6 @@
   import { primeAudio } from '../speech';
   import { alarms, toggleAlarm, removeAlarm, computeOccurrences, daysLabel, whenLabel, alarmsCoverageWarning, type Alarm } from '../alarms';
   import { pushState, enablePush } from '../push';
-  import SimpleAlarmWizard from './SimpleAlarmWizard.svelte';
   import {
     liveDepartureRows, scheduleDepartureRows, routeIdIndex, LIVE_FRESH_MS, liveDepartures, boardDirection,
     type DepartureRow,
@@ -66,6 +65,21 @@
   let editing = false;
   let removing: SimplePlace | null = null;
   let alarmWizardOpen = false;
+  // Čarovnik (39 kB izvorne kode) ni v začetnem paketu; App ga prednaloži po prvih odhodih.
+  // Odpre se šele, ko je kos naložen, da stanje »odprt« nikoli ne obstaja brez okna.
+  let AlarmWizardComp: typeof import('./SimpleAlarmWizard.svelte').default | null = null;
+  let wizardLoading = false;
+  async function openWizard(edit: Alarm | null) {
+    if (wizardLoading) return;
+    if (!AlarmWizardComp) {
+      wizardLoading = true;
+      try { AlarmWizardComp = (await import('./SimpleAlarmWizard.svelte')).default; }
+      catch { toast.show(tr('Preveri internetno povezavo in poskusi znova.')); return; }
+      finally { wizardLoading = false; }
+    }
+    alarmEdit = edit;
+    alarmWizardOpen = true;
+  }
   let alarmEdit: Alarm | null = null;
   let editingAlarms = false;
   let removingAlarm: Alarm | null = null;
@@ -423,7 +437,7 @@
             {#if editingAlarms}
               <div class="flex gap-2 w-full">
                 <button type="button" class="pressable mm-s-small flex-1"
-                        on:click={() => { if ($petraGuide) primeAudio(); alarmEdit = a; alarmWizardOpen = true; }}>
+                        on:click={() => { if ($petraGuide) primeAudio(); void openWizard(a); }}>
                   <Pencil size={20} /> {$t('Popravi')}
                 </button>
                 <button type="button" class="pressable mm-s-small mm-s-danger flex-1" on:click={() => removingAlarm = a}>
@@ -444,7 +458,7 @@
 
         <!-- Petra v čarovniku spregovori ob izrisu, ne v tem dotiku — zvok se odklene tu (iOS). -->
         <button type="button" class="pressable mm-s-row mm-s-dashed w-full"
-                on:click={() => { if ($petraGuide) primeAudio(); alarmEdit = null; alarmWizardOpen = true; }}>
+                on:click={() => { if ($petraGuide) primeAudio(); void openWizard(null); }}>
           <Plus size={30} strokeWidth={2} color="var(--accent)" />
           <span class="flex-1 min-w-0 text-left">
             <span class="block t-headline">{$t('Dodaj opomnik')}</span>
@@ -480,8 +494,8 @@
 
 <SimpleStopSearch {gtfs} open={stopSearchOpen} onClose={() => stopSearchOpen = false} onPick={pickSearched} />
 
-{#if alarmWizardOpen}
-  <SimpleAlarmWizard {gtfs} {origin} {hasGeo} edit={alarmEdit} onClose={() => { alarmWizardOpen = false; alarmEdit = null; }} />
+{#if alarmWizardOpen && AlarmWizardComp}
+  <svelte:component this={AlarmWizardComp} {gtfs} {origin} {hasGeo} edit={alarmEdit} onClose={() => { alarmWizardOpen = false; alarmEdit = null; }} />
 {/if}
 
 <ConfirmDialog open={!!removingAlarm} backEntry={false}

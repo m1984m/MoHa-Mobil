@@ -13,6 +13,7 @@
   import { alarms, type RemindPrefill } from './lib/alarms';
   import { ensureSubscribed, scheduleSync } from './lib/push';
   import { pushBack, type BackRelease } from './lib/backstack';
+  import { toast } from './lib/toast';
   import { lang, langKey, loadEn, t, tr } from './lib/i18n';
   import { onboardingDone, introSeen } from './lib/onboarding';
   import WelcomeModal from './lib/ui/WelcomeModal.svelte';
@@ -21,15 +22,11 @@
   import type { Plan } from './lib/planner';
   import TabBar from './lib/ui/TabBar.svelte';
   import HomeScreen from './lib/screens/HomeScreen.svelte';
-  import FavScreen from './lib/screens/FavScreen.svelte';
-  import SettingsScreen from './lib/screens/SettingsScreen.svelte';
   import TimetablesScreen from './lib/screens/TimetablesScreen.svelte';
   import WeatherModal from './lib/screens/WeatherModal.svelte';
-  import AlarmsScreen from './lib/screens/AlarmsScreen.svelte';
   import UpdateToast from './lib/ui/UpdateToast.svelte';
   import Toast from './lib/ui/Toast.svelte';
   import SimpleScreen from './lib/screens/SimpleScreen.svelte';
-  import SimpleAlarmWizard from './lib/screens/SimpleAlarmWizard.svelte';
   import SimpleStopScreen from './lib/screens/SimpleStopScreen.svelte';
   import SimpleRouteScreen, { type SimpleRouteState } from './lib/screens/SimpleRouteScreen.svelte';
   import SimplePlaceEditor from './lib/screens/SimplePlaceEditor.svelte';
@@ -64,6 +61,55 @@
   }
   $: if (activeTab === 'map' || simpleMapOpen) ensureMapScreen();
   $: if (plannerOpen) ensurePlanner();
+
+  // Priljubljene, Nastavitve, Opomniki in čarovnik za opomnik (skupaj ~135 kB izvorne kode)
+  // so zunaj začetnega paketa: Dom jih ne potrebuje, po prvih odhodih pa se prednaložijo
+  // (onMount), zato je preklop zavihka takojšen in deluje tudi brez povezave.
+  // Če prenos pade (izpad mreže), poskusi znova, dokler je zaslon še zahtevan.
+  function lazyScreen<T>(load: () => Promise<{ default: T }>, set: (c: T) => void, wanted: () => boolean): () => Promise<void> {
+    let done = false;
+    let loading: Promise<void> | null = null;
+    const ensure = (): Promise<void> => {
+      if (done) return Promise.resolve();
+      if (!loading) {
+        loading = load()
+          .then(m => { done = true; set(m.default); })
+          .catch(() => { loading = null; setTimeout(() => { if (wanted()) void ensure(); }, 3000); });
+      }
+      return loading;
+    };
+    return ensure;
+  }
+  let FavScreenComp: typeof import('./lib/screens/FavScreen.svelte').default | null = null;
+  let SettingsScreenComp: typeof import('./lib/screens/SettingsScreen.svelte').default | null = null;
+  let AlarmsScreenComp: typeof import('./lib/screens/AlarmsScreen.svelte').default | null = null;
+  let AlarmWizardComp: typeof import('./lib/screens/SimpleAlarmWizard.svelte').default | null = null;
+  const ensureFav = lazyScreen(() => import('./lib/screens/FavScreen.svelte'), c => FavScreenComp = c, () => activeTab === 'fav');
+  const ensureSettings = lazyScreen(() => import('./lib/screens/SettingsScreen.svelte'), c => SettingsScreenComp = c, () => activeTab === 'settings');
+  const ensureAlarms = lazyScreen(() => import('./lib/screens/AlarmsScreen.svelte'), c => AlarmsScreenComp = c, () => false);
+  const ensureAlarmWizard = lazyScreen(() => import('./lib/screens/SimpleAlarmWizard.svelte'), c => AlarmWizardComp = c, () => false);
+  $: if (activeTab === 'fav') void ensureFav();
+  $: if (activeTab === 'settings') void ensureSettings();
+  // Prekrivna zaslona se odpreta šele, ko je njun kos naložen. Če bi stanje (`alarmsOpen`,
+  // `remind`) nastavili prej, bi vnos za »nazaj« obstajal brez zaslona, okno pa bi se ob
+  // počasni mreži pokazalo pozneje čez nekaj drugega (pregled kode 10.11.2026).
+  // Brez povezave in brez kosa v predpomnilniku: obvestilo, uporabnik poskusi znova.
+  let overlayLoading = false;
+  async function openAlarms(from: 'settings' | 'fav') {
+    if (overlayLoading) return;
+    overlayLoading = true;
+    try { await ensureAlarms(); } finally { overlayLoading = false; }
+    if (!AlarmsScreenComp) { toast.show(tr('Preveri internetno povezavo in poskusi znova.')); return; }
+    alarmsFrom = from;
+    alarmsOpen = true;
+  }
+  async function openRemind(prefill: RemindPrefill | null) {
+    if (overlayLoading) return;
+    overlayLoading = true;
+    try { await ensureAlarmWizard(); } finally { overlayLoading = false; }
+    if (!AlarmWizardComp) { toast.show(tr('Preveri internetno povezavo in poskusi znova.')); return; }
+    remind = { prefill };
+  }
 
   // Obnovi zadnji tab iz sessionStorage — iOS/Android lahko evict+reload PWA,
   // kar bi brez persistence vrglo uporabnika nazaj na Home sredi brskanja.
@@ -368,7 +414,22 @@
       // širino: odhodi po 5,0 s namesto po 3,3 s (analiza hitrosti 09.11.2026).
       await tick();
       // Angleški slovar: prednaložen je preklop jezika takojšen in deluje tudi brez povezave.
-      idle(() => { ensureMapScreen(); ensurePlanner(); loadShapes().catch(() => {}); void loadEn(); });
+      idle(() => {
+        // Najprej majhni zasloni (zavihka in opomniki), nato težka karta.
+        // Kosi, ki se prenesejo po tem, ko je service worker prevzel stran, gredo skozenj;
+        // tisti, ki se začnejo prej in končajo pozneje, pa ne pridejo ne vanj ne na seznam
+        // ob prevzemu (main.ts). Zato mu jih po koncu pošljemo še enkrat (že shranjene preskoči).
+        void Promise.allSettled([
+          ensureFav(), ensureSettings(), ensureAlarms(), ensureAlarmWizard(),
+          ensureMapScreen(), ensurePlanner(), loadShapes().catch(() => {}), loadEn(),
+        ]).then(() => {
+          try {
+            const urls = performance.getEntriesByType('resource').map(e => e.name)
+              .filter(u => u.startsWith(location.origin) && u.includes('/assets/'));
+            navigator.serviceWorker?.controller?.postMessage({ type: 'CACHE_URLS', urls });
+          } catch {}
+        });
+      });
       if (gtfs) await tryDeepLinkPlan();
     })();
     (async () => {
@@ -574,7 +635,7 @@
             onClearPlan={closeSimpleMap}
             onOpenPlanner={handleOpenPlanner}
             onLongPressDest={() => {}}
-            onRemind={(p) => remind = { prefill: p }}
+            onRemind={openRemind}
             onPlanToStop={async (s) => { await closeSimpleMap(); runSimpleRoute(s.name, { lat: s.lat, lon: s.lon, name: s.name }); }} />
         {:else}
           <div class="absolute inset-0 flex items-center justify-center surface">
@@ -615,7 +676,7 @@
           onClearPlan={handleClearPlan}
           onOpenPlanner={handleOpenPlanner}
           onLongPressDest={handleLongPressDest}
-          onRemind={(p) => remind = { prefill: p }}
+          onRemind={openRemind}
           onPlanToStop={handlePlanToStop} />
       {:else}
         <!-- Chunk s karto se še prenaša (samo ob prvem obisku brez idle prefetcha) -->
@@ -629,14 +690,32 @@
     </div>
   {:else if activeTab === 'fav'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <FavScreen {gtfs} onStopSelect={handleStopSelect} onRunSavedRoute={runSavedRoute}
-        onOpenAlarms={() => { alarmsFrom = 'fav'; alarmsOpen = true; }} />
+      {#if FavScreenComp}
+        <svelte:component this={FavScreenComp} {gtfs} onStopSelect={handleStopSelect} onRunSavedRoute={runSavedRoute}
+          onOpenAlarms={() => openAlarms('fav')} />
+      {:else}
+        <div class="absolute inset-0 flex items-center justify-center surface">
+          <div class="flex items-center gap-2 t-footnote text-muted" aria-live="polite">
+            <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
+            {$t('Nalagam…')}
+          </div>
+        </div>
+      {/if}
     </div>
   {:else if activeTab === 'settings'}
     <div class="absolute inset-0" in:fade={{ duration: 180 }}>
-      <SettingsScreen {theme} onThemeChange={(t) => theme = t}
-        onOpenAlarms={() => { alarmsFrom = 'settings'; alarmsOpen = true; }} onOpenStats={openStats}
-        onOpenFares={() => faresOpen = true} />
+      {#if SettingsScreenComp}
+        <svelte:component this={SettingsScreenComp} {theme} onThemeChange={(t) => theme = t}
+          onOpenAlarms={() => openAlarms('settings')} onOpenStats={openStats}
+          onOpenFares={() => faresOpen = true} />
+      {:else}
+        <div class="absolute inset-0 flex items-center justify-center surface">
+          <div class="flex items-center gap-2 t-footnote text-muted" aria-live="polite">
+            <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--accent)"></span>
+            {$t('Nalagam…')}
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -667,13 +746,15 @@
 
   <FaresModal open={faresOpen} onClose={() => faresOpen = false} />
 
-  <AlarmsScreen open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false}
-    covered={!!remind}
-    onAddReminder={() => remind = { prefill: null }}
-    backLabel={alarmsFrom === 'fav' ? $t('Priljubljene') : $t('Nastavitve')} />
+  {#if AlarmsScreenComp}
+    <svelte:component this={AlarmsScreenComp} open={alarmsOpen} {gtfs} onClose={() => alarmsOpen = false}
+      covered={!!remind}
+      onAddReminder={() => openRemind(null)}
+      backLabel={alarmsFrom === 'fav' ? $t('Priljubljene') : $t('Nastavitve')} />
+  {/if}
 
-  {#if remind}
-    <SimpleAlarmWizard {gtfs} {origin} {hasGeo} prefill={remind.prefill} onClose={() => remind = null} />
+  {#if remind && AlarmWizardComp}
+    <svelte:component this={AlarmWizardComp} {gtfs} {origin} {hasGeo} prefill={remind.prefill} onClose={() => remind = null} />
   {/if}
 
   {#if $simpleActive}

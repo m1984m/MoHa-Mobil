@@ -5,6 +5,20 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.1 — 2026-11-10
+
+Manjši začetni paket. Lokalna primerjava z 0.30 (isti profil, 8 tekov): prenos do odhodov 172 → 134 kB,
+datoteke kode in slogov ob zagonu 12 → 2, prva vsebina 2,50 → 2,35 s. Čas do odhodov je v laboratoriju
+znotraj merilne negotovosti (±0,3 s).
+
+- Priljubljene, Nastavitve, Opomniki in čarovnik za opomnik se naložijo ob prvi rabi in se prednaložijo po prvih odhodih.
+- Opomniki in čarovnik se odprejo šele, ko je njihova koda naložena; brez povezave in brez shranjene kode obvestilo.
+- `vite.config.ts`: vse, kar začetna stran uvozi statično, gre v en kos (`jedro`); Rolldown je sicer deljene module
+  razdrobil na 35 prednaloženih datotek.
+- Prednaloženi kosi se po koncu še enkrat pošljejo service workerju (delo brez povezave po prvem obisku).
+
+---
+
 ## 0.30.0 — 2026-11-09
 
 Hitrejši prvi obisk (analiza `analiza_2026-11-09/ANALIZA_HITROSTI.md`). Profil Lighthouse mobile, lokalna
