@@ -5,6 +5,19 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.2 — 2026-11-10
+
+Vrnitev na kodo 0.30.0. Različica 0.30.1 je bila v neposredni primerjavi z 0.30.0 počasnejša pri prvem
+(3,3–3,6 s proti 2,4–3,4 s) in pri ponovnem obisku (0,85–1,46 s proti 0,51–1,06 s), zato je umaknjena.
+
+## 0.30.1 — 2026-11-10 (umaknjena)
+
+Priljubljene, Nastavitve, Opomniki in čarovnik za opomnik zunaj začetnega paketa, vsa začetna koda v enem kosu.
+Prenos do odhodov 172 → 134 kB, a odhodi niso bili vidni prej. Poskus je v veji `poskus-odlozeni-zasloni`,
+meritve v `analiza_2026-11-09/ANALIZA_HITROSTI.md`.
+
+---
+
 ## 0.30.0 — 2026-11-09
 
 Hitrejši prvi obisk (analiza `analiza_2026-11-09/ANALIZA_HITROSTI.md`). Profil Lighthouse mobile, lokalna

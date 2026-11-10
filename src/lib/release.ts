@@ -10,7 +10,7 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '9. 11. 2026';
+export const RELEASE_DATE = '10. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
   'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa',
