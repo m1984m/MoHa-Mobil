@@ -283,7 +283,6 @@ export default {
   'Na karti dotik avtobusa pokaže njegovo linijo in vse avtobuse na njej': 'On the map, tapping a bus shows its line and all buses on it',
   'Postajališče namesto postaja, ikona za iPhone in glas Petra brez ključa Azure': 'Stop wording, iPhone icon and Petra’s voice without an Azure key',
   'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa': 'Faster first start: departures appear in about half the previous time',
-  'Manjši začetni paket: Nastavitve, Opomniki in Priljubljene se naložijo v ozadju': 'Smaller initial download: Settings, Reminders and Favourites load in the background',
   'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi': 'The timetable is ten times smaller, so it downloads and updates faster',
   'Karta in načrtovalnik se naložita v ozadju, ko so odhodi že na zaslonu': 'The map and trip planner load in the background once departures are on screen',
   'Zvonec: opomnik za ta odhod upošteva zamudo in pove, kdaj prvič zazvoni': 'Bell: a reminder for this departure accounts for delay and tells you when it first rings',
