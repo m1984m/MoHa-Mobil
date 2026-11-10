@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.3 — 2026-11-10
+
+- Filter »V center« / »Iz centra«: med postajališča centra sta dodana Prlek in ŽP Maribor (220–250 m od
+  Avtobusne postaje). Krožna G3, ki na Glavnem trgu in Avtobusni postaji ne ustavi, je bila prej skrita
+  v obeh smereh; zdaj se pokaže, prav tako P17.
+
 ## 0.30.2 — 2026-11-10
 
 Vrnitev na kodo 0.30.0. Različica 0.30.1 je bila v neposredni primerjavi z 0.30.0 počasnejša pri prvem

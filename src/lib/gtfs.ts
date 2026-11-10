@@ -400,7 +400,9 @@ export function nextServiceDeparture(
 // se ujemanje dela po IMENU in ne po id-ju — id-ji se ob novem feedu lahko
 // premaknejo, imeni pa sta stabilni.
 // ---------------------------------------------------------------------------
-export const CENTER_STOP_NAMES = ['Glavni trg', 'Avtobusna postaja'];
+// Prlek in ŽP Maribor sta 220–250 m od Avtobusne postaje; brez njiju krožna G3, ki na
+// Glavnem trgu in Avtobusni postaji ne ustavi, pod »V center« sploh ni bila prikazana.
+export const CENTER_STOP_NAMES = ['Glavni trg', 'Avtobusna postaja', 'Prlek', 'ŽP Maribor'];
 
 export function isCenterStopName(name: string): boolean {
   const n = name.trim().toLowerCase();

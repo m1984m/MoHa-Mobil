@@ -13,6 +13,7 @@ export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __AP
 export const RELEASE_DATE = '10. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
+  'Krožna linija G3 je zdaj vidna tudi pod »V center« in »Iz centra«',
   'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa',
   'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi',
   'Karta in načrtovalnik se naložita v ozadju, ko so odhodi že na zaslonu',
