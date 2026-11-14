@@ -26,8 +26,9 @@ const WORDS: [string, string][] = [
   ['Ljubljan.', 'Ljubljanska'],
   ['UK Gosp.', 'Štuk Gosposvetska'],
   ['Gosp.', 'Gosposvetska'],
-  ['Zg.', 'Zgornji'],
-  ['Sp.', 'Spodnji'],
+  // »Zg.« in »Sp.« razpiše zgornjiSpodnji() po spolu kraja (»Zgornje Hoče«, »Spodnja Polskava«).
+  ['sp.trg', 'spodnji trg'],
+  ['sp.vas', 'spodnja vas'],
   ['Ul.', 'Ulica'],
   ['ul.', 'ulica'],
   // Tuja imena: zapis → izgovor (Matej)
@@ -146,8 +147,20 @@ const NUMBER_RULES: [RegExp, (...m: string[]) => string][] = [
   [/(^|[^\p{L}\p{N}])([A-ZČŠŽ])(\d{1,3})(?![\p{L}\p{N}])/gu, (_m, pre, l, n) => `${pre}${l} ${numWords(Number(n))}`],
 ];
 
+// »Zg.« / »Sp.« pred imenom kraja (tudi brez presledka, kot v medkrajevnem voznem redu: »Zg.Hoče«).
+// Pridevnik se ujema s krajem, spol uganemo po končnici imena (Matej 14.11.2026: »Zgornji Hoče« je bilo narobe):
+// -a → Zgornja (Polskava), -e/-o → Zgornje (Hoče, Loke, Prebukovje, Tinsko), sicer Zgornji (Duplek, Ivanjci).
+const ZG_SP = /(^|[^\p{L}\p{N}])(Zg|Sp)\.\s?(\p{Lu}\p{L}*)/gu;
+export function zgornjiSpodnji(text: string): string {
+  return text.replace(ZG_SP, (_m, pre: string, kratica: string, kraj: string) => {
+    const k = kraj.slice(-1).toLowerCase();
+    const konec = k === 'a' ? 'ja' : k === 'e' || k === 'o' ? 'je' : 'ji';
+    return `${pre}${kratica === 'Zg' ? 'Zgorn' : 'Spodn'}${konec} ${kraj}`;
+  });
+}
+
 export function forSpeech(text: string): string {
-  let s = text;
+  let s = zgornjiSpodnji(text);
   for (const r of RULES) s = s.replace(r.re, (_m, pre: string) => pre + r.to);
   for (const [re, fn] of NUMBER_RULES) s = s.replace(re, fn as (...a: string[]) => string);
   // Slovenski glas "ć" ne pozna in "Vlahovića" prebere kot "Vlahovija" — v

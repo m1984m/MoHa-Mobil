@@ -282,6 +282,7 @@ export default {
   'Rdeč okvir na Domu, ko avtobus pripelje v 3 minutah': 'Red frame on Home when a bus arrives within 3 minutes',
   'Na karti dotik avtobusa pokaže njegovo linijo in vse avtobuse na njej': 'On the map, tapping a bus shows its line and all buses on it',
   'Postajališče namesto postaja, ikona za iPhone in glas Petra brez ključa Azure': 'Stop wording, iPhone icon and Petra’s voice without an Azure key',
+  'Glas pravilno prebere »Zg.« in »Sp.« pred krajem (Zgornje Hoče, Spodnja Polskava)': 'The voice now reads “Zg.” and “Sp.” before place names correctly (Zgornje Hoče, Spodnja Polskava)',
   'Krožna linija G3 je zdaj vidna tudi pod »V center« in »Iz centra«': 'Circular line G3 now also appears under “To centre” and “From centre”',
   'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa': 'Faster first start: departures appear in about half the previous time',
   'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi': 'The timetable is ten times smaller, so it downloads and updates faster',

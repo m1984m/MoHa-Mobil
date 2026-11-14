@@ -5,6 +5,12 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.4 — 2026-11-14
+
+- Glasno branje: »Zg.« in »Sp.« pred imenom kraja se razpišeta v pravem spolu (»Zgornje Hoče«, »Spodnja
+  Polskava«, »Zgornji Duplek«), tudi brez presledka, kot v medkrajevnem voznem redu (»Zg.Hoče«). Prej se je
+  vedno bralo »Zgornji«, kraji brez presledka pa sploh niso bili razpisani.
+
 ## 0.30.3 — 2026-11-10
 
 - Filter »V center« / »Iz centra«: med postajališča centra sta dodana Prlek in ŽP Maribor (220–250 m od
