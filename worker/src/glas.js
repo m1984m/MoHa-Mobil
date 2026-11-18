@@ -39,11 +39,18 @@ export const NAJVEC_POVEDI = 16;
 // znakov samih števk bi dalo skoraj 7.000 znakov za en klic. Najdaljše pravo branje
 // ima okoli 550 znakov; kar je daljše, bere prejšnji glas.
 export const NAJVEC_ZNAKOV = 1000;
-export const NAJVEC_ZNAKOV_POVEDI = 400;
+// 500: najdaljši povedi v aplikaciji sta seznama vozovnic v ceniku (ena poved s
+// podpičji, razpisano 470 in 453 znakov). Pri 400 ju je bral prejšnji glas in sta se
+// v enem branju cenika glasova mešala. Cenik se spremeni enkrat na leto, zato se
+// plača enkrat.
+export const NAJVEC_ZNAKOV_POVEDI = 500;
 // Hkratnih klicev: naročnina ElevenLabs omejuje sočasnost.
 const VZPOREDNO = 3;
 // Vse nove povedi enega branja skupaj. Po tem bere Edge; aplikacija čaka 12 s.
-const CAS_MS = 4500;
+// 7 s: seznam vozovnic iz cenika (470 znakov, 40 s zvoka) je ob prvi sintezi trajal
+// 4,4 s (izmerjeno 19.11.2026) in bi pri 4,5 s na počasnejši dan padel na prejšnji
+// glas, rezervirani krediti pa bi ostali porabljeni. Navadna poved je gotova v ~1 s.
+const CAS_MS = 7000;
 // Ocena, kadar ElevenLabs stroška ne pove v glavi `character-cost` (izmerjeno
 // 18.11.2026: 268 znakov je stalo 53 kreditov).
 export const KREDITI_NA_ZNAK = 0.2;

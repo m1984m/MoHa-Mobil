@@ -539,3 +539,15 @@ test('povedi: naslov postajališča začne novo poved, tudi ko ima samo dve bese
   // Ista poved kot v listu enega postajališča: pride iz shrambe.
   assert.deepEqual(povedi('Postajališče Tabor. V živo.'), ['Postajališče Tabor. V živo.']);
 });
+
+test('noviZvok: seznam vozovnic iz cenika (ena poved, 470 znakov) bere novi glas', async () => {
+  const cenik = 'Posamične vožnje: Ena vožnja pri vozniku (z bančno kartico, brez prestopa), 1,50 €; Ena vožnja v predprodaji (s prestopom v petinsedemdeset minutah), en evro in petdeset centov; Ena vožnja, otroci od šestih do štirinajstih let (s prestopom v petinsedemdeset minutah), en evro; deset voženj (s prestopom v petinsedemdeset minutah), trinajst evrov; deset voženj, otroci od šestih do štirinajstih let (s prestopom v petinsedemdeset minutah), štiri evri.';
+  assert.ok(cenik.length > 400 && cenik.length <= NAJVEC_ZNAKOV_POVEDI, String(cenik.length));
+  const el = lazniElevenLabs();
+  const c = ctx();
+  const r = await noviZvok(okolje(lazniD1()), c, cenik, { fetchFn: el.fetchFn, zdaj: () => T0 });
+  await Promise.all(c.cakaj);
+  assert.equal(r.napaka, undefined);
+  assert.equal(r.novihPovedi, 1);
+  assert.equal(el.klici.length, 1);
+});
