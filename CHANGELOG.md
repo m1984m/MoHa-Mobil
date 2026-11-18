@@ -5,6 +5,18 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.5 — 2026-11-18
+
+- Glasno branje: Petra ima nov glas (ElevenLabs, strežniški del `worker/src/glas.js`). Vsaka poved se
+  sintetizira enkrat in ostane v shrambi, zato se ponovljene povedi (»V živo.«, ime postajališča) berejo
+  takoj. Ob napaki, izteku ali doseženi mesečni meji bere prejšnji glas.
+- Glasno branje: ure in števila gredo glasu z besedo in v pravem sklonu (»ob štirinajst petintrideset«,
+  »po sedmih postajališčih«, »do petindvajsetih kilometrov«, »dve celi pet«).
+- Prihodi v živo: vrstni red posrednikov do voznega reda je popravljen (prvi je bil mesec dni ugasnjen)
+  in dodan je tretji, v drugi regiji. Ko odpovejo vse poti, se to v statistiki šteje posebej (»odpoved«).
+- Spremljanje vozil ponoči (01:00–03:45) posrednikov ne kliče; klici crona so vidni v statistiki.
+- Zaslon Statistika: poraba in stikalo novega glasu.
+
 ## 0.30.4 — 2026-11-14
 
 - Glasno branje: »Zg.« in »Sp.« pred imenom kraja se razpišeta v pravem spolu (»Zgornje Hoče«, »Spodnja

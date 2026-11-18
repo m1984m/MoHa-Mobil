@@ -70,6 +70,45 @@ export async function pridobi(dni: number): Promise<Statistika> {
   return res.json();
 }
 
+// ── Novi glas (GET/POST /glas, worker/src/glas.js) ──────────────────────────
+// Glasno branje bere glas ElevenLabs s plačljivimi krediti. Tu sta poraba
+// tekočega meseca in stikalo, ki ga izklopi za vse.
+
+export type StanjeGlasu = {
+  vklopljen: boolean;  // stikalo
+  kljuc: boolean;      // skrivnost ElevenLabs je nastavljena
+  mesec: string;       // 'YYYY-MM'
+  krediti: number;     // porabljeni ta mesec (samo nove povedi)
+  znaki: number;
+  povedi: number;      // novih povedi ta mesec
+  vsehPovedi: number;  // v shrambi
+  meja: number;        // mesečna meja kreditov
+};
+
+async function klicGlas(init?: RequestInit): Promise<StanjeGlasu> {
+  const url = naslov().replace(/\/stat$/, '/glas');
+  if (!url) throw new Error('Naslov Workerja ni nastavljen.');
+  const kljuc = beriKljuc();
+  if (!kljuc) throw new NapacenKljuc('Ključ ni vpisan.');
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...(init?.headers ?? {}), 'x-stat-key': kljuc },
+    cache: 'no-store',
+  });
+  if (res.status === 401) throw new NapacenKljuc('Ključ ni pravi.');
+  if (!res.ok) {
+    let podrobnost = '';
+    try { podrobnost = ((await res.json()) as any)?.error ?? ''; } catch {}
+    throw new Error(`Strežnik je vrnil ${res.status}${podrobnost ? ' — ' + podrobnost : ''}`);
+  }
+  return res.json();
+}
+
+export const pridobiGlas = () => klicGlas();
+export const nastaviGlas = (vklopljen: boolean) => klicGlas({
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vklopljen }),
+});
+
 /** Vsota stolpca `n`, ki pride kot niz (SQL vrne velike številke kot besedilo). */
 export function vsota(vrstice: Vrstica[], polje = 'n'): number {
   return vrstice.reduce((s, v) => s + (Number(v[polje]) || 0), 0);

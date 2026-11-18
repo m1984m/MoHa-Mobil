@@ -5,7 +5,7 @@
   import type { GTFS } from '../gtfs';
   import ChartTime from '../ui/viz/ChartTime.svelte';
   import ChartBars from '../ui/viz/ChartBars.svelte';
-  import { pridobi, beriKljuc, shraniKljuc, vsota, NapacenKljuc, type Statistika, type Vrstica } from '../stats';
+  import { pridobi, beriKljuc, shraniKljuc, vsota, NapacenKljuc, pridobiGlas, nastaviGlas, type Statistika, type Vrstica, type StanjeGlasu } from '../stats';
 
   // Skriti zaslon za razvijalca: odpre se po desetih dotikih na ime v
   // Nastavitvah. Vsebuje samo seštevke — nobenega podatka o posamezniku.
@@ -38,6 +38,8 @@
     try {
       podatki = await pridobi(dni);
       rabiKljuc = false;
+      // Novi glas je ločen klic in ne sme podreti statistike (Worker brez /glas vrne 404).
+      pridobiGlas().then(g => { glas = g; glasNapaka = ''; }).catch(() => { glas = null; });
       if (!StopMapComp && podatki.postaje?.length) {
         import('../ui/viz/StopMap.svelte').then(m => { StopMapComp = m.default; }).catch(() => {});
       }
@@ -51,6 +53,30 @@
       }
     } finally {
       nalagam = false;
+    }
+  }
+
+  // ── Novi glas (ElevenLabs): poraba meseca in stikalo za vse uporabnike ─────
+  let glas: StanjeGlasu | null = null;
+  let glasShranjujem = false;
+  let glasNapaka = '';
+  $: kreditiDelez = glas && glas.meja > 0 ? glas.krediti / glas.meja : glas ? 1 : 0;
+  $: kreditiOpozorilo = !glas ? ''
+    : !glas.kljuc ? 'Ključ ElevenLabs ni nastavljen. Bere prejšnji glas.'
+    : !glas.vklopljen ? 'Izklopljeno. Vsem bere prejšnji glas.'
+    : kreditiDelez >= 1 ? 'Mesečna meja je dosežena. Nove povedi do 1. v mesecu bere prejšnji glas.'
+    : '';
+
+  async function preklopiGlas() {
+    if (!glas || glasShranjujem) return;
+    glasShranjujem = true;
+    glasNapaka = '';
+    try {
+      glas = await nastaviGlas(!glas.vklopljen);
+    } catch (e) {
+      glasNapaka = e instanceof Error ? e.message : String(e);
+    } finally {
+      glasShranjujem = false;
     }
   }
 
@@ -95,7 +121,9 @@
   $: namescenih = podatki ? vsota(podatki.zagoni.filter(z => z.nacin === 'namescena')) : 0;
   // »prekinjen« = posrednik, ki ga je prehitel drugi (vzporedni klic od 12.10.2026) — ni
   // klic uporabnika, zato ne šteje v vsoto; »prazno« = ponoči brez avtobusov, ni napaka.
-  $: klicevZaledja = podatki ? vsota(podatki.zaledje.filter(v => v.izid !== 'prekinjen')) : 0;
+  // »odpoved« (od 18.11.2026) = vse poti so odpovedale in uporabnik je dobil 502; poskusi
+  // istega klica so že šteti vsak zase, zato tudi ta ne gre v vsoto.
+  $: klicevZaledja = podatki ? vsota(podatki.zaledje.filter(v => v.izid !== 'prekinjen' && v.izid !== 'odpoved')) : 0;
   $: napakZaledja = podatki
     ? vsota(podatki.zaledje.filter(v => v.izid === 'napaka' || v.izid === 'nedosegljiv' || v.izid === 'neznano')) : 0;
   $: medianaMs = odziv.length ? Math.round(odziv.reduce((a, b) => a + b.n, 0) / odziv.length) : 0;
@@ -211,6 +239,38 @@
 
           <!-- ploščice: ena vrednost na ploščico, brez grafa -->
           <div class="grid grid-cols-2 gap-3">
+            <!-- Novi glas: krediti ElevenLabs so plačljivi, zato meja in stikalo. -->
+            {#if glas}
+              {@const barva = kreditiDelez >= 1 ? 'var(--status-disrupt)' : 'var(--viz-1)'}
+              <div class="surface-2 rounded-2xl border border-base p-3 col-span-2">
+                <div class="t-footnote text-muted flex items-center gap-1.5"><Volume2 size={14} /> Novi glas ta mesec (ElevenLabs)</div>
+                <div class="flex items-baseline gap-2 flex-wrap">
+                  <div class="mm-hero">{stevilo(glas.krediti)}</div>
+                  <div class="t-subhead text-muted">od {stevilo(glas.meja)} kreditov · {odstotek(Math.min(1, kreditiDelez))} %</div>
+                </div>
+                <div class="mm-meter mt-2" role="meter" aria-valuemin="0" aria-valuemax={glas.meja} aria-valuenow={Math.min(glas.krediti, glas.meja)}
+                     aria-label="Poraba mesečne meje kreditov" style="--m: {barva}">
+                  <div class="mm-meter-fill" style="width: {Math.min(100, kreditiDelez * 100)}%"></div>
+                </div>
+                <div class="t-footnote text-muted mt-1.5">
+                  {stevilo(glas.povedi)} novih povedi ta mesec · {stevilo(glas.vsehPovedi)} v shrambi (te so zastonj)
+                </div>
+                {#if kreditiOpozorilo}
+                  <div class="t-footnote font-semibold mt-1 flex items-center gap-1.5"
+                       style="color: {glas.vklopljen && glas.kljuc ? 'var(--status-disrupt)' : 'var(--status-delay)'}">
+                    <TriangleAlert size={14} /> {kreditiOpozorilo}
+                  </div>
+                {/if}
+                {#if glasNapaka}
+                  <div class="t-footnote mt-1" style="color: var(--status-disrupt)" role="alert">Sprememba ni uspela: {glasNapaka}</div>
+                {/if}
+                <button class="pressable w-full min-h-[44px] rounded-xl t-subhead font-semibold border border-base surface mt-3"
+                        aria-pressed={glas.vklopljen} disabled={glasShranjujem}
+                        on:click={preklopiGlas}>
+                  {glasShranjujem ? 'Shranjujem …' : glas.vklopljen ? 'Izklopi novi glas' : 'Vklopi novi glas'}
+                </button>
+              </div>
+            {/if}
             <!-- Kvota glasu: razmerje proti meji → merilnik (sled je svetlejši korak iste barve). -->
             <div class="surface-2 rounded-2xl border border-base p-3 col-span-2">
               <div class="t-footnote text-muted flex items-center gap-1.5"><Volume2 size={14} /> Glas Petra ta mesec (Azure F0)</div>
@@ -328,7 +388,7 @@
               <h2 class="t-footnote text-muted uppercase tracking-wide mb-2">Zaledje po dnevih</h2>
               <ul class="surface rounded-2xl border border-base overflow-hidden">
                 {#each podatki.zaledje as v, i}
-                  {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv' || v.izid === 'neznano'}
+                  {@const slabo = v.izid === 'napaka' || v.izid === 'nedosegljiv' || v.izid === 'neznano' || v.izid === 'odpoved'}
                   {@const nevtralno = v.izid === 'prekinjen' || v.izid === 'prazno'}
                   <li class="px-4 py-2.5 flex items-center gap-3 {i > 0 ? 'border-t border-base' : ''}">
                     <div class="flex-1 min-w-0">

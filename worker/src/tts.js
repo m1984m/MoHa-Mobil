@@ -22,6 +22,7 @@
 
 import { recordUpstream } from './analytics.js';
 import { edgeSynth } from './edge.js';
+import { glasVklopljen, noviZvok, GLAS_PRIVZETO, MODEL_PRIVZETO } from './glas.js';
 
 const VOICE = 'sl-SI-PetraNeural';
 // Enako kot `rate = 0.9` pri sistemskem glasu: bere se med hojo ali na postaji.
@@ -99,8 +100,11 @@ export function ssmlEdge(text) {
     + `<voice name='${VOICE}'><prosody pitch='+0Hz' rate='${RATE}' volume='+0%'>${xmlEscape(text)}</prosody></voice></speak>`;
 }
 
-async function kljuc(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${VOICE}|${RATE}|${FORMAT}|${text}`));
+// `novi`: oznaka novega glasu in modela, kadar bere on. Posnetka obeh glasov
+// imata ločena ključa, da stikalo v /glas velja takoj in ne šele čez 24 ur.
+async function kljuc(text, novi = '') {
+  const glas = novi ? `eleven|${novi}` : `${VOICE}|${RATE}|${FORMAT}`;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${glas}|${text}`));
   const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   return new Request(`https://tts.moha-mobil.cache/${hex}`);
 }
@@ -138,8 +142,13 @@ export async function handleTts(request, env, ctx, cors) {
     headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Proxy-Cache': oznaka, ...cors },
   });
 
+  // Novi glas (ElevenLabs, glas.js): kadar je nastavljen in vklopljen, bere on;
+  // ob napaki, izteku ali doseženi mesečni meji kreditov bere prejšnji glas.
+  const novi = await glasVklopljen(env).catch(() => false);
+  if (novi) metoda = 'eleven';
+
   const cache = caches.default;
-  const cacheKey = await kljuc(text);
+  const cacheKey = await kljuc(text, novi ? `${env.ELEVENLABS_VOICE_ID || GLAS_PRIVZETO}|${env.ELEVENLABS_MODEL || MODEL_PRIVZETO}` : '');
   const hit = await cache.match(cacheKey);
   if (hit) {
     stej('cache', 200);
@@ -153,6 +162,33 @@ export async function handleTts(request, env, ctx, cors) {
     stej('zavora', 429);
     return napaka({ error: 'preveč zahtev' }, 429, cors);
   }
+
+  if (novi) {
+    const r = await noviZvok(env, ctx, text);
+    if (r.buf && r.buf.byteLength >= MIN_BYTES) {
+      // `znaki` so samo novi znaki, ki jih je ElevenLabs zaračunal; povedi iz
+      // shrambe so zastonj. Branje brez ene nove povedi šteje kot zadetek.
+      stej(r.novihPovedi ? 'ok' : 'cache', 200, r.novihZnakov);
+      ctx.waitUntil(cache.put(cacheKey, new Response(r.buf.slice(0), {
+        headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': `public, max-age=${CACHE_S}` },
+      })));
+      return zvok(r.buf, r.novihPovedi ? 'MISS' : 'HIT-SHRAMBA');
+    }
+    // 'meja' = mesečna meja kreditov, 'povedi' = besedilo ni za novi glas, 'napaka' = ElevenLabs.
+    stej(r.napaka === 'meja' || r.napaka === 'povedi' ? r.napaka : 'napaka', 502, r.novihZnakov ?? 0);
+    // Prejšnji glas ima svoj ključ predpomnilnika. Brez tega pogleda bi ob doseženi
+    // meji vsako branje do konca meseca znova klicalo Azure in Edge.
+    metoda = 'edge';
+    const prej = await cache.match(await kljuc(text));
+    if (prej) {
+      stej('cache', 200);
+      return zvok(prej.body, 'HIT');
+    }
+  }
+
+  // Aplikacija čaka 12 s (speech.ts). Če je novi glas pred tem porabil svoj čas, dobi prejšnji
+  // glas samo ostanek, da odgovor pride prej, kot aplikacija odneha in bere glas telefona.
+  const preostane = () => Math.min(TIMEOUT_MS, Math.max(3000, 11000 - (Date.now() - zacetek)));
 
   // Azure: vrne zvok ali null (napaka se zabeleži, nato poskusi Edge).
   metoda = 'edge';
@@ -168,7 +204,7 @@ export async function handleTts(request, env, ctx, cors) {
           'User-Agent': 'moha-mobil-proxy',
         },
         body: ssml(text),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(preostane()),
       });
       if (res.ok && (res.headers.get('Content-Type') ?? '').startsWith('audio/')) {
         const b = await res.arrayBuffer();
@@ -184,7 +220,7 @@ export async function handleTts(request, env, ctx, cors) {
   }
   if (!buf) {
     try {
-      buf = await edgeSynth(ssmlEdge(text), { format: FORMAT, timeoutMs: TIMEOUT_MS });
+      buf = await edgeSynth(ssmlEdge(text), { format: FORMAT, timeoutMs: preostane() });
     } catch (e) {
       stej(e?.name === 'TimeoutError' ? 'nedosegljiv' : 'napaka', e?.status ?? 502);
       return napaka({ error: 'tts', detail: String(e?.message ?? e).slice(0, 120) }, 502, cors);
@@ -195,7 +231,11 @@ export async function handleTts(request, env, ctx, cors) {
     }
   }
   stej('ok', 200, text.length);
-  ctx.waitUntil(cache.put(cacheKey, new Response(buf.slice(0), {
+  // Kadar je novi glas vklopljen, a je tokrat bral prejšnji glas (iztek, meja, napaka), gre
+  // posnetek pod ključ prejšnjega glasu. Pod njegovim bi isto besedilo še 24 ur vračalo
+  // prejšnji glas, čeprav so povedi medtem že plačane in v shrambi.
+  const kljucZapisa = novi ? await kljuc(text) : cacheKey;
+  ctx.waitUntil(cache.put(kljucZapisa, new Response(buf.slice(0), {
     headers: { 'Content-Type': 'audio/mpeg', 'Cache-Control': `public, max-age=${CACHE_S}` },
   })));
   return zvok(buf, 'MISS');

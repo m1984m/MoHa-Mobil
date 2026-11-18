@@ -10,12 +10,10 @@
 // Verzija pride iz package.json prek vite define (__APP_VERSION__) — en sam
 // vir resnice; prej so se package.json, release.ts in sw.js verzije razhajale.
 export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-export const RELEASE_DATE = '14. 11. 2026';
+export const RELEASE_DATE = '18. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
-  'Glas pravilno prebere »Zg.« in »Sp.« pred krajem (Zgornje Hoče, Spodnja Polskava)',
-  'Krožna linija G3 je zdaj vidna tudi pod »V center« in »Iz centra«',
-  'Hitrejši prvi zagon: odhodi se pokažejo v približno polovici prejšnjega časa',
-  'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi',
-  'Karta in načrtovalnik se naložita v ozadju, ko so odhodi že na zaslonu',
+  'Petra ima nov, bolj naraven glas',
+  'Ure in številke prebere z besedo, v pravem sklonu',
+  'Prihodi v živo so zanesljivejši: dodana je rezervna povezava',
 ];

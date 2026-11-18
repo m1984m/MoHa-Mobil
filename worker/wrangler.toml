@@ -14,6 +14,18 @@ ALLOWED_ORIGINS = "https://m1984m.github.io,http://localhost:9125,http://127.0.0
 # Brez kljuca /tts vrne 503 in aplikacija bere s sistemskim glasom telefona.
 AZURE_SPEECH_REGION = "germanywestcentral"
 
+# Novi glas (ElevenLabs, src/glas.js), v aplikaciji se še naprej imenuje Petra. Kljuc NI
+# tu, je skrivnost (lasten kljuc samo za govor, z mejo kreditov pri ElevenLabs):
+#   npx wrangler secret put ELEVENLABS_API_KEY
+# Tabeli v D1 (enkrat): npx wrangler d1 execute moha-spremljanje --remote --file glas.sql
+# Brez kljuca ali tabel bere prejsnji glas (Edge). Vsaka poved se zaracuna enkrat in
+# ostane v D1; GLAS_MEJA_KREDITOV je zgornja meja novih kreditov na koledarski mesec,
+# po njej do konca meseca bere prejsnji glas. Izklop brez brisanja skrivnosti: zaslon
+# Statistika v aplikaciji (POST /glas).
+ELEVENLABS_VOICE_ID = "1QgmVFFJ2yzJsEU1pSGg"
+ELEVENLABS_MODEL = "eleven_v4_turbo"
+GLAS_MEJA_KREDITOV = "3000"
+
 # Posredniki za OBA, ker Cloudflare do vozniredi.marprom.si ne pride (tiho zavrženi
 # paketi): od 16. do 22.09.2026 in znova od 05.10.2026 zvečer (Worker 502, neposredno
 # 200 v 0,2 s). Vmes (22.09.–05.10.) posrednika ni bilo, ker je brezplačni Deno

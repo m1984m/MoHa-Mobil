@@ -18,6 +18,7 @@
  *   POST /ors/directions/foot-walking/geojson
  *   POST /ors/matrix/foot-walking
  *   POST /tts                     (glasno branje, glej tts.js)
+ *   GET|POST /glas                (stikalo in poraba novega glasu, glej glas.js; za geslom)
  *   GET  /health
  *
  * Tretja naloga (dodano kasneje): alarm za odhod avtobusa. Telefon sme obvestilo
@@ -42,6 +43,7 @@ import {
 } from './oba.js';
 import { ogrejPredpomnilnik } from './warm.js';
 import { handleTts } from './tts.js';
+import { handleGlas } from './glas.js';
 import { zabeleziVozila, handleSpremljanje } from './spremljanje.js';
 
 // Marprom je dosegljiv NEPOSREDNO samo, kadar Worker nima nastavljenega OBA_RELAY.
@@ -1332,7 +1334,8 @@ async function usmeri(request, env, ctx, cors) {
       ok: true,
       orsConfigured: !!env.ORS_KEY,
       ttsConfigured: true,
-      ttsEngine: env.TTS_ENGINE !== 'edge' && env.AZURE_SPEECH_KEY ? 'azure+edge' : 'edge',
+      // 'eleven+' pove samo, da je skrivnost ElevenLabs nastavljena; stikalo je v /glas (za geslom).
+      ttsEngine: (env.ELEVENLABS_API_KEY ? 'eleven+' : '') + (env.TTS_ENGINE !== 'edge' && env.AZURE_SPEECH_KEY ? 'azure+edge' : 'edge'),
       allowedOrigins: allowedOrigins(env).length,
       obaVia: env.OBA_RELAY ? 'relay' : 'direct',
       relays: String(env.OBA_RELAY ?? '').split(',').filter(s => s.trim()).length,
@@ -1350,6 +1353,7 @@ async function usmeri(request, env, ctx, cors) {
   if (path.startsWith('/ors/')) return handleOrs(request, env, ctx, path, cors);
   if (path.startsWith('/alarms/')) return handleAlarms(request, env, ctx, path, cors);
   if (path === '/tts') return handleTts(request, env, ctx, cors);
+  if (path === '/glas') return handleGlas(request, env, cors);
   if (path === '/spremljanje' || path.startsWith('/spremljanje/')) return handleSpremljanje(request, env, path, cors);
 
   return json({ error: 'not found' }, 404, cors);

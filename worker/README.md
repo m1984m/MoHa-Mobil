@@ -601,6 +601,30 @@ Napačen ključ ali porabljena kvota (Azure 401/403) vrne 503, aplikacija do kon
 seje bere s sistemskim glasom. Omejevalnik na IP je vezava `TTS_LIMITER`
 (`[[ratelimits]]`), ki ne piše v KV.
 
+### Novi glas (ElevenLabs), od novembra 2026
+
+Pred Azure in Edge bere glas ElevenLabs (`src/glas.js`). V aplikaciji se glas še naprej
+imenuje Petra. Krediti ElevenLabs so plačljivi in omejeni, zato:
+
+- vsaka **poved** se sintetizira enkrat in ostane v D1 (`glas_povedi`), naslednjič je
+  zastonj; besedilo se pred tem razpiše brez števk (`src/stevilke.js`);
+- mesečna meja kreditov `GLAS_MEJA_KREDITOV` (rezervacija v `glas_poraba` pred klicem);
+- stikalo za izklop na zaslonu Statistika (`GET/POST /glas`, geslo `x-stat-key`);
+- ob napaki, izteku (4,5 s), doseženi meji ali izklopu bere prejšnji glas (Edge).
+
+Postavitev:
+
+1. `npx wrangler d1 execute moha-spremljanje --remote --file glas.sql` (tabele, varno ponoviti)
+2. `npx wrangler secret put ELEVENLABS_API_KEY` (ločen ključ za MoHa Mobil: samo pravica za
+   govor, mesečna meja kreditov malo nad `GLAS_MEJA_KREDITOV`, da prej prime Workerjeva)
+3. Objavi Worker; `/health` javi `ttsEngine: "eleven+…"`.
+
+Brez ključa ali tabel pogona ni in `/tts` dela kot prej. Preverbe:
+`node --test scripts/test-glas.mjs`.
+
+Menjava glasu ali modela (`ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`) pomeni nove
+ključe povedi: stare ostanejo v bazi, vse se plača znova.
+
 ## Analitika (Workers Analytics Engine)
 
 Worker piše dogodke v nabor `moha_mobil` prek vezave `ANALYTICS`

@@ -74,9 +74,10 @@ export function poizvedbe(dni, zdaj = new Date()) {
   return {
     // Glasno branje: double4 = znaki, ki jih je sintetiziral Azure (0 pri zadetku
     // v predpomnilniku). Zapisi pred 0.22.4 nimajo double4 in štejejo kot 0.
+    // Brez znakov novega glasu (blob3 'eleven'): ti gredo v kredite ElevenLabs (/glas), ne v kvoto Azure.
     glasMesec: `
       SELECT SUM(double4 * _sample_interval) AS znakov, SUM(_sample_interval) AS n
-      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 = 'tts' AND timestamp >= toDateTime('${mesecOd}')
+      FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 = 'tts' AND blob3 != 'eleven' AND timestamp >= toDateTime('${mesecOd}')
       FORMAT JSON`,
     glasDnevi: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
