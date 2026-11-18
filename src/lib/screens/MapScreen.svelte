@@ -1467,7 +1467,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <ReadAloud resetKey={selectedVehicle.tripId} text={vehicleText} />
+            <ReadAloud tesno resetKey={selectedVehicle.tripId} text={vehicleText} />
             <button class="pressable w-11 h-11 rounded-full grid place-items-center shrink-0"
                     style="background: {followBus ? 'var(--accent)' : 'var(--surface-2)'}; color: {followBus ? 'white' : 'var(--text)'}"
                     on:click={() => followBus = !followBus}

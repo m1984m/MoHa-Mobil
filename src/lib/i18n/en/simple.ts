@@ -22,6 +22,9 @@ export default {
   'Moji avtobusi': 'My buses',
   'Ustavi branje': 'Stop reading',
   'Preberi na glas': 'Read aloud',
+  // Kapsula za branje v navadnem pogledu (ReadAloud): v slovenščini piše »Petra«.
+  'Ustavi': 'Stop',
+  'Poslušaj': 'Listen',
   'Dovoli lokacijo, da vidiš odhode s postajališča, kjer si.': 'Allow location to see departures from the stop where you are.',
   'V bližini ni postajališča. Odpri karto ali izberi cilj spodaj.': 'There is no stop nearby. Open the map or choose a destination below.',
   'posodobljeno ob {time}': 'updated at {time}',

@@ -5,6 +5,18 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.7 — 2026-11-18
+
+- Gumb za glasno branje v navadnem pogledu je obarvana kapsula z imenom »Petra« (prej siva ikona zvočnika).
+  Med branjem piše »Ustavi«, v angleščini »Listen«; na zaslonih, ožjih od 340 px, ostane obarvan krog.
+- Popravki glasnega branja po posluhu: vezaj v imenu postajališča (»Zrkovska - Gasilski dom«) se bere kot
+  vejica, kratka poved (»V živo.«) se pripne k prejšnji, oznaka »S31« se bere »Es enaintrideset«. Naslov
+  novega postajališča vedno začne novo poved, da je »Postajališče Tabor. V živo.« ista poved na Domu in v
+  listu postajališča.
+- Načrt poti: naslov s hišno številko se bere »Pot do naslova Ulica Veljka Vlahovića 87«, pot samo peš pa
+  »Avtobusa ne potrebuješ, do cilja je dvanajst minut hoje«.
+- Mesečna meja kreditov novega glasu je znižana na 1.500.
+
 ## 0.30.6 — 2026-11-18
 
 - Kartica »Petra ima nov glas« se po posodobitvi enkrat pokaže vsem uporabnikom, z gumbom »Poslušaj Petro«.

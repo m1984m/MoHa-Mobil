@@ -358,7 +358,7 @@
         <div class="t-footnote text-muted">{favList.length} {plural(favList.length, ['postajališče', 'postajališči', 'postajališča', 'postajališč'], ['stop', 'stops'])}</div>
         <div class="flex items-center gap-2">
           <LiveDot live={favLive} label={favLive ? $t('V živo') : $t('Po voznem redu')} />
-          <ReadAloud text={() => departuresSpeech(boards.map(b => ({
+          <ReadAloud tesno text={() => departuresSpeech(boards.map(b => ({
             name: b.stop.name, rows: b.rows,
             empty: gtfs && b.rows.length === 0 ? emptyStopSpeech(gtfs, b.stop.id) : undefined,
           })))} />

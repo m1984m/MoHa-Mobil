@@ -20,6 +20,8 @@ export default {
   'Pot do cilja {cilj}.': 'Route to {cilj}.',
   'Pot do cilja.': 'Route to your destination.',
   'Pojdi peš {trajanje}.': 'Walk for {trajanje}.',
+  'Pot do naslova {cilj}.': 'Route to {cilj}.',
+  'Avtobusa ne potrebuješ, do cilja je {trajanje} hoje.': 'No bus needed, your destination is {trajanje} on foot.',
   'Kreni ob {time}, na cilju boš ob {arr}.': 'Leave at {time}, you will arrive at {arr}.',
   'Pojdi peš {trajanje} od postajališča {od} do postajališča {do}.': 'Walk for {trajanje} from stop {od} to stop {do}.',
   'Pojdi peš {trajanje} do postajališča {stop}.': 'Walk for {trajanje} to stop {stop}.',

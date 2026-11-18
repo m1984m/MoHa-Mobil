@@ -288,6 +288,7 @@ export default {
   'Vozni red je desetkrat manjši, zato se hitreje prenese in posodobi': 'The timetable is ten times smaller, so it downloads and updates faster',
   'Karta in načrtovalnik se naložita v ozadju, ko so odhodi že na zaslonu': 'The map and trip planner load in the background once departures are on screen',
   'Petra ima nov, bolj naraven glas': 'Petra, the Slovenian voice, sounds new and more natural',
+  'Gumb za branje nosi njeno ime: tapni »Petra« in poslušaj': 'The read-aloud button is now easier to spot: tap “Listen”',
   'Ure in številke prebere z besedo, v pravem sklonu': 'She reads times and numbers out as words, in the correct form',
   'Prihodi v živo so zanesljivejši: dodana je rezervna povezava': 'Live arrivals are more reliable: a backup connection has been added',
   'Zvonec: opomnik za ta odhod upošteva zamudo in pove, kdaj prvič zazvoni': 'Bell: a reminder for this departure accounts for delay and tells you when it first rings',

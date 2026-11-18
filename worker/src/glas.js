@@ -63,11 +63,28 @@ export function mesecLj(ms) {
  * preveč skupaj pa pomeni samo manj ponovne rabe.
  */
 export function povedi(besedilo) {
-  const deli = String(besedilo ?? '').trim().split(/(?<=[.!?])\s+(?=[A-ZČŠŽĐĆ])/u).filter(Boolean);
+  // Vezaj s presledki v imenih postajališč (»Zrkovska - Gasilski dom«) glas prebere z
+  // nenaravnim premorom; vejica da kratek, naraven premor (Matej zavrnil 18.11.2026).
+  const cisto = String(besedilo ?? '').trim().replace(/(?<=\p{L}|\d)\s+[-–—]\s+(?=\p{L}|\d)/gu, ', ')
+    // Oznaka »S31« (forSpeech: »S enaintrideset«): sama črka S zveni kot predlog »s«; Matej je
+    // 18.11.2026 izbral »Es enaintrideset«. Samo pred številom z besedo.
+    .replace(/(^|[^\p{L}])S (?=\p{L}*(?:ena|dva|dve|tri|štiri|pet|šest|sedem|osem|devet|deset|najst|set|sto)(?![\p{L}]))/gu, '$1Es ');
+  const deli = cisto.split(/(?<=[.!?])\s+(?=[A-ZČŠŽĐĆ])/u).filter(Boolean);
+  const cele = [];
+  for (const d of deli) {   // za kratko okrajšavo se ne reže
+    const prej = cele[cele.length - 1];
+    if (prej !== undefined && /(^|\s)\p{Lu}\p{L}{0,2}\.$/u.test(prej)) cele[cele.length - 1] = `${prej} ${d}`;
+    else cele.push(d);
+  }
+  // Poved iz ene ali dveh besed (»V živo.«) sama zveni odsekano (Matej zavrnil 18.11.2026),
+  // zato gre k prejšnji. Izjema je naslov novega postajališča (»Postajališče Tabor.«
+  // ima tudi samo dve besedi): ta začne novo poved, sicer bi se na Domu, kjer se bere
+  // več postajališč zapored, prilepil na zadnji odhod prejšnjega in bi bila vsaka taka
+  // kombinacija nova, plačana poved. Tako je »Postajališče Tabor. V živo.« ista poved
+  // na Domu in v listu postajališča.
   const out = [];
-  for (const d of deli) {
-    const prej = out[out.length - 1];
-    if (prej !== undefined && /(^|\s)\p{Lu}\p{L}{0,2}\.$/u.test(prej)) out[out.length - 1] = `${prej} ${d}`;
+  for (const d of cele) {
+    if (out.length && d.split(/\s+/).length <= 2 && !d.startsWith('Postajališče ')) out[out.length - 1] += ` ${d}`;
     else out.push(d);
   }
   return out;

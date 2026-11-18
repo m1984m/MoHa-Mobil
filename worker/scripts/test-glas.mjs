@@ -81,9 +81,16 @@ test('vBesede: besedilo brez števk in že razpisane minute ostanejo, kot so', (
 // ── povedi, ključ, MP3, časi besed ──────────────────────────────────────────
 
 test('povedi: meja pri končnem ločilu, za kratko okrajšavo se ne reže', () => {
-  assert.deepEqual(povedi('Postajališče Glavni trg. V živo. Linija G šest, smer Kamnica, čez štiri minute.'), [
-    'Postajališče Glavni trg.', 'V živo.', 'Linija G šest, smer Kamnica, čez štiri minute.',
+  assert.deepEqual(povedi('Postajališče Glavni trg. Linija G šest, smer Kamnica, čez štiri minute. V živo. Zamuja dve minuti.'), [
+    'Postajališče Glavni trg.', 'Linija G šest, smer Kamnica, čez štiri minute. V živo.', 'Zamuja dve minuti.',
   ]);
+  // vezaj s presledki → vejica; vezaj v besedi ostane
+  assert.deepEqual(povedi('Postajališče Zrkovska - Gasilski dom. Linija G šest.'), [
+    'Postajališče Zrkovska, Gasilski dom.', 'Linija G šest.',
+  ]);
+  assert.deepEqual(povedi('Postajališče Ul. Veljka Vlahoviča – S enaintrideset.'), ['Postajališče Ul. Veljka Vlahoviča, Es enaintrideset.']);
+  assert.deepEqual(povedi('S tem je konec. Linija S šest.'), ['S tem je konec.', 'Linija Es šest.']);
+  assert.deepEqual(povedi('V živo.'), ['V živo.']);
   assert.deepEqual(povedi('Dobro jutro! Postajališče Sv. Peter. Po voznem redu.'), [
     'Dobro jutro!', 'Postajališče Sv. Peter.', 'Po voznem redu.',
   ]);
@@ -187,7 +194,7 @@ function lazniElevenLabs({ padePri = null, strosek = null, zamik = 0 } = {}) {
 const okolje = (db, dodatno = {}) => ({ ELEVENLABS_API_KEY: 'k', SPREMLJANJE_DB: db, STAT_KEY: 'geslo', ...dodatno });
 const ctx = () => { const cakaj = []; return { cakaj, waitUntil: (p) => cakaj.push(p) }; };
 const T0 = Date.UTC(2026, 10, 18, 12, 0);
-const BRANJE = 'Postajališče Glavni trg. V živo. Linija G šest, smer Kamnica, čez štiri minute. Linija P 7, smer Kamnica, ob 14:35. V živo.';
+const BRANJE = 'Postajališče Glavni trg. Linija G šest, smer Kamnica, čez štiri minute. V živo. Linija P 7, smer Kamnica, ob 14:35. Po voznem redu. Linija G šest, smer Kamnica, čez štiri minute. V živo.';
 
 test('noviZvok: prvič sintetizira vsako različno poved enkrat, drugič vse iz shrambe', async () => {
   pozabiStanje();
@@ -198,11 +205,11 @@ test('noviZvok: prvič sintetizira vsako različno poved enkrat, drugič vse iz 
   await Promise.all(c.cakaj);
   assert.equal(r.napaka, undefined);
   assert.equal(r.povedi, 5);
-  assert.equal(r.novihPovedi, 4);                       // »V živo.« je dvakrat, plača se enkrat
+  assert.equal(r.novihPovedi, 4);                       // ista poved je dvakrat, plača se enkrat
   assert.equal(el.klici.length, 4);
   assert.deepEqual(el.klici.map(k => k.text).sort(), [
-    'Linija G šest, smer Kamnica, čez štiri minute.', 'Linija P sedem, smer Kamnica, ob štirinajst petintrideset.',
-    'Postajališče Glavni trg.', 'V živo.',
+    'Linija G šest, smer Kamnica, čez štiri minute. V živo.', 'Linija P sedem, smer Kamnica, ob štirinajst petintrideset.',
+    'Po voznem redu.', 'Postajališče Glavni trg.',
   ]);
   const k0 = el.klici[0];
   assert.ok(k0.url.includes(`/v1/text-to-speech/${GLAS_PRIVZETO}/with-timestamps`) && k0.url.includes('output_format=mp3_44100_64'));
@@ -212,8 +219,8 @@ test('noviZvok: prvič sintetizira vsako različno poved enkrat, drugič vse iz 
   assert.equal(k0.glave['xi-api-key'], 'k');
 
   // Zlepljen zvok: pet kosov brez oznak ID3, v vrstnem redu besedila.
-  const dolzine = ['Postajališče Glavni trg.', 'V živo.', 'Linija G šest, smer Kamnica, čez štiri minute.',
-    'Linija P sedem, smer Kamnica, ob štirinajst petintrideset.', 'V živo.'].map(s => 2000 + s.length);
+  const dolzine = ['Postajališče Glavni trg.', 'Linija G šest, smer Kamnica, čez štiri minute. V živo.',
+    'Linija P sedem, smer Kamnica, ob štirinajst petintrideset.', 'Po voznem redu.', 'Linija G šest, smer Kamnica, čez štiri minute. V živo.'].map(s => 2000 + s.length);
   assert.equal(r.buf.byteLength, dolzine.reduce((a, b) => a + b, 0));
   const u8 = new Uint8Array(r.buf);
   assert.equal(u8[0], 0xff);
@@ -241,7 +248,7 @@ test('noviZvok: prvič sintetizira vsako različno poved enkrat, drugič vse iz 
   assert.deepEqual([...new Uint8Array(r2.buf)], [...u8]);
 
   // Tretje: ena nova poved, ostale iz shrambe.
-  const r3 = await noviZvok(okolje(db), ctx(), 'Postajališče Glavni trg. Po voznem redu.', { fetchFn: el.fetchFn, zdaj: () => T0 });
+  const r3 = await noviZvok(okolje(db), ctx(), 'Postajališče Glavni trg. Danes brez padavin.', { fetchFn: el.fetchFn, zdaj: () => T0 });
   assert.equal(r3.novihPovedi, 1);
   assert.equal(el.klici.length, 5);
 });
@@ -304,7 +311,7 @@ test('noviZvok: meja dolžine velja po razpisu števk', async () => {
 test('noviZvok: prazno, preveč povedi in izjema baze vrnejo napako, ne vržejo', async () => {
   const el = lazniElevenLabs();
   assert.equal((await noviZvok(okolje(lazniD1()), ctx(), '   ', { fetchFn: el.fetchFn })).napaka, 'povedi');
-  const dolgo = Array.from({ length: NAJVEC_POVEDI + 1 }, (_, i) => `Stavek ${'abcdefghijklmnopqrstu'[i]}.`).join(' ');
+  const dolgo = Array.from({ length: NAJVEC_POVEDI + 1 }, (_, i) => `Kratek stavek ${'abcdefghijklmnopqrstu'[i]}.`).join(' ');
   assert.equal((await noviZvok(okolje(lazniD1()), ctx(), dolgo, { fetchFn: el.fetchFn })).napaka, 'povedi');
   assert.equal((await noviZvok(okolje(lazniD1({ shema: false })), ctx(), 'Po voznem redu.', { fetchFn: el.fetchFn })).napaka, 'elevenlabs');
   assert.equal(el.klici.length, 0);
@@ -406,12 +413,12 @@ test('/glas: geslo, oblika telesa in poraba meseca', async () => {
   assert.equal((await handleGlas(zahteva('GET'), okolje(lazniD1({ shema: false })), {})).status, 503);
 
   const c = ctx();
-  await noviZvok(env, c, 'Po voznem redu. Brez padavin.', { fetchFn: lazniElevenLabs({ strosek: 40 }).fetchFn });
+  await noviZvok(env, c, 'Po voznem redu. Danes brez padavin.', { fetchFn: lazniElevenLabs({ strosek: 40 }).fetchFn });
   await Promise.all(c.cakaj);
   pozabiStanje();
   const s = await (await handleGlas(zahteva('GET'), env, { 'Access-Control-Allow-Origin': 'x' })).json();
   assert.deepEqual({ vklopljen: s.vklopljen, kljuc: s.kljuc, krediti: s.krediti, povedi: s.povedi, vsehPovedi: s.vsehPovedi, meja: s.meja, znaki: s.znaki },
-    { vklopljen: true, kljuc: true, krediti: 80, povedi: 2, vsehPovedi: 2, meja: 3000, znaki: 'Po voznem redu.'.length + 'Brez padavin.'.length });
+    { vklopljen: true, kljuc: true, krediti: 80, povedi: 2, vsehPovedi: 2, meja: 3000, znaki: 'Po voznem redu.'.length + 'Danes brez padavin.'.length });
   assert.equal(s.glas, GLAS_PRIVZETO);
   pozabiStanje();
 });
@@ -520,4 +527,15 @@ test('/tts: novi glas bere, drugo branje pride iz shrambe; ob napaki ElevenLabs 
     globalThis.caches = izvirnik.caches;
     pozabiStanje();
   }
+});
+
+test('povedi: naslov postajališča začne novo poved, tudi ko ima samo dve besedi', () => {
+  // Na Domu se bere več postajališč zapored. »Postajališče Tabor.« se ne sme prilepiti na
+  // zadnji odhod prejšnjega, sicer je vsaka kombinacija nova, plačana poved.
+  assert.deepEqual(povedi('Postajališče Glavni trg. V živo. Linija G šest, smer Kamnica, čez štiri minute. Postajališče Tabor. V živo. Linija P sedem, smer Tezno, prihaja zdaj.'), [
+    'Postajališče Glavni trg. V živo.', 'Linija G šest, smer Kamnica, čez štiri minute.',
+    'Postajališče Tabor. V živo.', 'Linija P sedem, smer Tezno, prihaja zdaj.',
+  ]);
+  // Ista poved kot v listu enega postajališča: pride iz shrambe.
+  assert.deepEqual(povedi('Postajališče Tabor. V živo.'), ['Postajališče Tabor. V živo.']);
 });

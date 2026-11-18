@@ -14,6 +14,7 @@ export const RELEASE_DATE = '18. 11. 2026';
 
 export const RELEASE_NOTES: readonly string[] = [
   'Petra ima nov, bolj naraven glas',
+  'Gumb za branje nosi njeno ime: tapni »Petra« in poslušaj',
   'Ure in številke prebere z besedo, v pravem sklonu',
   'Prihodi v živo so zanesljivejši: dodana je rezervna povezava',
 ];

@@ -151,11 +151,18 @@ const isRail = (routeId: number) => ijppRouteInfo(routeId)?.rail === true;
 export function planSpeech(legs: PlanLeg[], cilj: string, baseDay?: number | null): string {
   const walkSec = (from: number, to: number) =>
     legs.slice(from, to).reduce((a, l) => a + (l.kind === 'walk' ? l.sec : 0), 0);
-  const out: string[] = [cilj ? tr('Pot do cilja {cilj}.', { cilj }) : tr('Pot do cilja.')];
+  // Naslov iz iskalnika pride s številko spredaj (»87, Ulica Veljka Vlahovića«): beremo ga kot naslov,
+  // ulica in nato številka (Matej 18.11.2026 po posluhu izbral »Pot do naslova …«).
+  const naslov = /^(\d+\s?[a-zA-Z]?),\s*(.+)$/.exec((cilj ?? '').trim());
+  const out: string[] = [
+    naslov ? tr('Pot do naslova {cilj}.', { cilj: `${naslov[2]} ${naslov[1]}` })
+      : cilj ? tr('Pot do cilja {cilj}.', { cilj }) : tr('Pot do cilja.'),
+  ];
 
   const first = legs.findIndex(l => l.kind === 'bus');
   if (first < 0) {
-    out.push(tr('Pojdi peš {trajanje}.', { trajanje: duration(walkSec(0, legs.length) / 60) }));
+    // »Pojdi peš eno minuto.« je zvenelo okorno (Matej 18.11.2026).
+    out.push(tr('Avtobusa ne potrebuješ, do cilja je {trajanje} hoje.', { trajanje: duration(walkSec(0, legs.length) / 60, 'im') }));
     return out.join(' ');
   }
   let last = first;
