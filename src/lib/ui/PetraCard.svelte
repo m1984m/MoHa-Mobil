@@ -8,11 +8,15 @@
 
   // Novost po posodobitvi: obstoječi uporabnik enkrat vidi kartico s Petro.
   // Novi jo dobijo v vodiču (WelcomeModal), ki jo ob koncu označi kot videno.
+  // Od 0.30.6 kartica pove, da ima Petra nov glas, in se enkrat pokaže vsem,
+  // tudi tistim, ki so prvo predstavitev že videli. Zapre obe oznaki, da uporabnik,
+  // ki prve ni videl, ne dobi dveh kartic zapored.
   let done = false;
   function close() {
     if (done) return;
     done = true;
     markIntro('petra');
+    markIntro('novGlas');
   }
   // Sistemski nazaj kartico zapre (ne aplikacije).
   const back: BackRelease = pushBack(close);
@@ -23,11 +27,11 @@
 
 <div class="fixed inset-0 z-[90] flex flex-col surface"
      style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);"
-     role="dialog" aria-modal="true" aria-label={$t('Spoznaj Petro')} tabindex="-1"
+     role="dialog" aria-modal="true" aria-label={$t('Petra ima nov glas')} tabindex="-1"
      use:focusTrap>
   <div class="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center gap-3 px-6">
     <div class="t-footnote font-semibold uppercase tracking-wide" style="color: var(--accent)">{$t('Novo')}</div>
-    <PetraIntro />
+    <PetraIntro novGlas />
   </div>
   <div class="px-5 pb-5 pt-2">
     <button type="button"

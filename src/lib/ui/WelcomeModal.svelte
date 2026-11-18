@@ -31,6 +31,7 @@
     // Najprej označi predstavitev Petre kot videno — sicer bi App za trenutek
     // pokazal še kartico z novostjo (PetraCard).
     markIntro('petra');
+    markIntro('novGlas');
     onboardingDone.set(true);
   }
 

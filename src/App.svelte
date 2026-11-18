@@ -727,8 +727,9 @@
 {/key}
 
 <!-- Zunaj {#key}: ob izbiri jezika na prvi kartici se vodič ne sme zapreti ali vrniti na začetek. -->
-<!-- Novost po posodobitvi: predstavitev Petre, enkrat, samo za obstoječe uporabnike. -->
-{#if $onboardingDone && !$introSeen.petra && !gtfsError}
+<!-- Novost po posodobitvi: Petra ima nov glas. Enkrat, vsem obstoječim uporabnikom
+     (novi dobijo predstavitev v vodiču, ki obe oznaki zapre). -->
+{#if $onboardingDone && (!$introSeen.petra || !$introSeen.novGlas) && !gtfsError}
   <PetraCard />
 {/if}
 

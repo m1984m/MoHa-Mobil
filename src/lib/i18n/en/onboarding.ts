@@ -36,6 +36,11 @@ export default {
   'Poslušaj Petro': 'Listen to Petra',
   'Jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.':
     'I’m Petra. Tap Read aloud and I’ll tell you when your bus arrives, how to get to your destination and what a ticket costs.',
+  'Petra ima nov glas': 'Petra has a new voice',
+  'Petra zdaj bere z novim, bolj naravnim glasom. Ure in številke pove z besedo, tako kot bi jih povedal človek.':
+    'Petra, the Slovenian voice, now sounds more natural. She says times and numbers as words, the way a person would.',
+  'Jaz sem Petra in imam nov glas. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus in kako prideš do cilja.':
+    'I’m Petra and I have a new voice. Tap Read aloud and I’ll tell you when your bus arrives and how to get to your destination.',
   'Novo': 'New',
   'V redu': 'OK',
   'Tapni ime postajališča za vse odhode in lego na karti.': 'Tap a stop name to see all departures and its place on the map.',

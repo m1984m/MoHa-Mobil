@@ -33,7 +33,8 @@ export const onboardingDone = persisted<boolean>(
 // Kartice z novostmi po posodobitvi (npr. predstavitev glasu Petra): vsaka se
 // obstoječemu uporabniku pokaže enkrat. Novi uporabnik jih vidi v vodiču, ki jih
 // ob koncu označi kot videne.
-export type IntroId = 'petra';
+// 'novGlas' (0.30.6): Petra bere z novim glasom; pokaže se tudi tistim, ki so 'petra' že videli.
+export type IntroId = 'petra' | 'novGlas';
 export const introSeen = persisted<Partial<Record<IntroId, true>>>('mm.introSeen.v1', {});
 export function markIntro(id: IntroId) {
   introSeen.update(s => ({ ...s, [id]: true }));

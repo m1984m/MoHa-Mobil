@@ -9,19 +9,33 @@
   // Gumb "Poslušaj Petro" pusti, da se predstavi sama, s pozdravom po uri dneva.
   // Zapis je stalen (tri različice), zato ga Worker po prvem klicu streže iz
   // predpomnilnika in ne porabi kvote.
+  //
+  // `novGlas`: različica za obstoječe uporabnike, ki Petro že poznajo — novembra
+  // 2026 je dobila nov glas (PetraCard jo pokaže vsem enkrat). V vodiču za nove
+  // uporabnike ostane predstavitev »Spoznaj Petro«.
+  export let novGlas = false;
 </script>
 
 <div class="mm-pi-icon"><Volume2 size={40} strokeWidth={1.75} /></div>
-<h1 class="t-title1 font-bold text-center">{$t('Spoznaj Petro')}</h1>
-<p class="t-body text-muted text-center max-w-sm">
-  {$t('Petra je naš novi glas. Ko pritisneš »Preberi na glas«, ti v naravni slovenščini prebere prihode avtobusov, pot po korakih, vozni red in cene.')}
-</p>
+{#if novGlas}
+  <h1 class="t-title1 font-bold text-center">{$t('Petra ima nov glas')}</h1>
+  <p class="t-body text-muted text-center max-w-sm">
+    {$t('Petra zdaj bere z novim, bolj naravnim glasom. Ure in številke pove z besedo, tako kot bi jih povedal človek.')}
+  </p>
+{:else}
+  <h1 class="t-title1 font-bold text-center">{$t('Spoznaj Petro')}</h1>
+  <p class="t-body text-muted text-center max-w-sm">
+    {$t('Petra je naš novi glas. Ko pritisneš »Preberi na glas«, ti v naravni slovenščini prebere prihode avtobusov, pot po korakih, vozni red in cene.')}
+  </p>
+{/if}
 <p class="t-footnote text-muted text-center max-w-sm">
   {$t('Gumb z zvočnikom je na vseh oknih z odhodi. Brez povezave bere glas tvojega telefona.')}
 </p>
 <div class="w-full max-w-sm mt-2">
   <ReadAloud variant="big" wide caption={$t('Poslušaj Petro')}
-             text={() => `${greeting()}! ${tr('Jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.')}`} />
+             text={() => `${greeting()}! ${novGlas
+               ? tr('Jaz sem Petra in imam nov glas. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus in kako prideš do cilja.')
+               : tr('Jaz sem Petra. Ko pritisneš Preberi na glas, ti povem, kdaj pripelje tvoj avtobus, kako prideš do cilja in koliko stane vozovnica.')}`} />
 </div>
 
 <style>

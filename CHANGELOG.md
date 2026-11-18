@@ -5,6 +5,11 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.6 — 2026-11-18
+
+- Kartica »Petra ima nov glas« se po posodobitvi enkrat pokaže vsem uporabnikom, z gumbom »Poslušaj Petro«.
+  Novi uporabniki dobijo predstavitev Petre v vodiču kot prej.
+
 ## 0.30.5 — 2026-11-18
 
 - Glasno branje: Petra ima nov glas (ElevenLabs, strežniški del `worker/src/glas.js`). Vsaka poved se
