@@ -24,7 +24,7 @@ AZURE_SPEECH_REGION = "germanywestcentral"
 # Statistika v aplikaciji (POST /glas).
 ELEVENLABS_VOICE_ID = "1QgmVFFJ2yzJsEU1pSGg"
 ELEVENLABS_MODEL = "eleven_v4_turbo"
-GLAS_MEJA_KREDITOV = "3000"
+GLAS_MEJA_KREDITOV = "1500"
 
 # Posredniki za OBA, ker Cloudflare do vozniredi.marprom.si ne pride (tiho zavrženi
 # paketi): od 16. do 22.09.2026 in znova od 05.10.2026 zvečer (Worker 502, neposredno
