@@ -114,20 +114,31 @@ export function poizvedbe(dni, zdaj = new Date()) {
       GROUP BY dan ORDER BY dan FORMAT JSON`,
     // Casovnica zaledja po dnevih: skupaj, od tega napake, in mediana odziva.
     // Samo OBA in ORS: branje (tts) traja sekunde in bi zameglilo mediano.
+    // 'odpoved' (od 18.11.2026) je povzetek klica, pri katerem so odpovedale vse
+    // poti in je uporabnik dobil 502. Poskusi istega klica so že šteti vsak zase,
+    // zato odpoved ne gre v `n` in `napak`, ampak v svoj stolpec.
     zaledjeDnevi: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
-             SUM(_sample_interval) AS n,
+             sumIf(_sample_interval, blob4 != 'odpoved') AS n,
              sumIf(_sample_interval, blob4 = 'napaka' OR blob4 = 'nedosegljiv' OR blob4 = 'neznano') AS napak,
+             sumIf(_sample_interval, blob4 = 'odpoved') AS odpovedi,
              quantileExactWeighted(0.5)(double1, _sample_interval) AS ms_p50
       FROM ${NABOR} WHERE blob1 = 'srv' AND blob2 IN ('oba', 'ors') AND blob4 != 'prekinjen' AND ${OD}
       GROUP BY dan ORDER BY dan FORMAT JSON`,
     // Najbolj gledana postajalisca (blob8 pri GetArrivalsForStopPoint). Brez
-    // 'prekinjen': poraženec rezerve je isti vpogled še enkrat.
+    // 'prekinjen' in 'odpoved': oba sta isti vpogled še enkrat.
     postaje: `
       SELECT blob8 AS postaja, SUM(_sample_interval) AS n
       FROM ${NABOR}
-      WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND blob4 != 'prekinjen' AND ${OD}
+      WHERE blob1 = 'srv' AND blob3 = 'GetArrivalsForStopPoint' AND blob8 != '' AND blob4 != 'prekinjen' AND blob4 != 'odpoved' AND ${OD}
       GROUP BY postaja ORDER BY n DESC LIMIT 60 FORMAT JSON`,
+    // Klici crona (spremljanje vozil) na posrednike, po poti in izidu. Vir 'cron',
+    // zato jih zgornje poizvedbe ne štejejo med uporabnike.
+    cronOba: `
+      SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
+             blob6 AS preko, blob4 AS izid, SUM(_sample_interval) AS n
+      FROM ${NABOR} WHERE blob1 = 'cron' AND blob2 = 'oba' AND ${OD}
+      GROUP BY dan, preko, izid ORDER BY dan DESC, n DESC FORMAT JSON`,
     zaledje: `
       SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan,
              blob2 AS storitev, blob4 AS izid,

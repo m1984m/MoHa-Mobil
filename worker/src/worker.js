@@ -33,7 +33,7 @@
  */
 
 import { sendPush } from './push.js';
-import { recordUpstream, handleEvent } from './analytics.js';
+import { recordUpstream, handleEvent, zapisi } from './analytics.js';
 import { handleStat } from './stat.js';
 import { processDue, DUE_WINDOW_MS, zdruziPoObdelavi } from './due.js';
 import {
@@ -88,6 +88,7 @@ const MAX_ORS_BODY = 8 * 1024;  // 8 kB je za te zahteve več kot dovolj
 const ORS_DIREKTNO_MS = 800;    // neposreden poskus, kadar obstajajo posredniki
 const ORS_POSREDNIK_MS = 3200;  // zgornja meja za en posrednik
 const ORS_SKUPAJ_MS = 5500;     // aplikacija pešpot opusti po 6 s (routing.ts)
+const ORS_NAJVEC_POSREDNIKOV = 2; // OBA_RELAY ima od 18.11.2026 tri; račun zgoraj velja za dva
 // Dovoljene vrste vsebine v odgovoru ORS, ki gre k aplikaciji; vse drugo postane JSON.
 const ORS_VSEBINA = new Set(['application/json', 'application/geo+json']);
 
@@ -419,13 +420,23 @@ function obaCilji(env, method, upstream) {
  * uporabnika. Dober odgovor gre tudi v oba predpomnilnika, da ga aplikacija v
  * naslednjih 30 s dobi brez novega klica na posrednika. Vrne telo ali null.
  * Nikoli ne vrže.
+ *
+ * Vsak poskus se zabeleži z virom 'cron' (ne 'srv'): cron pošlje na posrednike
+ * okoli 2.500 klicev na dan, več kot vsi uporabniki skupaj, v statistiki pa ga
+ * do 18.11.2026 ni bilo — posrednik Deno je bil zaradi kvote ugasnjen mesec dni,
+ * ne da bi se videlo, kdo jo je porabil. Vir 'cron' ostane zunaj poizvedb o
+ * uporabnikih (te berejo 'srv').
  */
 async function vozilaZaCron(env) {
   const method = 'GetActiveDeviceDetails';
   const ttl = OBA_METHODS[method];
   const upstream = new URL(`${OBA_BASE}/${method}`);
+  const zacetek = Date.now();
+  const stej = (izid, status, preko) => zapisi(env, {
+    vir: 'cron', dogodek: 'oba', dims: [method, izid, String(status ?? ''), preko ?? '', '', ''], ms: Date.now() - zacetek,
+  });
   const izid = await klicNavzgor(obaCilji(env, method, upstream),
-    (c, ctl, ms) => poskusiCilj(c, method, ctl, ms), () => {},
+    (c, ctl, ms) => poskusiCilj(c, method, ctl, ms), stej,
     { zamik: ZAMIK_REZERVE_MS, skupaj: OBA_SKUPAJ_MS }).catch(() => null);
   if (!izid || izid.vrsta !== 'ok') return null;
   memPut(upstream.toString(), izid.telo, ttl);
@@ -595,6 +606,10 @@ async function handleOba(request, env, ctx, path, cors) {
   // Nič v predpomnilniku — tu se čakanju ne da izogniti.
   const izid = await naloga;
   if (izid === null) {
+    // Edini izhod, pri katerem uporabnik ostane brez podatkov. Posamezni poskusi
+    // so zabeleženi vsak zase ('napaka' na poti relay, relay2 …), iz njih pa se ne
+    // vidi, ali je naslednja pot klic rešila; 'odpoved' šteje prav to.
+    stej('odpoved', 502, preko);
     return json({ error: 'upstream unreachable', via: preko }, 502, cors);
   }
 
@@ -708,7 +723,10 @@ async function handleOrs(request, env, ctx, path, cors) {
   // Ključ ORS ostane skrivnost Workerja: neposredno gre v Authorization, posredniku
   // pa v glavi x-ors-key skupaj z x-relay-key (posrednik ga ne hrani in ne beleži).
   // V paket aplikacije ne gre nikoli.
-  const relays = posredniki(env);
+  // Samo prva dva posrednika: čas si delijo enakomerno (`razdeli`), in s tremi bi
+  // prvi dobil okoli 1,2 s — manj, kot posrednik sam čaka na ORS (2 s). Klic bi
+  // bil prekinjen in poslan naprej, ORS pa bi istega štel dvakrat v dnevno kvoto.
+  const relays = posredniki(env).slice(0, ORS_NAJVEC_POSREDNIKOV);
   const glave = { 'Content-Type': 'application/json', 'Accept': 'application/json, application/geo+json' };
   const cilji = [
     {

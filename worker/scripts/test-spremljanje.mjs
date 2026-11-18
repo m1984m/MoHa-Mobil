@@ -229,3 +229,36 @@ test('repPoti: samo novejše točke, načet prvi kos izpuščen', () => {
   assert.equal(repPoti('100,1,1', false, 200), '');
   assert.equal(repPoti(null, false, 0), '');
 });
+
+import { nocniPremor } from '../src/spremljanje.js';
+
+test('nocniPremor: 01:00–03:45 po uri v Ljubljani, pozimi in poleti', () => {
+  const zima = (h, m) => Date.UTC(2026, 10, 18, h - 1, m);   // CET = UTC+1
+  assert.equal(nocniPremor(zima(0, 59)), false);
+  assert.equal(nocniPremor(zima(1, 0)), true);
+  assert.equal(nocniPremor(zima(3, 44)), true);
+  assert.equal(nocniPremor(zima(3, 45)), false);
+  assert.equal(nocniPremor(zima(12, 0)), false);
+  const poletje = (h, m) => Date.UTC(2026, 6, 15, h - 2, m); // CEST = UTC+2
+  assert.equal(nocniPremor(poletje(2, 30)), true);
+  assert.equal(nocniPremor(poletje(4, 0)), false);
+});
+
+test('zabeleziVozila: v nočnem premoru ne kliče posrednika, čiščenje ob 3h ostane', async () => {
+  let klicev = 0;
+  const vozila = async () => { klicev++; return null; };
+  const ob2 = laznaBaza();
+  const iz2 = await zabeleziVozila({ SPREMLJANJE_DB: ob2 }, vozila, () => Date.UTC(2026, 10, 18, 1, 0));   // 02:00
+  assert.equal(klicev, 0);
+  assert.equal(iz2.vzorcev, 0);
+  assert.equal(ob2.zapisi.length, 0);
+
+  const ob3 = laznaBaza();
+  await zabeleziVozila({ SPREMLJANJE_DB: ob3 }, vozila, () => Date.UTC(2026, 10, 18, 2, 2));               // 03:02
+  assert.equal(klicev, 0);
+  assert.equal(ob3.zapisi.length, 2, 'čiščenje: UPDATE pot + DELETE');
+
+  const podnevi = laznaBaza();
+  await zabeleziVozila({ SPREMLJANJE_DB: podnevi }, vozila, () => Date.UTC(2026, 10, 18, 3, 0));           // 04:00
+  assert.equal(klicev, 1);
+});

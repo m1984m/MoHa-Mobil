@@ -23,3 +23,25 @@ export VERCEL_TOKEN=$(tr -d '\r\n' < ../relay/.vercel-token)
 npx vercel deploy --prod --yes
 ```
 Skrivnost (enkrat): `npx vercel env add RELAY_KEY production` (vrednost iz `../relay/.env`).
+
+## Drugi projekt: Pariz (cdg1), od 18.11.2026
+
+Ista koda je objavljena še kot projekt `moha-oba-vercel-2`
+(`https://moha-oba-vercel-2.vercel.app`) v regiji **cdg1**. Brezplačni paket dovoli
+eno regijo na projekt, zato sta projekta dva; razlika je samo `vercel.2.json`
+(regija). Prepisi poti morajo biti v obeh datotekah enaki.
+
+Zakaj: Deno (`../relay/`) je od 20.10.2026 ugasnjen zaradi kvote in mesec dni je vse
+nosil en sam posrednik. Drugi projekt varuje pred izpadom regije ali blokado
+naslovov arn1 pri Marpromu, NE pa pred omejitvijo računa Vercel (isti račun).
+Preverjeno 18.11.2026: iz cdg1 Marprom odgovori v 0,12–0,48 s.
+
+Objava drugega projekta (id je v `.vercel/project2.id`, ni v gitu; dobiš ga tudi z
+`npx vercel project inspect moha-oba-vercel-2`):
+```bash
+export VERCEL_TOKEN=$(tr -d '\r\n' < ../relay/.vercel-token)
+export VERCEL_ORG_ID=$(python -c "import json;print(json.load(open('.vercel/project.json'))['orgId'])")
+export VERCEL_PROJECT_ID=$(cat .vercel/project2.id)
+npx vercel deploy --prod --yes --local-config vercel.2.json
+```
+Spremembo `api/relay.js` objavi v OBA projekta.

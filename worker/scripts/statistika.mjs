@@ -103,6 +103,14 @@ const zaledje = await sql(`
   FROM ${NABOR} WHERE blob1 = 'srv' AND ${OD}
   GROUP BY dan, storitev, izid ORDER BY dan DESC, n DESC FORMAT JSON`, p);
 
+// Klici crona (spremljanje vozil) na posrednike: vir 'cron', zato jih zgornja
+// poizvedba ne šteje. Od 18.11.2026; prej jih statistika ni videla.
+const cronOba = await sql(`
+  SELECT toStartOfInterval(timestamp, INTERVAL '1' DAY) AS dan, blob6 AS preko, blob4 AS izid,
+         SUM(_sample_interval) AS n
+  FROM ${NABOR} WHERE blob1 = 'cron' AND blob2 = 'oba' AND ${OD}
+  GROUP BY dan, preko, izid ORDER BY dan DESC, n DESC FORMAT JSON`, p);
+
 console.log(`MoHa Mobil — statistika zadnjih ${dni} dni`);
 tabela('Zagoni', zagoni, [
   { naslov: 'nacin', polje: 'nacin' }, { naslov: 'razlicica', polje: 'razlicica' },
@@ -117,5 +125,11 @@ tabela('Zaledje po dnevih', zaledje, [
   { naslov: 'dan', polje: 'dan' }, { naslov: 'storitev', polje: 'storitev' },
   { naslov: 'izid', polje: 'izid' }, { naslov: 'n', polje: 'n' }, { naslov: 'ms p50', polje: 'ms_p50' },
 ]);
+tabela('Cron (spremljanje vozil): klici na posrednike po dnevih', cronOba, [
+  { naslov: 'dan', polje: 'dan' }, { naslov: 'preko', polje: 'preko' },
+  { naslov: 'izid', polje: 'izid' }, { naslov: 'n', polje: 'n' },
+]);
+console.log('\nIzid »odpoved« pri OBA (od 18.11.2026): odpovedale so vse poti in uporabnik je dobil 502.');
+console.log('»napaka« je en poskus na eni poti; naslednja pot ga je lahko rešila.');
 console.log('\nHramba je tri mesece. Opozorilo: izid »napaka« ali »nedosegljiv« pri OBA pomeni,');
 console.log('da posrednik ali Marprom ne odgovarja — prav to je 16.09.2026 več dni ostalo neopaženo.');

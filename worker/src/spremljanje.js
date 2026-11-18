@@ -64,6 +64,20 @@ export function uraLj(ms) {
   return fmtUra.format(new Date(ms)).split(':').map(Number);
 }
 
+// Nočni premor vzorčenja, po uri v Ljubljani. V podatkih 26.10.–18.11.2026 se je
+// zadnje vozilo odjavilo pred 01:00 in prvo prijavilo po 04:00 (vozni red: prvi
+// odhod 04:35, zadnji prihod 23:51). Vmes je vsak klic na posrednika zaman, cron
+// pa teče vsako minuto in troši njegovo kvoto.
+export const NOC_OD_MIN = 1 * 60;        // 01:00
+export const NOC_DO_MIN = 3 * 60 + 45;   // 03:45
+
+/** Ali je čas v nočnem premoru (vozil ni, posrednika ne kličemo). */
+export function nocniPremor(ms) {
+  const [h, m] = uraLj(ms);
+  const min = h * 60 + m;
+  return min >= NOC_OD_MIN && min < NOC_DO_MIN;
+}
+
 /** Razdalja v metrih (haversine). */
 export function razdaljaM(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -179,7 +193,8 @@ export async function zabeleziVozila(env, vozila, ura = Date.now) {
   if (!db) return null;
   const zacetek = ura();
 
-  const telo1 = await vozila();
+  // V nočnem premoru posrednika ne kličemo; čiščenje ob 3h spodaj teče vseeno.
+  const telo1 = nocniPremor(zacetek) ? null : await vozila();
   const t1 = ura();
   const dan = danLj(t1);
   const v1 = telo1 ? vozilaIz(telo1) : [];

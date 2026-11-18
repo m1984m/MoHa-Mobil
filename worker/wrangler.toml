@@ -26,7 +26,15 @@ AZURE_SPEECH_REGION = "germanywestcentral"
 # ne spusti — Worker najprej na kratko poskusi neposredno, glej worker/README.md (ORS
 # prek posrednikov). Dokler je OBA_RELAY nastavljen, cron predpomnilnika ne greje
 # (warm.js kliče Marprom neposredno).
-OBA_RELAY = "https://moha-oba.m1984m.deno.net,https://moha-oba-vercel.vercel.app"
+#
+# 18.11.2026: vrstni red obrnjen in dodan tretji. Deno je od 20.10. ugasnjen
+# (503 USAGE_EXCEEDED, dan po začetku spremljanja vozil iz crona) in je mesec dni
+# vsak klic najprej trčil vanj. Zdaj: Vercel Stockholm (arn1), Vercel Pariz (cdg1,
+# projekt moha-oba-vercel-2, ista koda, vercel.2.json), Deno zadnji — če se njegova
+# kvota obnovi, je edini pri drugem ponudniku. V statistiki je `preko` zaporedno
+# mesto v tem seznamu: do 18.11. relay = Deno in relay2 = Vercel arn1, od 18.11.
+# relay = Vercel arn1, relay2 = Vercel cdg1, relay3 = Deno.
+OBA_RELAY = "https://moha-oba-vercel.vercel.app,https://moha-oba-vercel-2.vercel.app,https://moha-oba.m1984m.deno.net"
 
 # Javni ključ VAPID. Ta SME biti v repozitoriju — brskalnik ga tako ali tako
 # dobi ob naročanju (`applicationServerKey`), Worker pa ga vrne na
