@@ -1,4 +1,5 @@
-import { tr } from './i18n';
+import { tr, locale } from './i18n';
+import { prekRodilnik } from './krozna';
 import { nowMb } from './clock';
 import { unpackTrips, type PackedTrips } from './tripsPack';
 
@@ -518,7 +519,13 @@ export function splitHeadsign(headsign: string, destination?: string, circular =
   const h = String(headsign ?? '');
   const parts = h.split(HEADSIGN_SEP).map(p => p.trim()).filter(Boolean);
   if (circular && parts.length > 1) {
-    return { dest: tr('Krožna prek {kraj}', { kraj: parts[1] }), via: parts.slice(2).join(', ') };
+    // »prek« zahteva rodilnik (»prek Tezna«); ime v opisu vožnje je v imenovalniku.
+    // Znana imena sklanja slovar (krozna.ts), neznano dobi obliko brez sklona.
+    // Angleščina imen ne sklanja.
+    const kraj = parts[1];
+    const rod = locale().startsWith('en') ? kraj : prekRodilnik(kraj);
+    const dest = rod ? tr('Krožna prek {kraj}', { kraj: rod }) : tr('Krožna, prek postajališča {kraj}', { kraj });
+    return { dest, via: parts.slice(2).join(', ') };
   }
   if (parts.length <= 1) return { dest: (destination || parts[0] || h).trim(), via: '' };
   return { dest: parts[parts.length - 1], via: parts.slice(1, -1).join(', ') };

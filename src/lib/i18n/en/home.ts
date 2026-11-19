@@ -108,6 +108,8 @@ export default {
   'Razveljavi': 'Undo',
   // 0.26.0 — cilj vožnje, oznaka stanja, izpad živih podatkov
   'Krožna prek {kraj}': 'Circular via {kraj}',
+  // Samo slovensko: ime, ki ga slovar rodilnikov (krozna.ts) ne pozna. V angleščini se ne uporabi.
+  'Krožna, prek postajališča {kraj}': 'Circular via {kraj}',
   '{linija}, smer {cilj}': '{linija} to {cilj}',
   'vozni red': 'scheduled',
   'Brez povezave. Prikazujemo vozni red, zamud ne poznamo.': 'No connection. Showing the timetable, delays are unknown.',

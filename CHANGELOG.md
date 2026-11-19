@@ -5,6 +5,13 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.8 — 2026-11-19
+
+- Krožna linija: za »prek« je ime v rodilniku, na zaslonu in pri glasnem branju (»Krožna prek Tezna«,
+  »prek Gosposvetske«, »prek Ptujske«; prej »prek Tezno«). Imena sklanja slovar v `src/lib/krozna.ts`;
+  ime, ki ga slovar ne pozna, dobi obliko brez sklona (»Krožna, prek postajališča …«). Preverba
+  `node --test scripts/test-krozna.mjs` pade, ko nov vozni red prinese ime, ki ga v slovarju ni.
+
 ## 0.30.7 — 2026-11-18
 
 - Gumb za glasno branje v navadnem pogledu je obarvana kapsula z imenom »Petra« (prej siva ikona zvočnika).
