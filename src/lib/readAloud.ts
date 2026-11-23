@@ -143,7 +143,17 @@ export function daysSincePlanDay(day: number | null | undefined, now: Date = now
 }
 // Ali je čas poti (sekunde od polnoči dneva iskanja) na naslednji dan glede na danes.
 export function isTomorrow(sec: number, baseDay?: number | null, now: Date = nowMb()): boolean {
-  return sec - daysSincePlanDay(baseDay, now) * 86_400 >= 86_400;
+  return planDayOffset(sec, baseDay, now) >= 1;
+}
+// Za koliko dni od danes je čas poti: 0 = danes, 1 = jutri, 2+ = izbrani dan (npr. nedelja).
+export function planDayOffset(sec: number, baseDay?: number | null, now: Date = nowMb()): number {
+  return Math.max(0, Math.floor((sec - daysSincePlanDay(baseDay, now) * 86_400) / 86_400));
+}
+// Oznaka dneva za čas poti: '' danes, sicer »jutri« ali »v nedeljo«.
+export function planDayWord(sec: number, baseDay?: number | null, now: Date = nowMb()): string {
+  const k = planDayOffset(sec, baseDay, now);
+  if (k === 0) return '';
+  return fmtDayOffset(k, (now.getDay() + k) % 7);
 }
 
 const isRail = (routeId: number) => ijppRouteInfo(routeId)?.rail === true;
@@ -175,9 +185,9 @@ export function planSpeech(legs: PlanLeg[], cilj: string, baseDay?: number | nul
   const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + days * 86_400;
   if (leave < nowSec - 90) out.push(tr('Ta odhod je mimo.') + ' ' + tr('Poišči novega.'));
   else {
-    const leaveT = isTomorrow(leave, baseDay, now), arrT = isTomorrow(arrive, baseDay, now);
-    const time = fmtClock(leave) + (leaveT ? ' ' + tr('jutri') : '');
-    const arr = fmtClock(arrive) + (arrT && !leaveT ? ' ' + tr('jutri') : '');
+    const leaveD = planDayWord(leave, baseDay, now), arrD = planDayWord(arrive, baseDay, now);
+    const time = fmtClock(leave) + (leaveD ? ' ' + leaveD : '');
+    const arr = fmtClock(arrive) + (arrD && arrD !== leaveD ? ' ' + arrD : '');
     out.push(tr('Kreni ob {time}, na cilju boš ob {arr}.', { time, arr }));
   }
   // Načrtovalnik računa po voznem redu, brez živih zamud (F12).

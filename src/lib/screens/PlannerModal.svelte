@@ -6,7 +6,7 @@
   import { searchStops, normName, twinStopHint } from '../simpleStops';
   import { searchDay, DAY_SEC, type Plan } from '../planner';
   import { nowMb, nowSecMb } from '../clock';
-  import { planTrip, materializePlan, parseHM, tomorrowNoon, type Place, type PlaceKind, type TimeMode, type TransferIssue } from '../planTrip';
+  import { planTrip, materializePlan, parseHM, dayNoon, MAX_DAY_OFFSET, type Place, type PlaceKind, type TimeMode, type TransferIssue } from '../planTrip';
   import LineBadge from '../ui/LineBadge.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
   import { favStops } from '../favorites';
@@ -14,7 +14,8 @@
   import { savedRoutes } from '../savedRoutes';
   import { focusTrap } from '../focusTrap';
   import { toast } from '../toast';
-  import { t, tr, plural } from '../i18n';
+  import { t, tr, plural, lang } from '../i18n';
+  import { fmtDayOffset, fmtDayChip } from '../time';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { candidatesSpeech } from '../readAloud';
   import { EXT, loadIjppSi, outsideMaribor, searchIjppStops, type Mode } from '../ijppPlan';
@@ -34,7 +35,7 @@
   // Povezava na prevoz.org za isti od, do in dan (deljeni prevozi). Njihov izvozni API brez
   // pisnega dovoljenja ne (pogoji uporabe 10.1, robots.txt prepoveduje /api/), zato samo povezava.
   // Dan iskanja (danes, jutri ali izbrani), ne vedno današnji (F19).
-  $: prevozDate = (candidates.length > 0 ? candidatesTomorrow : chipTomorrow) ? tomorrowNoon() : nowMb();
+  $: prevozDate = dayNoon(candidates.length > 0 ? candidatesDay : selectedDay);
   $: fromTown = fromPlace ? townOf(fromPlace) : '';
   $: toTown = toPlace ? townOf(toPlace) : '';
   $: prevozHref = intercity && fromTown && toTown
@@ -75,8 +76,9 @@
   let fromAddrTimer: any = null;
   let toAddrTimer: any = null;
   export let candidates: Plan[] = [];
-  // Predlogi so za jutri: izbrani čas je bil ob iskanju več kot 15 min mimo (searchDay).
-  let candidatesTomorrow = false;
+  // Dan predlogov (0 = danes, 1 = jutri, …): izbrani dan ali jutri, ker je bil izbrani čas
+  // ob iskanju več kot 15 min mimo (searchDay).
+  let candidatesDay = 0;
   // »Prihod do« največ 15 min mimo: prikazane so poti z odhodom zdaj, tu je izbrana ura za pojasnilo.
   let arriveLateTime: string | null = null;
   // Predizpolnjen cilj — iz gumba "pot do postajališča" (z imenom) ali long-pressa na karti (brez imena).
@@ -88,17 +90,17 @@
   // Predlogi veljajo za poizvedbo, s katero so nastali. Sprememba izhodišča, cilja, časa ali
   // načina jih razveljavi, da pod novim vnosom ali napako ne ostanejo stari (F1).
   const placeSig = (p: Place | null, q: string) => p ? `${p.lat.toFixed(5)},${p.lon.toFixed(5)}` : `q:${q.trim()}`;
-  function sigOf(fp: Place | null, fq: string, tp: Place | null, tq: string, tm: TimeMode, ts: string, m: Mode): string {
-    return `${placeSig(fp, fq)}|${placeSig(tp, tq)}|${tm}|${tm === 'now' ? '' : ts}|${m}`;
+  function sigOf(fp: Place | null, fq: string, tp: Place | null, tq: string, tm: TimeMode, ts: string, m: Mode, d: number): string {
+    return `${placeSig(fp, fq)}|${placeSig(tp, tq)}|${tm}|${tm === 'now' ? '' : `${d}|${ts}`}|${m}`;
   }
   // Iz trenutnih vrednosti, ne iz reaktivnega querySig: ta se po kliku na način osveži šele
   // po obdelavi dogodka, run() pa teče sinhrono v njem.
-  const currentSig = () => sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode);
-  $: querySig = sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode);
+  const currentSig = () => sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode, dayOffset);
+  $: querySig = sigOf(fromPlace, fromQuery, toPlace, toQuery, timeMode, timeStr, mode, dayOffset);
   let resultSig = '';
   $: if (querySig !== resultSig && !running && (candidates.length > 0 || error || transferWarn)) clearResults();
   function clearResults() {
-    candidates = []; candidatesTomorrow = false; arriveLateTime = null; error = ''; statusMsg = ''; transferWarn = null;
+    candidates = []; candidatesDay = 0; arriveLateTime = null; error = ''; statusMsg = ''; transferWarn = null;
   }
 
   // Hrani aktivno operacijo, da jo lahko prekličemo ob zapiranju, resetu ali novem run-u.
@@ -115,6 +117,21 @@
 
   let timeMode: TimeMode = 'now';
   let timeExpanded = false;
+  // Izbrani dan iskanja: 0 = danes, 1 = jutri, … do MAX_DAY_OFFSET (npr. nedeljska pot v petek).
+  let dayOffset = 0;
+  $: dayChips = Array.from({ length: MAX_DAY_OFFSET + 1 }, (_, k) => ({
+    k,
+    label: k === 0 ? $t('Danes') : k === 1 ? $t('Jutri') : dayChipLabel(k, $lang, nowTick),
+  }));
+  // Jezik in ura kot parametra: oznaka se osveži ob menjavi jezika in čez polnoč.
+  function dayChipLabel(k: number, _l: string, _tick: number) { return fmtDayChip(dayNoon(k)); }
+  function dayWord(k: number, _l: string, _tick: number) { return fmtDayOffset(k, dayNoon(k).getDay()); }
+  function pickDay(k: number) {
+    dayOffset = k;
+    // Poznejši dan nima »Zdaj«: preklopi na »Odhod ob« z dosedanjo uro.
+    if (k > 0 && timeMode === 'now') timeMode = 'depart';
+  }
+  $: if (timeMode === 'now') dayOffset = 0;
   let timeStr: string = defaultTimeStr();
 
   function defaultTimeStr() {
@@ -130,7 +147,10 @@
     const id = setInterval(() => { if (open) nowTick = nowSecMb(); }, 30_000);
     return () => clearInterval(id);
   });
-  $: chipTomorrow = timeMode !== 'now' && searchDay(parseHM(timeStr), nowTick) === 'tomorrow';
+  $: chipTomorrow = timeMode !== 'now' && dayOffset === 0 && searchDay(parseHM(timeStr), nowTick) === 'tomorrow';
+  // Dan, za katerega bo iskanje: izbrani ali samodejno jutri, ko je ura danes že mimo.
+  $: selectedDay = timeMode === 'now' ? 0 : dayOffset > 0 ? dayOffset : chipTomorrow ? 1 : 0;
+  $: selectedDayWord = selectedDay > 0 ? dayWord(selectedDay, $lang, nowTick) : '';
 
   // Iskanje brez šumnikov in po besedah (»zelezniska« najde »Železniška«), enako kot v
   // Preprostem pogledu — prej je bil podniz z šumniki (evalvacija 04.10.2026, N7).
@@ -397,11 +417,11 @@
         });
       }
 
-      const res = await planTrip({ gtfs, from, to, mode, timeMode, timeStr, signal: ctl.signal });
+      const res = await planTrip({ gtfs, from, to, mode, timeMode, timeStr, dayOffset, signal: ctl.signal });
       if (ctl.signal.aborted || (!res.ok && res.aborted)) return;
       if (!res.ok) { error = res.error; return; }
       candidates = res.plans;
-      candidatesTomorrow = res.tomorrow;
+      candidatesDay = res.dayOffset;
       arriveLateTime = res.lateTime;
       statusMsg = tr('Najdenih poti: {n}', { n: res.plans.length });
     } catch (e: any) {
@@ -461,11 +481,20 @@
   }
   function busLegs(p: Plan) { return p.legs.filter(l => l.kind === 'bus') as any[]; }
   // Odhod in prihod na kartici z oznako dneva: časi od polnoči dneva iskanja, jutrišnji + 24 h (F6).
+  // Dan predlogov je v naslovu seznama (»Predlogi poti · v nedeljo«); na kartici je oznaka
+  // samo, ko je čas na drug dan (vožnja čez polnoč).
+  function dayOf(sec: number): string {
+    const k = Math.floor(sec / DAY_SEC);
+    if (k === candidatesDay) return '';
+    return k === 0 ? tr('danes') : fmtDayOffset(k, dayNoon(k).getDay());
+  }
   function depLabel(sec: number): string {
-    return sec >= DAY_SEC ? tr('odhod jutri {time}', { time: fmtTime(sec) }) : tr('odhod {time}', { time: fmtTime(sec) });
+    const d = dayOf(sec);
+    return d ? tr('odhod {dan} {time}', { dan: d, time: fmtTime(sec) }) : tr('odhod {time}', { time: fmtTime(sec) });
   }
   function arrLabel(sec: number): string {
-    return sec >= DAY_SEC ? tr('prihod jutri {time}', { time: fmtTime(sec) }) : tr('prihod {time}', { time: fmtTime(sec) });
+    const d = dayOf(sec);
+    return d ? tr('prihod {dan} {time}', { dan: d, time: fmtTime(sec) }) : tr('prihod {time}', { time: fmtTime(sec) });
   }
   const hasExt = (p: Plan) => p.legs.some(l => l.kind === 'bus' && l.route.id >= EXT);
   const hasCity = (p: Plan) => p.legs.some(l => l.kind === 'bus' && l.route.id < EXT);
@@ -528,8 +557,8 @@
   function reset() {
     abortActive();
     fromQuery = ''; toQuery = ''; fromPlace = null; toPlace = null; error = ''; candidates = []; fromIsMe = false;
-    candidatesTomorrow = false; arriveLateTime = null; statusMsg = ''; transferWarn = null; resultSig = '';
-    timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr();
+    candidatesDay = 0; arriveLateTime = null; statusMsg = ''; transferWarn = null; resultSig = '';
+    timeMode = 'now'; timeExpanded = false; timeStr = defaultTimeStr(); dayOffset = 0;
     lastConsumedDest = null;
   }
 
@@ -552,17 +581,20 @@
 {#if open}
   <div in:backdrop={{ alpha: 0.35, blur: 4 }} out:backdrop={{ out: true, alpha: 0.35, blur: 4 }} class="fixed inset-0 z-50 flex flex-col" style="background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);"
        role="dialog" aria-modal="true" aria-label={$t('Načrtuj pot')} bind:this={rootEl}>
-    <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface rounded-b-3xl shadow-float"
-         style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch;"
+    <!-- List je stolpec z zaglavjem in telesom, ki se pomika (kot ostala okna). Prej je bil
+         list sam vsebnik za pomikanje v stolpcu flex; na iPhonu se ni pomikal in je predloge
+         risal čez spodnji rob (Matej 23.11.2026). -->
+    <div in:sheet={{ from: 'top' }} out:sheet={{ out: true, from: 'top' }} class="surface rounded-b-3xl shadow-float flex flex-col overflow-hidden min-h-0 shrink"
+         style="padding-top: env(safe-area-inset-top); max-height: calc(100dvh - env(safe-area-inset-bottom));"
          use:focusTrap>
-      <div class="flex items-center justify-between px-4 pt-4 pb-2">
+      <div class="shrink-0 flex items-center justify-between px-4 pt-4 pb-2">
         <div class="t-title2">{$t('Načrtuj pot')}</div>
         <button class="pressable w-11 h-11 rounded-full surface-2 grid place-items-center" on:click={handleClose} aria-label={$t('Zapri')}>
           <X size={18} />
         </button>
       </div>
 
-      <div class="px-4 pb-4 space-y-3">
+      <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 space-y-3" data-planner-scroll>
         <!-- From -->
         <div class="relative">
           <div class="relative surface-2 rounded-xl border border-base">
@@ -687,8 +719,8 @@
                   on:click={() => timeExpanded = !timeExpanded}>
             <Clock size={16} color="var(--accent)" />
             <span class="t-body font-medium">{timeModeLabel}</span>
-            {#if chipTomorrow}
-              <span class="t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('jutri')}</span>
+            {#if selectedDayWord}
+              <span class="t-footnote rounded-full px-2 py-0.5 border border-base surface">{selectedDayWord}</span>
             {/if}
             <span class="ml-auto grid place-items-center transition-transform"
                   style="transform: rotate({timeExpanded ? 180 : 0}deg)"><ChevronDown size={20} color="var(--text-muted)" /></span>
@@ -701,6 +733,16 @@
                   <button class="pressable h-9 rounded-md t-footnote font-semibold"
                           style="background: {a ? 'var(--accent)' : 'transparent'}; color: {a ? 'white' : 'var(--text)'}"
                           on:click={() => timeMode = opt.id}>{opt.label}</button>
+                {/each}
+              </div>
+              <!-- Dan iskanja: danes, jutri in naslednjih 5 dni (npr. nedeljska pot v petek). -->
+              <div class="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5" role="radiogroup" aria-label={$t('Dan')}>
+                {#each dayChips as c (c.k)}
+                  {@const a = selectedDay === c.k}
+                  <button type="button" role="radio" aria-checked={a}
+                          class="pressable shrink-0 min-h-[44px] px-3 rounded-lg border border-base t-footnote font-semibold tabular-nums"
+                          style="background: {a ? 'var(--accent)' : 'var(--surface)'}; color: {a ? 'white' : 'var(--text)'}"
+                          on:click={() => pickDay(c.k)}>{c.label}</button>
                 {/each}
               </div>
               {#if timeMode !== 'now'}
@@ -787,7 +829,7 @@
           <div class="pt-1">
             <div class="flex items-center justify-between gap-2 mb-2 px-1">
               <div class="t-footnote text-muted uppercase tracking-wide">
-                {$t('Predlogi poti')}{#if candidatesTomorrow} · {$t('jutri')}{/if}
+                {$t('Predlogi poti')}{#if candidatesDay > 0} · {dayWord(candidatesDay, $lang, nowTick)}{/if}
               </div>
               <ReadAloud resetKey={candidates} text={() => candidatesSpeech(candidates)} />
             </div>
@@ -849,7 +891,7 @@
         {/if}
       </div>
     </div>
-    <button class="flex-1" on:click={handleClose} aria-label={$t('Zapri')}></button>
+    <button class="flex-1 min-h-0" on:click={handleClose} aria-label={$t('Zapri')}></button>
   </div>
 {/if}
 

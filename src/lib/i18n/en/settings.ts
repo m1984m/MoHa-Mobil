@@ -290,6 +290,8 @@ export default {
   'Petra ima nov, bolj naraven glas': 'Petra, the Slovenian voice, sounds new and more natural',
   'Gumb za branje nosi njeno ime: tapni »Petra« in poslušaj': 'The read-aloud button is now easier to spot: tap “Listen”',
   'Ure in številke prebere z besedo, v pravem sklonu': 'She reads times and numbers out as words, in the correct form',
+  'Pot lahko načrtuješ tudi za drug dan, na primer za nedeljo': 'You can plan a trip for another day too, for example Sunday',
+  'Med predlogi poti se zdaj lahko pomikaš do zadnjega': 'You can now scroll through all suggested routes',
   'Prihodi v živo so zanesljivejši: dodana je rezervna povezava': 'Live arrivals are more reliable: a backup connection has been added',
   'Zvonec: opomnik za ta odhod upošteva zamudo in pove, kdaj prvič zazvoni': 'Bell: a reminder for this departure accounts for delay and tells you when it first rings',
   'Načrtovalnik: ura odhoda in »jutri«, delujoč način Bus + vlak, zvečer tudi jutrišnje povezave': 'Planner: departure time and “tomorrow”, working Bus + train mode, tomorrow’s connections in the evening',

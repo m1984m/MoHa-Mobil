@@ -22,9 +22,15 @@ export function parseHM(s: string): number {
 }
 // Datum za vozni red jutri: opoldne, da dan s premikom ure (23 ali 25 h) ne zamakne datuma.
 export function tomorrowNoon(): Date {
-  const n = nowMb();
-  return new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 12, 0, 0);
+  return dayNoon(1);
 }
+/** Opoldne dneva `offset` dni od danes (0 = danes) po uri Maribora. */
+export function dayNoon(offset: number): Date {
+  const n = nowMb();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate() + offset, 12, 0, 0);
+}
+/** Največ dni vnaprej, ki jih lahko izbere načrtovalnik (danes + 6). */
+export const MAX_DAY_OFFSET = 6;
 
 export type TripQuery = {
   gtfs: GTFS;
@@ -32,10 +38,12 @@ export type TripQuery = {
   mode?: Mode;
   timeMode?: TimeMode;
   timeStr?: string;
+  /** Izbrani dan: 0 = danes (privzeto), 1 = jutri … Velja samo z »Odhod ob« ali »Prihod do«. */
+  dayOffset?: number;
   signal?: AbortSignal;
 };
 export type TripResult =
-  | { ok: true; plans: Plan[]; tomorrow: boolean; lateTime: string | null; isInter: boolean }
+  | { ok: true; plans: Plan[]; dayOffset: number; lateTime: string | null; isInter: boolean }
   | { ok: false; error: string; aborted?: boolean };
 
 const ABORTED: TripResult = { ok: false, error: '', aborted: true };
@@ -51,10 +59,12 @@ export async function planTrip(q: TripQuery): Promise<TripResult> {
   // Stenski čas Maribora (clock.ts), ne ura telefona. Izbrani čas, ki je več kot 15 min
   // mimo, se išče za jutri (z jutrišnjim voznim redom, tudi sobotnim v petek zvečer); do
   // 15 min mimo od zdaj.
+  // Izbran poznejši dan (npr. nedelja) se išče z voznim redom tega dne, od izbrane ure.
   const nowSec = nowSecMb();
-  let day = timeMode === 'now' ? 'today' : searchDay(parseHM(timeStr), nowSec);
-  let tomorrow = day === 'tomorrow';
-  let when = tomorrow ? tomorrowNoon() : nowMb();
+  const picked = timeMode === 'now' ? 0 : Math.max(0, Math.min(MAX_DAY_OFFSET, Math.floor(q.dayOffset ?? 0)));
+  let day = timeMode === 'now' ? 'today' : picked > 0 ? 'future' : searchDay(parseHM(timeStr), nowSec);
+  let offset = picked > 0 ? picked : day === 'tomorrow' ? 1 : 0;
+  let when = offset > 0 ? dayNoon(offset) : nowMb();
   let timeSec = timeMode === 'now' || day === 'now' ? nowSec : parseHM(timeStr);
 
   const network = async (w: Date): Promise<GTFS | string> => {
@@ -77,12 +87,12 @@ export async function planTrip(q: TripQuery): Promise<TripResult> {
   ]);
   if (signal?.aborted) return ABORTED;
 
-  const search = (n: GTFS, t: number, w: Date, tmrw: boolean): { plans: Plan[]; late: string | null } => {
+  const search = (n: GTFS, t: number, w: Date, later: boolean): { plans: Plan[]; late: string | null } => {
     let plans: Plan[];
     let late: string | null = null;
     if (timeMode === 'arrive' && day !== 'now') {
       // Najpoznejši odhodi, ki pridejo do izbrane ure; danes nobeden pred zdaj.
-      plans = planArriveBy(n, from, to, t, tmrw ? 0 : nowSec, w, accessMap, egressMap,
+      plans = planArriveBy(n, from, to, t, later ? 0 : nowSec, w, accessMap, egressMap,
         isInter ? { ...interOpts, spanSec: 8 * 3600 } : {});
     } else {
       plans = planAll(n, from, to, t, w, accessMap, egressMap, interOpts);
@@ -104,13 +114,13 @@ export async function planTrip(q: TripQuery): Promise<TripResult> {
       };
       const score = (p: Plan) => p.arrSec + p.transfers * 600 + Math.max(0, maxWait(p) - 3600);
       plans = plans
-        .map(p => tightenAccess(p, gtfs, from, tmrw ? 0 : nowSec, w, accessMap))
+        .map(p => tightenAccess(p, gtfs, from, later ? 0 : nowSec, w, accessMap))
         .sort((a, b) => score(a) - score(b));
     }
     return { plans, late };
   };
 
-  let { plans, late: lateTime } = search(net, timeSec, when, tomorrow);
+  let { plans, late: lateTime } = search(net, timeSec, when, offset > 0);
 
   // Medkrajevno »Zdaj« brez rezultata: prve jutrišnje povezave z oznako »jutri« (F5).
   if (isInter && timeMode === 'now' && plans.length === 0) {
@@ -118,13 +128,14 @@ export async function planTrip(q: TripQuery): Promise<TripResult> {
     const n2 = await network(w2);
     if (signal?.aborted) return ABORTED;
     if (typeof n2 !== 'string') {
-      day = 'tomorrow'; tomorrow = true; when = w2; timeSec = 0; net = n2;
+      day = 'tomorrow'; offset = 1; when = w2; timeSec = 0; net = n2;
       ({ plans, late: lateTime } = search(net, timeSec, when, true));
     }
   }
 
-  // Jutrišnji časi + 24 h: odštevanje »Kreni čez …« in »Ta odhod je mimo« tako veljata.
-  if (tomorrow) plans = plans.map(p => shiftPlan(p, DAY_SEC));
+  // Časi poznejšega dne + 24 h na dan: odštevanje »Kreni čez …« in »Ta odhod je mimo« tako
+  // veljata, oznaka dneva (jutri, v nedeljo) pa se izračuna iz istih sekund (readAloud.planDayOffset).
+  if (offset > 0) plans = plans.map(p => shiftPlan(p, offset * DAY_SEC));
   if (signal?.aborted) return ABORTED;
 
   if (plans.length === 0) {
@@ -140,7 +151,7 @@ export async function planTrip(q: TripQuery): Promise<TripResult> {
     return { ok: false, error };
   }
   const baseDay = dayNumber(nowMb());
-  return { ok: true, plans: plans.map(p => ({ ...p, baseDay })), tomorrow, lateTime, isInter };
+  return { ok: true, plans: plans.map(p => ({ ...p, baseDay })), dayOffset: offset, lateTime, isInter };
 }
 
 // RAPTOR išče najzgodnejši prihod, zato vzame prvi mestni avtobus do postaje, tudi če vlak

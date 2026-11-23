@@ -5,6 +5,16 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.30.9 — 2026-11-23
+
+- Načrtovalnik poti ima izbiro dneva: danes, jutri in naslednjih pet dni (»ned 29.«). Pot se išče z voznim
+  redom izbranega dne (nedeljski, sobotni, medkrajevni IJPP); izbira poznejšega dne preklopi »Zdaj« na
+  »Odhod ob«. Dan je v naslovu predlogov (»Predlogi poti · v nedeljo«), na karti (»Odhod 13:30 v nedeljo«),
+  v korakih poti in pri glasnem branju. `planTrip({ dayOffset })`, časi poznejšega dne so + 24 h na dan.
+- Na iPhonu se okno načrtovalnika ni pomikalo in je predloge risalo čez spodnji rob (vidna sta bila le
+  dva). Okno ima zdaj zaglavje in telo, ki se pomika, kot ostala okna. Preizkus v WebKitu:
+  `analiza_2026-11-09/orodja/dan_poti.mjs`.
+
 ## 0.30.8 — 2026-11-19
 
 - Krožna linija: za »prek« je ime v rodilniku, na zaslonu in pri glasnem branju (»Krožna prek Tezna«,

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Footprints, MapPin, Clock3, TriangleAlert } from 'lucide-svelte';
   import LineBadge from './LineBadge.svelte';
-  import { fmtClock, fmtDuration } from '../time';
+  import { fmtClock, fmtDuration, fmtDayOffset } from '../time';
   import { t, plural } from '../i18n';
   import { rowTarget } from '../gtfs';
   import { toMb } from '../clock';
@@ -53,7 +53,9 @@
   }
   $: minuloDni = daysSince(baseDay, zdaj);
   // Pot za jutri ima čase + 24 h (shiftPlan v planner.ts); po polnoči je »jutri« že danes.
-  $: jutri = krenitiSec != null && krenitiSec - minuloDni * 24 * 3600 >= 24 * 3600;
+  // Izbrani poznejši dan (npr. nedelja) ima čase + 24 h na dan; oznaka je »jutri« ali »v nedeljo«.
+  $: dniNaprej = krenitiSec == null ? 0 : Math.max(0, Math.floor((krenitiSec - minuloDni * 24 * 3600) / (24 * 3600)));
+  $: danOdhoda = dniNaprej > 0 ? fmtDayOffset(dniNaprej, (toMb(zdaj).getDay() + dniNaprej) % 7) : '';
 
   $: sekundDoOdhoda = (() => {
     if (krenitiSec == null) return null;
@@ -153,7 +155,7 @@
         <Footprints size={16} class="shrink-0" />
         <span>
           <b>{$t('Kreni ob {time}', { time: fmtClock(krenitiSec) })}</b>
-          {#if jutri}· {$t('jutri')}{/if}
+          {#if danOdhoda}· {danOdhoda}{/if}
           {#if minutDoOdhoda !== null && minutDoOdhoda <= 90}· {$t('čez {n} min', { n: minutDoOdhoda })}{/if}
           {#if prihodSec != null}· {$t('na cilju ob {time}', { time: fmtClock(prihodSec) })}{/if}
         </span>

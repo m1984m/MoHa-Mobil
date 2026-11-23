@@ -102,3 +102,10 @@ export function fmtDayOffset(offset: number, weekday: number): string {
   if (offset === 1) return 'jutri';
   return `v ${DAY_NAMES[weekday] ?? 'naslednjih dneh'}`;
 }
+
+// Kratka oznaka dneva za izbiro dneva v načrtovalniku: »ned 29.« / »Sun 29«.
+const DAY_SHORT = ['ned', 'pon', 'tor', 'sre', 'čet', 'pet', 'sob'];
+const DAY_SHORT_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export function fmtDayChip(d: Date): string {
+  return get(lang) === 'en' ? `${DAY_SHORT_EN[d.getDay()]} ${d.getDate()}` : `${DAY_SHORT[d.getDay()]} ${d.getDate()}.`;
+}

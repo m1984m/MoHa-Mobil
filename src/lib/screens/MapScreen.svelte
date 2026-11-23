@@ -11,7 +11,7 @@
   import LiveDot from '../ui/LiveDot.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import IjppDepartures from '../ui/IjppDepartures.svelte';
-  import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech, isTomorrow } from '../readAloud';
+  import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech, planDayWord } from '../readAloud';
   import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, etaNowMin, LIVE_FRESH_MS } from '../departures';
   import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, todayServiceIds, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { nowMb, nowSecMb } from '../clock';
@@ -547,13 +547,13 @@
   function planTimes(p: Plan | null, _t: number) {
     if (!p) return null;
     const first = p.legs.find(l => l.kind === 'bus');
-    const depT = isTomorrow(p.depSec, p.baseDay);
-    const arrT = isTomorrow(p.arrSec, p.baseDay);
+    // »jutri« ali izbrani dan (»v nedeljo«); pri istem dnevu odhoda in prihoda enkrat zadošča.
+    const depD = planDayWord(p.depSec, p.baseDay);
+    const arrD = planDayWord(p.arrSec, p.baseDay);
     return {
-      dep: fmtTime(p.depSec) + (depT ? ' ' + tr('jutri') : ''),
-      // Pri odhodu jutri je tudi prihod jutri; oznaka enkrat zadošča.
-      arr: fmtTime(p.arrSec) + (arrT && !depT ? ' ' + tr('jutri') : ''),
-      depT, arrT,
+      dep: fmtTime(p.depSec) + (depD ? ' ' + depD : ''),
+      arr: fmtTime(p.arrSec) + (arrD && arrD !== depD ? ' ' + arrD : ''),
+      depD, arrD: arrD !== depD ? arrD : '',
       firstStop: first && first.kind === 'bus' ? first.from.name : null,
       firstLine: first && first.kind === 'bus' ? first.route.short : null,
     };
@@ -928,9 +928,9 @@
               <div class="rounded-2xl p-4 mb-4"
                    style="background: linear-gradient(135deg, var(--surface-2), var(--surface-3));">
                 <div class="flex items-baseline gap-2">
-                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.depSec)}{#if planT?.depT}<span class="t-callout font-semibold"> {$t('jutri')}</span>{/if}</div>
+                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.depSec)}{#if planT?.depD}<span class="t-callout font-semibold"> {planT.depD}</span>{/if}</div>
                   <div class="t-callout text-muted">→</div>
-                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.arrSec)}{#if planT?.arrT && !planT?.depT}<span class="t-callout font-semibold"> {$t('jutri')}</span>{/if}</div>
+                  <div class="t-title1 font-bold">{fmtTime(activePlan.plan.arrSec)}{#if planT?.arrD}<span class="t-callout font-semibold"> {planT.arrD}</span>{/if}</div>
                   <div class="ml-auto t-callout font-semibold" style="color: var(--accent)">{fmtDur(activePlan.plan.arrSec - activePlan.plan.depSec)}</div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3">
