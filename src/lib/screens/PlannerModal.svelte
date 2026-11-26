@@ -102,6 +102,7 @@
   let resultSig = '';
   $: if (querySig !== resultSig && !running && (candidates.length > 0 || error || transferWarn)) clearResults();
   function clearResults() {
+    resFrom = null; resTo = null;
     candidates = []; candidatesDay = 0; arriveLateTime = null; error = ''; statusMsg = ''; transferWarn = null;
   }
 
@@ -294,6 +295,28 @@
     } catch { return []; }
   }
 
+  // Shranjevanje poti neposredno iz predlogov (prej samo zvezdica na Karti, Matej 26.11.).
+  // Izhodišče in cilj, s katerima so nastali trenutni predlogi.
+  let resFrom: Place | null = null;
+  let resTo: Place | null = null;
+  const sameCoord = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
+    Math.abs(a.lat - b.lat) < 0.0001 && Math.abs(a.lon - b.lon) < 0.0001;
+  $: savedMatch = resFrom && resTo
+    ? $savedRoutes.find(r => sameCoord(r.from, resFrom!) && sameCoord(r.to, resTo!)) ?? null
+    : null;
+  function toggleSaveResult() {
+    if (!resFrom || !resTo) return;
+    if (savedMatch) {
+      const snap = { label: savedMatch.label, from: savedMatch.from, to: savedMatch.to };
+      savedRoutes.remove(savedMatch.id);
+      toast.showUndo(tr('Pot odstranjena iz priljubljenih'), () => savedRoutes.add(snap));
+      return;
+    }
+    const strip = (p: Place) => ({ lat: p.lat, lon: p.lon, name: p.name });
+    savedRoutes.add({ label: `${resFrom.name} → ${resTo.name}`, from: strip(resFrom), to: strip(resTo) });
+    toast.show(tr('Pot shranjena med priljubljene'));
+  }
+
   function pickSavedRoute(r: { from: Place; to: Place }) {
     fromPlace = { ...r.from };
     toPlace = { ...r.to };
@@ -424,6 +447,7 @@
       if (!res.ok) { error = res.error; return; }
       candidates = res.plans;
       candidatesDay = res.dayOffset;
+      resFrom = from; resTo = to;
       arriveLateTime = res.lateTime;
       statusMsg = tr('Najdenih poti: {n}', { n: res.plans.length });
     } catch (e: any) {
@@ -837,7 +861,21 @@
               <div class="t-footnote text-muted uppercase tracking-wide">
                 {$t('Predlogi poti')}{#if candidatesDay > 0} · {dayWord(candidatesDay, $lang, nowTick)}{/if}
               </div>
-              <ReadAloud resetKey={candidates} text={() => candidatesSpeech(candidates)} />
+              <div class="flex items-center gap-2 shrink-0">
+                {#if resFrom && resTo}
+                  <button type="button"
+                          style="touch-action: manipulation;"
+                          class="pressable inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-full border border-base surface-2 t-footnote font-semibold"
+                          aria-pressed={!!savedMatch}
+                          on:click={toggleSaveResult}>
+                    <Star size={16}
+                          fill={savedMatch ? 'var(--status-delay)' : 'none'}
+                          color={savedMatch ? 'var(--status-delay)' : 'currentColor'} />
+                    {savedMatch ? $t('Shranjeno') : $t('Shrani pot')}
+                  </button>
+                {/if}
+                <ReadAloud resetKey={candidates} text={() => candidatesSpeech(candidates)} />
+              </div>
             </div>
             {#if arriveLateTime}
               <div class="t-footnote text-muted px-1 mb-2">

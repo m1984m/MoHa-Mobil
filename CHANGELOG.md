@@ -5,6 +5,13 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.31.1 — 2026-11-26
+
+- Načrtovalnik: gumb »Shrani pot« v glavi predlogov (ponovni dotik »Shranjeno« jo odstrani, z Razveljavi);
+  prej je bilo shranjevanje mogoče samo z zvezdico na karti.
+- Pešpoti: openrouteservice je 24.11. ugasnil `api.openrouteservice.org` (410), Worker in posredniki
+  zdaj kličejo `api.heigit.org/openrouteservice/v2` (od 24.11. so bile vse pešpoti zračna črta).
+
 ## 0.31.0 — 2026-11-26
 
 - Kartica »Odhod čez X min« na Domu: za shranjeno pot z začetkom do 800 m od tebe (brez lege prva) rdeča

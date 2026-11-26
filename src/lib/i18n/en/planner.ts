@@ -1,6 +1,7 @@
 // PlannerModal, PlanSteps, FavScreen
 export default {
   // PlannerModal
+  'Shranjeno': 'Saved',
   'Zdaj': 'Now',
   'Odhod ob {time}': 'Depart at {time}',
   'Prihod do {time}': 'Arrive by {time}',
