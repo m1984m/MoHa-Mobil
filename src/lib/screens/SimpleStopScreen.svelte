@@ -140,7 +140,7 @@
                 </div>
                 <div class="flex flex-col items-end gap-1 shrink-0">
                   <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} />
-                  <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} />
+                  <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} schedSec={r.schedSec} />
                 </div>
               </li>
             {/each}

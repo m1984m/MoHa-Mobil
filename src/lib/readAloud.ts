@@ -222,6 +222,31 @@ export function planSpeech(legs: PlanLeg[], cilj: string, baseDay?: number | nul
   return out.join(' ');
 }
 
+// Kartica »Odhod čez X min« (commute.ts): naslednji avtobus poti in kdaj kreniti.
+export function commuteSpeech(o: {
+  title?: string; line: string; routeId: number; stop: string; clock: string;
+  minUntil: number; delayMin: number | null; live: boolean;
+  /** null: potnik je že na poti, »Pojdi čez« se ne bere. */
+  goMin: number | null; missedClock?: string | null;
+}): string {
+  const out: string[] = [];
+  if (o.title) out.push(o.title + '.');
+  if (o.missedClock) out.push(tr('Avtobusa ob {time} ne ujameš več.', { time: o.missedClock }));
+  const v = { line: o.line, stop: o.stop, time: o.clock, trajanje: duration(o.minUntil) };
+  const rail = isRail(o.routeId);
+  if (o.minUntil <= 0) {
+    out.push(rail ? tr('Vlak {line} s postaje {stop} odhaja zdaj.', v)
+      : tr('Avtobus linije {line} s postajališča {stop} odhaja zdaj.', v));
+  } else {
+    out.push(rail ? tr('Vlak {line} s postaje {stop} odpelje ob {time}, čez {trajanje}.', v)
+      : tr('Avtobus linije {line} s postajališča {stop} odpelje ob {time}, čez {trajanje}.', v));
+  }
+  if (!o.live) out.push(tr('Čas je po voznem redu.'));
+  else if (o.delayMin) out.push(tr('Zamuja {trajanje}.', { trajanje: duration(o.delayMin) }));
+  if (o.goMin != null) out.push(o.goMin <= 0 ? tr('Pojdi zdaj.') : tr('Pojdi čez {trajanje}.', { trajanje: duration(o.goMin) }));
+  return out.join(' ');
+}
+
 // Predlogi poti v načrtovalniku.
 export function candidatesSpeech(plans: Plan[]): string {
   return plans.map((p, i) => {

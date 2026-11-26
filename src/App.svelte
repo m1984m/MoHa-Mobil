@@ -600,6 +600,7 @@
       <HomeScreen {gtfs} {origin} {hasGeo} {weather}
         onStopSelect={handleStopSelect}
         onOpenPlanner={handleOpenPlanner}
+        onOpenRoute={(f, t2) => { void runSavedRoute({ from: f, to: t2 }); }}
         onOpenWeather={() => weatherOpen = true}
         onRequestLocation={async () => { await requestLocation(); await refreshWeather(); }} />
     </div>

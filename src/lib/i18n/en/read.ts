@@ -57,4 +57,12 @@ export default {
   'Po voznem redu.': 'Timetable.',
   'Po voznem redu, zamude niso upoštevane.': 'Based on the timetable, delays not included.',
   'Ob {time} na postaji {stop} vstopi na vlak {line}, smer {dest}.': 'At {time}, at station {stop}, board train {line} to {dest}.',
+  // commuteSpeech
+  'Vlak {line} s postaje {stop} odhaja zdaj.': 'Train {line} is leaving {stop} now.',
+  'Avtobus linije {line} s postajališča {stop} odhaja zdaj.': 'Bus {line} is leaving {stop} now.',
+  'Vlak {line} s postaje {stop} odpelje ob {time}, čez {trajanje}.': 'Train {line} leaves {stop} at {time}, in {trajanje}.',
+  'Avtobus linije {line} s postajališča {stop} odpelje ob {time}, čez {trajanje}.': 'Bus {line} leaves {stop} at {time}, in {trajanje}.',
+  'Zamuja {trajanje}.': 'It is {trajanje} late.',
+  'Pojdi zdaj.': 'Leave now.',
+  'Pojdi čez {trajanje}.': 'Leave in {trajanje}.',
 };

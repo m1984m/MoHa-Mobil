@@ -16,7 +16,15 @@ export type DepartureRow = {
   delayMin?: number;
   delayKnown?: boolean;
   live?: boolean;
+  /** Čas po voznem redu (sekunde od polnoči), za prečrtan prikaz ob zamudi. */
+  schedSec?: number;
 };
+
+/** »HH:MM« (OBA ArrivalTime) v sekunde od polnoči; null, če ni ure. */
+export function hmToSec(hm: string | null | undefined): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hm ?? '');
+  return m ? (+m[1] * 60 + +m[2]) * 60 : null;
+}
 
 // Živi prihodi veljajo dve minuti od zadnjega uspešnega klica; starejši ETA je
 // že zlagan, zato se takrat pokaže vozni red.
@@ -52,6 +60,7 @@ export function liveDepartureRows(arr: StopArrival[], routeIdByShort: Map<string
       delayKnown: a.delayKnown,
       // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
       live: a.predicted,
+      schedSec: hmToSec(a.arrivalTime) ?? undefined,
     };
   });
 }

@@ -8,7 +8,7 @@
   } from '../gtfs';
   import { online } from '../online';
   import { hasTwin } from '../simpleStops';
-  import { boardDirection, liveDepSec, etaNowMin, fetchLiveForStops, LIVE_FRESH_MS } from '../departures';
+  import { boardDirection, liveDepSec, etaNowMin, fetchLiveForStops, hmToSec, LIVE_FRESH_MS } from '../departures';
   import { nowMb, nowSecMb } from '../clock';
   import type { Weather } from '../weather';
   import Screen from '../ui/Screen.svelte';
@@ -25,6 +25,8 @@
   import Hint from '../ui/Hint.svelte';
   import ReadAloud from '../ui/ReadAloud.svelte';
   import { departuresSpeech, emptyStopSpeech } from '../readAloud';
+  import { savedRoutes, type SavedPlace } from '../savedRoutes';
+  import { pickByStart, loadCommuteCard } from '../commute';
 
   export let gtfs: GTFS | null;
   export let origin: { lat: number; lon: number };
@@ -34,6 +36,21 @@
   export let onOpenPlanner: () => void;
   export let onRequestLocation: () => Promise<void>;
   export let onOpenWeather: () => void = () => {};
+  export let onOpenRoute: (from: SavedPlace, to: SavedPlace) => void = () => {};
+
+  // Kartica »Odhod čez X min« za shranjeno pot, katere začetek je blizu.
+  // Samo id (primitiv): lega se ob vklopljenem sledenju osveži vsakih nekaj sekund in
+  // nov objekt bi sicer vsakič znova izrisal kartico in sprožil načrtovanje (pregled kode).
+  $: commuteId = pickByStart($savedRoutes, origin, hasGeo)?.id ?? null;
+  $: commuteRoute = commuteId ? $savedRoutes.find(r => r.id === commuteId) ?? null : null;
+  let commuteStatus: 'loading' | 'ok' | 'none' = 'loading';
+  $: showCommute = !!(gtfs && commuteRoute) && commuteStatus !== 'none';
+  // Modul kartice se naloži enkrat, ko je pot prvič na voljo. Brez povezave se morda ne
+  // naloži — takrat ostane »Kam greš?«.
+  let cardPromise: Promise<any> | null = null;
+  $: if (commuteId && !cardPromise) {
+    cardPromise = loadCommuteCard().catch(() => { commuteStatus = 'none'; return null; });
+  }
 
   let tick = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -177,6 +194,7 @@
         delayKnown: a.delayKnown,
         // »v živo« samo z dodeljenim vozilom; brez njega je tudi OBA le vozni red.
         live: a.predicted,
+        schedSec: hmToSec(a.arrivalTime) ?? undefined,
       });
       if (out.length === maxRows) break;
     }
@@ -288,6 +306,27 @@
       {/if}
     </div>
 
+    <!-- Odhod čez X min: shranjena pot z začetkom blizu (commute.ts). Rdeča kartica
+         nadomesti »Kam greš?«, ta ostane kot vrstica pod njo. Brez poti (samo hoja,
+         ponoči, napaka) je Dom tak kot prej. -->
+    {#if gtfs && commuteRoute && cardPromise}
+      {#key commuteRoute.id}
+        {#await cardPromise then CommuteCard}
+          {#if CommuteCard}
+            <svelte:component this={CommuteCard} {gtfs} from={commuteRoute.from} to={commuteRoute.to} label={commuteRoute.label}
+                         bind:status={commuteStatus} {origin} {hasGeo}
+                         onOpen={() => commuteRoute && onOpenRoute(commuteRoute.from, commuteRoute.to)} />
+          {/if}
+        {/await}
+      {/key}
+    {/if}
+    {#if showCommute}
+      <button class="pressable w-full rounded-2xl px-4 py-3 text-left surface border border-base flex items-center gap-3"
+              on:click={onOpenPlanner}>
+        <MapPinned size={20} strokeWidth={2} color="var(--accent)" />
+        <span class="t-body text-muted flex-1">{$t('Kam greš?')}</span>
+      </button>
+    {:else}
     <!-- Quick action: plan a route -->
     <button class="pressable w-full rounded-2xl p-4 text-left shadow-card flex items-center gap-3"
             style="background: linear-gradient(135deg, var(--hero-from), var(--hero-to)); color: white;"
@@ -301,6 +340,7 @@
         <div class="t-footnote">{$t('Načrtuj pot z avtobusom ali peš')}</div>
       </div>
     </button>
+    {/if}
 
     <!-- Smer: pokaži samo postajališča, s katerih se pelje v center (Glavni trg
          ali Avtobusna postaja kot ena od naslednjih postaj) oziroma iz njega. -->

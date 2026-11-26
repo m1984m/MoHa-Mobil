@@ -39,7 +39,7 @@ import { handleStat } from './stat.js';
 import { processDue, DUE_WINDOW_MS, zdruziPoObdelavi } from './due.js';
 import {
   OBA_BASE, OBA_METHODS, STALE_MAX_MS, TTL_PRAZNO, OBA_HEADERS,
-  kljucPredpomnilnika, zaPredpomnilnik, razvrstiOdgovor,
+  kljucPredpomnilnika, zaPredpomnilnik, razvrstiOdgovor, brezavtaUrl, brezavtaVOba,
 } from './oba.js';
 import { ogrejPredpomnilnik } from './warm.js';
 import { handleTts } from './tts.js';
@@ -306,7 +306,11 @@ async function poskusiCilj(c, method, ctl, ms) {
       const izid = res.headers.get('X-Relay-Razlog') === 'neznano' ? 'neznano' : 'napaka';
       return { vrsta: 'napaka', izid, status: res.status };
     }
-    const telo = await res.text();
+    let telo = await res.text();
+    // Cilj v drugi obliki (brezavta): pretvori v Marpromovo, napaka pretvorbe = napaka.
+    if (c.pretvori) {
+      try { telo = c.pretvori(telo); } catch { telo = ''; }
+    }
     const vrsta = razvrstiOdgovor(method, telo);
     // 200 z napako v telesu (HTML, prazno, GetLines brez Status 1) šteje kot
     // napaka in ne kot 'ok', sicer statistika ne bi pokazala, da pot ne dela.
@@ -400,6 +404,25 @@ function klicNavzgor(cilji, poskus, stej, { zamik, skupaj, razdeli = false }) {
 
 // Cilji enega klica OBA: posredniki iz OBA_RELAY po vrsti ali Marprom neposredno.
 // Isti seznam uporabljata pot za uporabnika (handleOba) in cron za spremljanje.
+// Zadnja rezerva za prihode: brezavta.si (glej oba.js). Ni v seznamu `obaCilji`:
+// klicNavzgor zažene naslednji cilj že po ZAMIK_REZERVE_MS in zmagovalec kaznuje
+// počasnejše, zato bi brezavta ob počasnih posrednikih postala glavni vir (brez
+// številk vozil). Kliče se samo, ko so vsi posredniki odpovedali (pregled kode).
+// Samo z vklopom: tuja storitev brez pogojev uporabe, pogoj je dogovor z
+// brezavta@derp.si.
+function brezavtaCilj(env, method, upstream) {
+  const id = upstream.searchParams.get('stopPointId');
+  if (method !== 'GetArrivalsForStopPoint' || env.BREZAVTA_REZERVA !== '1' || !/^\d{1,7}$/.test(id ?? '')) return null;
+  return {
+    url: brezavtaUrl(id),
+    headers: { Accept: 'application/json', 'User-Agent': 'MoHa-Mobil (moha-mobil-proxy)' },
+    preko: 'brezavta',
+    kljuc: 'brezavta',
+    najvec: OBA_TIMEOUT_MS,
+    pretvori: (telo) => JSON.stringify(brezavtaVOba(JSON.parse(telo))),
+  };
+}
+
 function obaCilji(env, method, upstream) {
   const relays = posredniki(env);
   return relays.length
@@ -556,9 +579,19 @@ async function handleOba(request, env, ctx, path, cors) {
   // Nikoli ne vrže: vrne { telo, starost, oznaka } ob uspehu in `null` ob
   // neuspehu. Tako ga je mogoče enako uporabiti v ospredju (uporabnik čaka) kot v
   // ozadju (ne čaka nihče).
+  const rezervaBrezavta = brezavtaCilj(env, method, upstream);
   const poskusiNavzgor = () => klicNavzgor(cilji, (c, ctl, ms) => poskusiCilj(c, method, ctl, ms), stej,
     { zamik: ZAMIK_REZERVE_MS, skupaj: OBA_SKUPAJ_MS })
-    .then(izid => (izid ? shrani(izid) : null))
+    .then(async (izid) => {
+      // Vsi posredniki so odpovedali: še brezavta. Velja samo dober odgovor; njen
+      // »ni podatkov« ne prepiše ničesar.
+      if (!izid && rezervaBrezavta) {
+        const r = await poskusiCilj(rezervaBrezavta, method, new AbortController(), OBA_TIMEOUT_MS);
+        stej(r.izid, r.status, 'brezavta');
+        if (r.vrsta === 'ok') izid = r;
+      }
+      return izid ? shrani(izid) : null;
+    })
     .catch(() => null);
 
   // Svež zadetek gre ven takoj. Če je že čez polovico življenjske dobe, se v

@@ -31,6 +31,7 @@
   import SimpleStopSearch from './SimpleStopSearch.svelte';
   import { stopHint, hasTwin } from '../simpleStops';
   import { toast } from '../toast';
+  import { pickSimpleTarget, loadCommuteCard } from '../commute';
 
   // Preprost pogled — en zaslon, največ šest dejanj, najpomembnejše na sredini.
   //
@@ -205,6 +206,9 @@
     denied = !hasGeo;
   }
 
+  // Kartica »Odhod čez X min«.
+  $: commuteTarget = pickSimpleTarget($simpleHome, $simpleOthers, origin, hasGeo);
+
   // Urejanje nima smisla, ko ni česa urejati.
   $: if (editing && !$simpleHome && $simpleOthers.length === 0) editing = false;
 </script>
@@ -271,7 +275,20 @@
       </section>
 
       <!-- 2. Domov -->
-      <section aria-label={$t('Domov')}>
+      <section aria-label={$t('Domov')} class="space-y-3">
+        <!-- Odhod čez X min (commute.ts): od drugod domov, doma do prvega kraja. -->
+        {#if gtfs && commuteTarget && !editing}
+          {#key commuteTarget.id}
+            {#await loadCommuteCard() then CommuteCard}
+              <svelte:component this={CommuteCard} {gtfs} variant="simple"
+                           from={{ lat: origin.lat, lon: origin.lon, name: tr('Moja lokacija') }}
+                           to={{ lat: commuteTarget.lat, lon: commuteTarget.lon, name: commuteTarget.name }}
+                           label={commuteTarget.kind === 'home' ? $t('Domov') : commuteTarget.label} />
+            {:catch}
+              <!-- modul se ni naložil (brez povezave): kartice ni, gumb Domov ostane -->
+            {/await}
+          {/key}
+        {/if}
         {#if $simpleHome}
           {#if editing}
             <div class="mm-s-edit">

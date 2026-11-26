@@ -130,4 +130,7 @@ export default {
   'Izberi drugo pot': 'Choose another route',
   'Vseeno pokaži': 'Show anyway',
   'Cena vlaka in medkrajevnega avtobusa ni vključena.': 'Train and intercity bus fares are not included.',
+  // Predlogi poti: oznaka in cena (0.31)
+  'najhitrejša': 'fastest',
+  'Cena velja za vozovnico s prestopom v 75 minutah. Z bančno kartico na avtobusu plačaš vsak vstop posebej. Starejši in upokojenci s kartico IJPP se vozijo brezplačno.': 'Price is for a ticket with transfers within 75 minutes. Paying by bank card on the bus costs a fare per boarding. Seniors and pensioners with an IJPP card ride free.',
 };

@@ -8,6 +8,8 @@
   import { nowMb, nowSecMb } from '../clock';
   import { planTrip, materializePlan, parseHM, dayNoon, MAX_DAY_OFFSET, type Place, type PlaceKind, type TimeMode, type TransferIssue } from '../planTrip';
   import LineBadge from '../ui/LineBadge.svelte';
+  import PlanBar from '../ui/PlanBar.svelte';
+  import { cityFareCents, fmtEur } from '../fare';
   import Skeleton from '../ui/Skeleton.svelte';
   import { favStops } from '../favorites';
   import { plannerShowFavs } from '../settings';
@@ -480,6 +482,10 @@
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
   function busLegs(p: Plan) { return p.legs.filter(l => l.kind === 'bus') as any[]; }
+  $: fares = candidates.map(cityFareCents);
+  // Najkrajše trajanje med predlogi (oznaka »najhitrejša«); ob enakem prvi.
+  $: fastestIdx = candidates.reduce((best, p, i, a) =>
+    p.arrSec - p.depSec < a[best].arrSec - a[best].depSec ? i : best, 0);
   // Odhod in prihod na kartici z oznako dneva: časi od polnoči dneva iskanja, jutrišnji + 24 h (F6).
   // Dan predlogov je v naslovu seznama (»Predlogi poti · v nedeljo«); na kartici je oznaka
   // samo, ko je čas na drug dan (vožnja čez polnoč).
@@ -846,7 +852,24 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-baseline gap-2">
                         <div class="t-title3 font-semibold">{fmtDur(p.arrSec - p.depSec)}</div>
+                        {#if fares[i] != null}
+                          <div class="ml-auto t-subhead font-semibold tabular-nums">{fmtEur(fares[i] ?? 0)}</div>
+                        {/if}
                       </div>
+                      <!-- Oznake: priporočeno (prvi), najhitrejša, manj hoje (po zgledu tilaa). -->
+                      {#if i === 0 || (i === fastestIdx && candidates.length > 1) || p.lessWalk}
+                        <div class="flex flex-wrap gap-1.5 mt-1 mb-1">
+                          {#if i === 0}
+                            <span class="t-footnote rounded-full px-2 py-0.5" style="background: var(--accent); color: white;">{$t('priporočeno')}</span>
+                          {/if}
+                          {#if i === fastestIdx && candidates.length > 1}
+                            <span class="t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('najhitrejša')}</span>
+                          {/if}
+                          {#if p.lessWalk}
+                            <span class="t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('manj hoje')}</span>
+                          {/if}
+                        </div>
+                      {/if}
                       <!-- Odhod in prihod z dnevom (»prihod jutri 01:04«), da se krajša vožnja loči od zgodnejšega prihoda (F6). -->
                       <div class="t-footnote font-medium tabular-nums">{depLabel(p.depSec)} · {arrLabel(p.arrSec)}</div>
                       <div class="t-footnote text-muted mb-1.5">
@@ -864,18 +887,17 @@
                           <LineBadge short={bl.route.short} routeId={bl.route.id} size="sm" />
                         {/each}
                       </div>
+                      <PlanBar plan={p} />
                     </div>
-                    {#if i === 0}
-                      <div class="shrink-0 t-footnote rounded-full px-2 py-0.5" style="background: var(--accent); color: white;">{$t('priporočeno')}</div>
-                    {:else if p.lessWalk}
-                      <div class="shrink-0 t-footnote rounded-full px-2 py-0.5 border border-base surface">{$t('manj hoje')}</div>
-                    {/if}
                   </button>
                 </li>
               {/each}
             </ul>
             <!-- Vir: načrt je po voznem redu, brez živih zamud (F12). -->
             <div class="t-footnote text-muted px-1 mt-2">{$t('Po voznem redu, zamude niso upoštevane.')}</div>
+            {#if fares.some(f => f != null)}
+              <div class="t-footnote text-muted px-1 mt-1">{$t('Cena velja za vozovnico s prestopom v 75 minutah. Z bančno kartico na avtobusu plačaš vsak vstop posebej. Starejši in upokojenci s kartico IJPP se vozijo brezplačno.')}</div>
+            {/if}
             {#if candidates.some(c => hasCity(c) || hasExt(c))}
               <!-- Cenik je samo mestni (Marprom); vlak in medkrajevni avtobus nista vključena (F18). -->
               <button type="button" class="pressable w-full mt-1 min-h-[44px] px-3 rounded-xl flex items-center gap-2 t-footnote text-muted"

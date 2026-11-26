@@ -420,7 +420,7 @@
                       </div>
                       <div class="flex flex-col items-end gap-0.5 shrink-0">
                         <DepartureTime minutesFromNow={d.minutesFromNow} depSec={d.depSec} size={$compactLists ? 'sm' : 'md'} />
-                        <DepartureStatus live={!!d.live} delayKnown={!!d.delayKnown} delayMin={d.delayMin} />
+                        <DepartureStatus live={!!d.live} delayKnown={!!d.delayKnown} delayMin={d.delayMin} schedSec={d.schedSec} />
                       </div>
                     </button>
                   </li>

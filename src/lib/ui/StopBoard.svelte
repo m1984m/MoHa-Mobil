@@ -18,6 +18,8 @@
     // Odhodu je dodeljeno vozilo (OBA BusCode) — šele to je »v živo«; prihod iz OBA
     // brez vozila je tudi le vozni red.
     live?: boolean;
+    // Čas po voznem redu (sekunde od polnoči): ob zamudi se pokaže prečrtan.
+    schedSec?: number;
   };
 </script>
 
@@ -137,7 +139,7 @@
             </div>
             <div class="flex flex-col items-end gap-0.5 shrink-0">
               <DepartureTime minutesFromNow={r.minutesFromNow} depSec={r.depSec} size={$compactLists ? 'sm' : 'md'} />
-              <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} />
+              <DepartureStatus live={!!r.live} delayKnown={!!r.delayKnown} delayMin={r.delayMin} schedSec={r.schedSec} />
             </div>
           </button>
         </li>

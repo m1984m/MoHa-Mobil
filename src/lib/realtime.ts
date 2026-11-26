@@ -266,7 +266,8 @@ export async function fetchArrivalsForStopPoint(stopPointId: number): Promise<St
       arrivalTime: a.ArrivalTime ?? '',
       etaMin,
       busCode: String(a.BusCode ?? ''),
-      predicted: !!String(a.BusCode ?? '').trim(),
+      // Rezerva brezavta (Worker) nima številke vozila, živ prihod pa označi z Realtime.
+      predicted: !!String(a.BusCode ?? '').trim() || a.Realtime === true,
       delayKnown,
       delayMin,
       expectedAt,

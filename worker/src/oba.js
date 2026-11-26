@@ -82,6 +82,77 @@ export function razvrstiOdgovor(method, body) {
   return status === undefined ? 'napaka' : 'neznano';
 }
 
+// ── Rezerva brezavta.si (derp.si) ──────────────────────────────────────────────
+// Kliče se za GetArrivalsForStopPoint šele, ko odpovejo vsi posredniki (worker.js,
+// brezavtaCilj), nikoli vzporedno z njimi. Brezavta bere
+// iste Marpromove OBA podatke (prek svojega posrednika marprom-proxy.derp.si), torej
+// ne pomaga, ko Marprom sam ne dela, pomaga pa, ko so blokirani ali ugasnjeni naši
+// posredniki. Vklop z env BREZAVTA_REZERVA = '1' (dogovor z brezavta@derp.si).
+export const BREZAVTA_BASE = 'https://api.beta.brezavta.si';
+/** Toliko prihodov vrne tudi Marprom (~10); brezavta vrne cel dan (do ~580). */
+export const BREZAVTA_NAJVEC = 12;
+/** Dlje od tega ni »prihod«; tudi preprečí, da bi zvečer jutranje vožnje veljale za jutrišnje. */
+export const BREZAVTA_OBZORJE_MIN = 180;
+
+export function brezavtaUrl(stopPointId) {
+  return `${BREZAVTA_BASE}/stops/MARPROM:${stopPointId}/arrivals?current=true`;
+}
+
+/** Sekunde od polnoči po uri Maribora. */
+export function sekundeMb(ms = Date.now()) {
+  const p = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Ljubljana', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(ms));
+  const v = t => +(p.find(x => x.type === t)?.value ?? 0);
+  return v('hour') * 3600 + v('minute') * 60 + v('second');
+}
+
+const hhmm = s => {
+  const x = ((Math.round(s) % 86400) + 86400) % 86400;
+  return `${String(Math.floor(x / 3600)).padStart(2, '0')}:${String(Math.floor(x / 60) % 60).padStart(2, '0')}`;
+};
+
+/**
+ * Prihodi brezavta (seznam z arrival_/departure_ v sekundah od polnoči dneva
+ * obratovanja) → telo v obliki Marpromovega GetArrivalsForStopPoint, da ga
+ * predpomnilnik, popravek ETA in aplikacija obdelajo enako. Vozilo v živo nima
+ * številke (BusCode prazen), zato nosi `Realtime: true`. Vrne null, če telo ni seznam.
+ */
+export function brezavtaVOba(seznam, nowSec = sekundeMb()) {
+  if (!Array.isArray(seznam)) return null;
+  const vrstice = [];
+  for (const a of seznam) {
+    if (!a || a.passed) continue;
+    const sched = a.departure_scheduled ?? a.arrival_scheduled;
+    if (typeof sched !== 'number') continue;
+    const zivo = a.realtime === true && typeof (a.departure_realtime ?? a.arrival_realtime) === 'number';
+    const t = zivo ? (a.departure_realtime ?? a.arrival_realtime) : sched;
+    // Dan obratovanja teče čez polnoč (časi > 24 h): po polnoči je tak prihod iz
+    // včerajšnjega dneva obratovanja, zato −24 h. Jutranjih voženj zvečer NE
+    // previjemo na jutri (drug dan ima lahko drug vozni red) — izpadejo, kot pri
+    // Marpromu, ki kaže samo bližnje prihode (pregled kode).
+    let eta = (t - nowSec) / 60;
+    if (eta > 720) eta -= 1440;
+    if (eta < -1 || eta > BREZAVTA_OBZORJE_MIN) continue;
+    const zakasnitev = a.departure_delay ?? a.arrival_delay;
+    const zamuda = zivo ? Math.round((typeof zakasnitev === 'number' ? zakasnitev : t - sched) / 60) : undefined;
+    const lineId = Number(String(a.route_id ?? '').split(':').pop());
+    vrstice.push({
+      LineId: Number.isFinite(lineId) ? lineId : 0,
+      LineCode: String(a.route_short_name ?? ''),
+      LineDescription: String(a.trip_headsign ?? ''),
+      ArrivalTime: hhmm(sched),
+      ETAMin: Math.max(0, Math.round(eta)),
+      ...(zamuda !== undefined ? { DelayMin: zamuda } : {}),
+      BusCode: '',
+      Realtime: zivo,
+    });
+  }
+  vrstice.sort((x, y) => x.ETAMin - y.ETAMin);
+  if (vrstice.length === 0) return { Response: { Status: -1, Message: 'Data is not available' }, Vir: 'brezavta' };
+  return { Response: { Status: 1, Message: 'OK' }, Vir: 'brezavta', ArrivalsForStopPoints: vrstice.slice(0, BREZAVTA_NAJVEC) };
+}
+
 /**
  * Odgovor, kakršen gre v predpomnilnik na robu (daljši max-age od TTL).
  * `prazno` (odgovor »ni podatkov«) leži samo svoj TTL, brez zasilnega podaljška,

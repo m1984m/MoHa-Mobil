@@ -5,6 +5,21 @@ Različice sledijo [SemVer](https://semver.org/lang/sl/): `MAJOR.MINOR.PATCH`.
 
 ---
 
+## 0.31.0 — 2026-11-26
+
+- Kartica »Odhod čez X min« na Domu: za shranjeno pot z začetkom do 800 m od tebe (brez lege prva) rdeča
+  kartica namesto »Kam greš?« pokaže naslednji avtobus, zamudo v živo, »Pojdi čez N min« (odhod − hoja −
+  1 min) in naslednji dve vožnji; dotik odpre pot na karti. V preprostem pogledu povedna kartica nad
+  gumbom Domov (od drugod domov, doma do prvega kraja) z velikim »Pojdi čez« in branjem. Zamujen avtobus
+  sproži novo iskanje, v ozadju kartica ne dela nič. `src/lib/commute.ts`, `ui/CommuteCard.svelte`
+  (naložena šele, ko je pot), po zgledu aplikacije tilaa.
+- Ob zamudi je pri odhodu prečrtan čas po voznem redu, časi v živo imajo znak signala (vse table odhodov,
+  list avtobusa, preprost pogled). `DepartureStatus` dobi `schedSec`.
+- Načrtovalnik: cena mestne poti (1,50 €, prestop v 75 minutah, `src/lib/fare.ts`), oznaka »najhitrejša«
+  in trak odsekov hoja / čakanje / vožnja v barvi linije (`ui/PlanBar.svelte`).
+- Worker: rezerva brezavta.si za prihode, ko odpovejo vsi posredniki OBA. Izklopljena (`BREZAVTA_REZERVA`),
+  do dogovora z brezavta@derp.si.
+
 ## 0.30.9 — 2026-11-23
 
 - Načrtovalnik poti ima izbiro dneva: danes, jutri in naslednjih pet dni (»ned 29.«). Pot se išče z voznim

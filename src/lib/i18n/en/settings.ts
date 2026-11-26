@@ -297,4 +297,8 @@ export default {
   'Načrtovalnik: ura odhoda in »jutri«, delujoč način Bus + vlak, zvečer tudi jutrišnje povezave': 'Planner: departure time and “tomorrow”, working Bus + train mode, tomorrow’s connections in the evening',
   'Pravilen čas čakanja pri prestopu, »vlak« v navodilih, Priljubljene v živo': 'Correct transfer waiting time, “train” in directions, live Favourites',
   'Boljša dostopnost (tipkovnica, bralnik zaslona, ležeči položaj) in natančnejša zasebnost': 'Better accessibility (keyboard, screen reader, landscape) and more precise privacy information',
+  'Na Domu kartica tvoje shranjene poti: kdaj pelje avtobus in kdaj moraš od doma': 'A card for your saved route on Home: when the bus leaves and when to set off',
+  'Ob zamudi je čas po voznem redu prečrtan, časi v živo imajo znak signala': 'With a delay, the scheduled time is struck through; live times have a signal icon',
+  'Predlogi poti kažejo ceno, najhitrejšo pot in trak hoje in vožnje': 'Route suggestions show the price, the fastest route and a walk-and-ride bar',
+  'V preprostem pogledu Petra pove, čez koliko minut pojdi na avtobus': 'In the simple view, Petra tells you in how many minutes to leave for the bus',
 };

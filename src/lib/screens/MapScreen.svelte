@@ -12,7 +12,7 @@
   import ReadAloud from '../ui/ReadAloud.svelte';
   import IjppDepartures from '../ui/IjppDepartures.svelte';
   import { departuresSpeech, noMoreToday, emptyStopSpeech, gtfsRow, vehicleSpeech, planSpeech, planDayWord } from '../readAloud';
-  import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, etaNowMin, LIVE_FRESH_MS } from '../departures';
+  import { liveDepartureRows, routeIdIndex, liveDepartures, liveDepSec, etaNowMin, hmToSec as schedOf, LIVE_FRESH_MS } from '../departures';
   import { upcomingDepartures, nextServiceDeparture, nearestStops, loadShapes, shapesForStop, stopsOnSameRoutes, routeColor, rowTarget, departsFromStop, todayServiceIds, type GTFS, type Shape, type Stop, type Trip } from '../gtfs';
   import { nowMb, nowSecMb } from '../clock';
   import DepartureStatus from '../ui/DepartureStatus.svelte';
@@ -1336,7 +1336,7 @@
                        »77 min«, drugod »1 h 17«, oznaki pa sta bili 10 px. -->
                   <div class="flex flex-col items-end gap-0.5 shrink-0">
                     <DepartureTime minutesFromNow={etaRow(a, tick30)} depSec={liveDepSec(etaRow(a, tick30))} size={$compactLists ? 'sm' : 'md'} />
-                    <DepartureStatus live={a.predicted} delayKnown={a.delayKnown} delayMin={a.delayMin} />
+                    <DepartureStatus live={a.predicted} delayKnown={a.delayKnown} delayMin={a.delayMin} schedSec={schedOf(a.arrivalTime)} />
                   </div>
                 </button>
                 <!-- Zvonec samo v celotni aplikaciji: Preprost pogled ima svoj čarovnik v Mojih
@@ -1505,7 +1505,7 @@
                  predicted je od 0.19 pomenilo »vozilo dodeljeno«) — torej v živo. -->
             <!-- live po svežini vira (po 90 s je vozilo »Ocenjeno«), zamuda samo, če jo je
                  dal Marprom — ocenjena iz ure ima ±1 min šuma (realtime.ts). -->
-            <DepartureStatus live={isLive} delayKnown={!!vehicleArrival?.delayKnown} delayMin={delay} />
+            <DepartureStatus live={isLive} delayKnown={!!vehicleArrival?.delayKnown} delayMin={delay} schedSec={schedOf(vehicleArrival?.arrivalTime)} />
           </div>
         {/if}
         <div class="flex items-center justify-between mb-2">
