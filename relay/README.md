@@ -111,8 +111,8 @@ posrednik nosi še pešpoti. Sprejme samo `POST` na natanko dve poti:
 
 | Pot pri posredniku | Gre na |
 |---|---|
-| `/ors/directions/foot-walking/geojson` | `https://api.openrouteservice.org/v2/directions/foot-walking/geojson` |
-| `/ors/matrix/foot-walking` | `https://api.openrouteservice.org/v2/matrix/foot-walking` |
+| `/ors/directions/foot-walking/geojson` | `https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson` |
+| `/ors/matrix/foot-walking` | `https://api.heigit.org/openrouteservice/v2/matrix/foot-walking` |
 
 Zahteva mora imeti `x-relay-key` (primerjava v stalnem času, kot pri OBA) in
 `x-ors-key` (ključ ORS, ki ga pošlje Worker; posrednik ga ne hrani in ne beleži),

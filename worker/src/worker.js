@@ -62,7 +62,7 @@ import { zabeleziVozila, handleSpremljanje } from './spremljanje.js';
 // relay-vercel/README.md. Ko Marprom odblokira Cloudflare, se OBA_RELAY odstrani
 // in Worker spet kliče neposredno; rezerva in zasilni odgovor ostaneta varovalka.
 // OBA_BASE, OBA_METHODS (s TTL) in STALE_MAX_MS so v oba.js, ker jih uporablja tudi cron.
-const ORS_BASE = 'https://api.openrouteservice.org/v2';
+const ORS_BASE = 'https://api.heigit.org/openrouteservice/v2';
 
 // Dovoljeni ORS endpointi (natančno tisti, ki ju kliče aplikacija).
 const ORS_PATHS = new Set([

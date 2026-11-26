@@ -25,7 +25,7 @@
  */
 
 const OBA_BASE = "https://vozniredi.marprom.si/OBA";
-const ORS_BASE = "https://api.openrouteservice.org/v2";
+const ORS_BASE = "https://api.heigit.org/openrouteservice/v2";
 
 // Natanko poti ORS, ki ju kliče aplikacija prek Workerja — nič drugega.
 const ORS_POTI = new Set(["/directions/foot-walking/geojson", "/matrix/foot-walking"]);

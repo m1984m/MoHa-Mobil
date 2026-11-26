@@ -19,7 +19,7 @@
  */
 
 const OBA_BASE = 'https://vozniredi.marprom.si/OBA';
-const ORS_BASE = 'https://api.openrouteservice.org/v2';
+const ORS_BASE = 'https://api.heigit.org/openrouteservice/v2';
 
 // Ime iz prepisa → pot pri ORS. Map: nič drugega (tudi podedovana imena) ne gre skozi.
 const ORS_POTI = new Map([

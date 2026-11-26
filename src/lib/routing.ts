@@ -19,7 +19,7 @@ export type WalkRoute = { coords: [number, number][]; meters: number; sec: numbe
 //    na javni strani berljiv za vsakogar. Uporabno le za lokalni razvoj.
 const ORS_PROXY = ((import.meta.env.VITE_ORS_PROXY as string | undefined) ?? '').replace(/\/$/, '');
 const ORS_KEY = (import.meta.env.VITE_ORS_KEY as string | undefined) ?? '';
-const ORS_BASE = ORS_PROXY || 'https://api.openrouteservice.org/v2';
+const ORS_BASE = ORS_PROXY || 'https://api.heigit.org/openrouteservice/v2';
 const ORS_ENABLED = !!(ORS_PROXY || ORS_KEY);
 
 // Prek proxyja glave Authorization ne pošiljamo — ključ doda Worker.
